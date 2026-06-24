@@ -1,0 +1,11 @@
+# local dev / tooling
+.claude/
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# os
+Thumbs.db
+.DS_Store

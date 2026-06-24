@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Micrograd, Animated — watch backpropagation flow through a graph</title>
+<meta name="description" content="An interactive, in-browser visualizer for Karpathy's micrograd: build a scalar computation graph, watch the forward pass fill in values, then watch backpropagation flow gradients back through every node — and train an MLP to make predictions, live. By Abdulsamad Teniola Muyideen.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#0A0D13">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-research/micrograd/">
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Micrograd, Animated — watch backpropagation flow through a graph">
+<meta property="og:description" content="Build a scalar computation graph, watch the forward pass, then watch the chain rule flow gradients backward node by node — then train an MLP to predict. An interactive paper-with-code by Abdulsamad Teniola Muyideen.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-research/micrograd/">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-research/micrograd/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Micrograd, Animated — watch backpropagation flow through a graph">
+<meta name="twitter:description" content="Build a scalar computation graph, watch the forward and backward passes node by node — then train an MLP to predict.">
+<meta name="twitter:image" content="https://th3samaritan.github.io/AI-research/micrograd/preview.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0D13;--chrome:#0F131D;--panel:#141A28;--panel-2:#19202F;
+    --line:#262E43;--line-soft:#1C2333;--txt:#E8ECF5;--muted:#8B95AC;--muted-2:#5C6680;
+    --signal:#F5A524;--signal-2:#FFC85C;--signal-dim:#F5A52426;
+    --cool:#5B8DEF;--good:#5BE3A6;--bad:#E5687A;--grad:#7C6BF0;--grad-dim:#7C6BF022;
+    --cellbg:#111726;--celledge:#283251;--radius:13px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{background:
+      radial-gradient(1100px 560px at 80% -8%,#17223c 0%,transparent 55%),
+      radial-gradient(900px 480px at -5% 108%,#1a1430 0%,transparent 52%),var(--ink);
+    color:var(--txt);font-family:"Space Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:312px 1fr;min-height:100vh}
+  @media(max-width:920px){.app{grid-template-columns:1fr}}
+
+  aside{background:linear-gradient(180deg,var(--chrome),var(--ink));border-right:1px solid var(--line);
+    padding:22px 19px 24px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+  @media(max-width:920px){aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--signal)}
+  .title{font-size:23px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:3px 0 0}
+  .title .thin{color:var(--muted)}
+  .byline{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);line-height:1.7;margin-top:2px}
+  .byline a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
+  .byline a:hover{color:var(--signal);border-color:var(--signal)}
+  .block{display:flex;flex-direction:column;gap:8px}
+  .lbl{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2)}
+  input.txt{background:var(--ink);border:1px solid var(--line);border-radius:10px;color:var(--txt);
+    font-family:"JetBrains Mono",monospace;font-size:14px;padding:11px 12px;outline:none;width:100%;transition:.15s}
+  input.txt:focus{border-color:var(--signal);box-shadow:0 0 0 3px var(--signal-dim)}
+  input.txt.bad{border-color:var(--bad)}
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .chip{font-family:"JetBrains Mono",monospace;font-size:11px;padding:5px 9px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);transition:.2s;cursor:pointer}
+  .chip:hover{border-color:var(--signal);color:var(--signal)}
+  .chip.lit{background:var(--signal);color:#241a04;border-color:var(--signal);font-weight:700}
+  .vars{display:flex;flex-direction:column;gap:6px}
+  .varrow{display:flex;align-items:center;gap:8px}
+  .varrow label{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--signal-2);width:34px;text-align:right}
+  .varrow input{flex:1;background:var(--ink);border:1px solid var(--line);border-radius:7px;color:var(--txt);
+    font-family:"JetBrains Mono",monospace;font-size:12px;padding:6px 8px;outline:none;transition:.15s}
+  .varrow input:focus{border-color:var(--signal);box-shadow:0 0 0 2px var(--signal-dim)}
+  .varrow .vrole{font-family:"JetBrains Mono",monospace;font-size:9.5px;color:var(--muted-2);min-width:64px;white-space:nowrap}
+  .err{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--bad);line-height:1.4}
+  .params{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px}
+  .params b{color:var(--signal);font-weight:500}
+  .linkbtn{font-family:"JetBrains Mono",monospace;font-size:11px;background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer;transition:.14s;text-align:left}
+  .linkbtn:hover{border-color:var(--signal);color:var(--signal)}
+  .linkbtn.copied{border-color:var(--good);color:var(--good)}
+  .expbtn{font-family:"JetBrains Mono",monospace;font-size:11px;background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:8px 9px;cursor:pointer;transition:.14s;text-align:left}
+  .expbtn:hover{border-color:var(--signal);color:var(--signal)}
+  .expbtn:disabled{opacity:.4;cursor:not-allowed}
+  .expbtn.rec{border-color:#e5484d;color:#e5484d}
+  .expstat{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);line-height:1.5;background:#141a28;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+  .expstat.err{color:var(--signal)}
+
+  .seg{display:flex;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px}
+  .seg button{flex:1;background:transparent;border:none;color:var(--muted);font-family:"JetBrains Mono",monospace;font-size:11px;padding:7px 2px;border-radius:6px;cursor:pointer;transition:.14s}
+  .seg button.on{background:var(--panel-2);color:var(--signal);box-shadow:0 1px 0 #fff1 inset}
+
+  .transport{display:flex;gap:6px}
+  .tbtn{flex:1;font-family:"JetBrains Mono",monospace;font-size:13px;background:var(--panel-2);color:var(--txt);
+    border:1px solid var(--line);border-radius:9px;padding:10px 4px;cursor:pointer;transition:.14s}
+  .tbtn:hover{border-color:var(--muted);background:#1f2738}
+  .tbtn.play{flex:2;background:var(--signal);color:#241a04;border-color:var(--signal);font-weight:700;letter-spacing:.03em}
+  .tbtn.play:hover{filter:brightness(1.07)}
+  .tbtn:disabled{opacity:.34;cursor:not-allowed}
+  .tbtn:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+
+  .nav{display:flex;flex-direction:column;gap:1px}
+  .navitem{display:flex;align-items:center;gap:9px;background:transparent;border:none;border-radius:7px;padding:8px 9px;cursor:pointer;text-align:left;color:var(--muted);transition:.14s;width:100%}
+  .navitem:hover{background:#171f30;color:var(--txt)}
+  .navitem.on{background:linear-gradient(90deg,#1d263c,#161d2c);color:var(--txt)}
+  .navitem .ix{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);width:18px}
+  .navitem.on .ix{color:var(--signal)}.navitem.done .ix{color:var(--good)}
+  .navitem .nm{font-size:12.5px;font-weight:500}
+  .spacer{flex:1;min-height:6px}
+  .foot{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);line-height:1.7}
+  .foot a{color:var(--muted);text-decoration:none}.foot a:hover{color:var(--signal)}
+
+  main{padding:24px clamp(16px,4vw,44px) 70px;overflow-x:hidden;display:flex;flex-direction:column}
+  .head .stage-no{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal)}
+  .head h2{font-size:clamp(21px,3vw,29px);font-weight:700;letter-spacing:-.02em;margin:4px 0 4px}
+  .head p{color:var(--muted);font-size:14px;margin:0;max-width:78ch;line-height:1.55}
+  .hint{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);margin-top:7px}
+  .hint b{color:var(--cool)}
+
+  .bar{margin:16px 0 18px;min-height:56px;background:linear-gradient(180deg,#0d1320,#0b0f18);border:1px solid var(--line);
+    border-radius:12px;padding:13px 18px;display:flex;align-items:center;gap:13px;overflow-x:auto;box-shadow:0 1px 0 #ffffff08 inset}
+  .bar .tag{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted-2);flex:0 0 auto}
+  .bar .tag.fwd{color:var(--signal)}.bar .tag.bwd{color:var(--grad)}
+  .bar .eq{flex:1;min-width:0}
+  .bar .katex{color:var(--txt)!important;font-size:1.05em}
+  .bar.idle .eq{color:var(--muted-2);font-family:"JetBrains Mono",monospace;font-size:13px}
+
+  #stage{position:relative;min-height:300px}
+  .graphwrap{position:relative;overflow:auto;padding:8px 2px 10px}
+  svg.edges{position:absolute;left:0;top:0;pointer-events:none;overflow:visible;z-index:1}
+  .node{position:absolute;z-index:2;width:124px;background:linear-gradient(180deg,#141b2b,#10151f);
+    border:1px solid var(--celledge);border-radius:10px;padding:7px 9px 8px;transition:border-color .18s,box-shadow .18s,opacity .25s,transform .25s;opacity:0}
+  .node.shown{opacity:1}
+  .node .nlabel{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--cool);font-weight:700;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .node .nlabel .rl{color:var(--muted-2);font-weight:500;font-size:9px}
+  .node .nrow{display:flex;justify-content:space-between;align-items:baseline;font-family:"JetBrains Mono",monospace;font-size:11px;margin-top:3px}
+  .node .nrow .k{color:var(--muted-2);font-size:9px;letter-spacing:.08em;text-transform:uppercase}
+  .node .nrow .vd{color:var(--txt)}
+  .node .nrow .vg{color:var(--grad)}
+  .node .hid{color:#33405e}
+  .node.leaf{border-style:dashed;border-color:#34507a}
+  .node.out{box-shadow:0 0 0 1px var(--signal) inset}
+  .node.hotf{border-color:var(--signal);box-shadow:0 0 0 1px var(--signal) inset,0 0 16px #f5a52433}
+  .node.hotb{border-color:var(--grad);box-shadow:0 0 0 1px var(--grad) inset,0 0 16px #7c6bf044}
+  .node.popd .vd{animation:pop .42s cubic-bezier(.2,1.3,.4,1)}
+  .node.popg .vg{animation:popg .42s cubic-bezier(.2,1.3,.4,1)}
+  @keyframes pop{0%{color:var(--signal-2);transform:scale(1.5)}100%{transform:scale(1)}}
+  @keyframes popg{0%{color:#b3a7ff;transform:scale(1.5)}100%{transform:scale(1)}}
+  .opbadge{position:absolute;z-index:3;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;color:#241a04;background:var(--signal-2);border:1px solid var(--signal);
+    transform:translate(-50%,-50%);transition:opacity .25s;opacity:0;box-shadow:0 2px 8px #0006}
+  .opbadge.shown{opacity:1}
+  .opbadge.sm{font-size:9px}
+  path.ed{fill:none;stroke:#33415f;stroke-width:1.6;transition:stroke .18s,stroke-width .18s,opacity .18s}
+  path.ed.litf{stroke:var(--signal);stroke-width:2.6}
+  path.ed.litb{stroke:var(--grad);stroke-width:2.6}
+
+  .flowlayer{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:6}
+  .dotfx{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--signal);box-shadow:0 0 9px var(--signal);
+    transform:translate(-50%,-50%);transition:transform .42s cubic-bezier(.4,.1,.3,1),opacity .42s ease;will-change:transform,opacity}
+
+  .caption{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted-2);margin-top:16px;line-height:1.7;max-width:80ch}
+  .caption b{color:var(--cool)} .caption .g{color:var(--grad)} .caption .s{color:var(--signal)}
+  .endcap{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--good);margin-top:16px;letter-spacing:.03em}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dotleg{width:10px;height:10px;border-radius:50%}
+
+  /* ---- train mode ---- */
+  .train{display:grid;grid-template-columns:1.25fr 1fr;gap:22px}
+  @media(max-width:1050px){.train{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,#0d1320,#0b0f18);border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+  .card h3{margin:0 0 4px;font-size:13px;font-family:"JetBrains Mono",monospace;color:var(--muted);font-weight:500;letter-spacing:.04em}
+  .card .sub{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);margin-bottom:10px}
+  svg.net{width:100%;height:auto;overflow:visible}
+  .barchart{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .brow{display:flex;align-items:center;gap:10px}
+  .bw{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);width:118px;white-space:nowrap}
+  .btrack{flex:1;height:22px;background:var(--cellbg);border:1px solid var(--celledge);border-radius:6px;position:relative;overflow:hidden}
+  .bmid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:#3b466a}
+  .bfill{position:absolute;top:0;bottom:0;width:0;transition:left .4s cubic-bezier(.3,1,.4,1),width .4s cubic-bezier(.3,1,.4,1),background .4s}
+  .bp{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--txt);width:96px}
+  .lossnum{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--signal);margin-top:8px}
+  @media(prefers-reduced-motion:reduce){.node.popd .vd,.node.popg .vg{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <div class="eyebrow">micrograd · animated</div>
+      <div class="title">Micrograd, <span class="thin">Animated</span></div>
+      <div class="byline">Abdulsamad Teniola Muyideen<br><a href="https://th3samaritan.github.io/My-Portfolio/" target="_blank" rel="noopener">th3samaritan</a></div>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Mode</span>
+      <div class="seg" id="modeseg"><button data-m="graph" class="on">Backprop a graph</button><button data-m="train">Learn to predict</button></div>
+    </div>
+
+    <!-- graph-mode controls -->
+    <div class="block gmode">
+      <span class="lbl">Expression</span>
+      <input id="expr" class="txt" type="text" value="tanh(x1*w1 + x2*w2 + b)" autocomplete="off" spellcheck="false">
+      <div class="err" id="experr" style="display:none"></div>
+      <div class="chips" id="presets"></div>
+    </div>
+    <div class="block gmode">
+      <span class="lbl">Leaf values</span>
+      <div class="vars" id="vars"></div>
+      <div class="params" id="gparams"></div>
+    </div>
+
+    <!-- train-mode controls -->
+    <div class="block tmode" style="display:none">
+      <span class="lbl">Network</span>
+      <div class="params"><span>MLP <b>3→4→4→1</b></span><span><b id="nparams">41</b> params</span></div>
+      <div class="params"><span>data: 4 points, targets ±1</span></div>
+      <span class="lbl" style="margin-top:6px">Learning rate</span>
+      <div class="seg" id="lrseg"><button data-lr="0.02">0.02</button><button data-lr="0.05" class="on">0.05</button><button data-lr="0.1">0.1</button></div>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Playback</span>
+      <div class="transport">
+        <button class="tbtn" id="prev" title="Previous">◂</button>
+        <button class="tbtn play" id="play" title="Play / pause">▶ Play</button>
+        <button class="tbtn" id="next" title="Next">▸</button>
+        <button class="tbtn" id="skip" title="Show result instantly">⏭</button>
+        <button class="tbtn" id="replay" title="Replay / reset">⟲</button>
+      </div>
+      <div class="seg" id="speed"><button data-s="0.5">0.5×</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button></div>
+    </div>
+
+    <div class="block">
+      <span class="lbl">Export</span>
+      <button class="expbtn" id="expgif">◉ Record stage → GIF</button>
+      <button class="expbtn" id="exppng">⤓ PNG of full window</button>
+      <button class="linkbtn" id="copylink" title="Copy a shareable link">🔗 Copy link</button>
+      <div class="expstat" id="expstat" style="display:none"></div>
+    </div>
+
+    <div class="block gmode">
+      <span class="lbl">Stages</span>
+      <div class="nav" id="nav"></div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="foot">scalar reverse-mode autodiff · the chain rule, one node at a time<br>
+      after Andrej Karpathy's <a href="https://github.com/karpathy/micrograd" target="_blank" rel="noopener">micrograd</a><br>
+      <a href="https://th3samaritan.github.io/My-Portfolio/" target="_blank" rel="noopener">th3samaritan.github.io</a> · v0.1</div>
+  </aside>
+
+  <main>
+    <div class="head">
+      <div class="stage-no" id="stageno"></div>
+      <h2 id="stagetitle"></h2>
+      <p id="stagedesc"></p>
+      <div class="hint" id="hint"></div>
+    </div>
+    <div class="bar idle" id="bar"><span class="tag">live</span><span class="eq" id="eq">press play to watch it compute</span></div>
+    <div id="stage"></div>
+  </main>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Micrograd, Animated — a scalar autograd engine, computed and
+   backpropagated live in the browser. After Karpathy's micrograd.
+   ============================================================ */
+
+/* -------------------- the engine (a JS port of the Value class) -------------------- */
+let _uid = 0;
+class Value {
+  constructor(data, children = [], op = '', label = '') {
+    this.data = data; this.grad = 0; this._backward = () => {};
+    this.prev = children; this.op = op; this.label = label; this.id = _uid++;
+  }
+  add(o){ o = o instanceof Value ? o : new Value(o); const out = new Value(this.data + o.data, [this, o], '+');
+    out._backward = () => { this.grad += out.grad; o.grad += out.grad; }; return out; }
+  mul(o){ o = o instanceof Value ? o : new Value(o); const out = new Value(this.data * o.data, [this, o], '*');
+    out._backward = () => { this.grad += o.data * out.grad; o.grad += this.data * out.grad; }; return out; }
+  pow(n){ const out = new Value(this.data ** n, [this], '**' + n); out._pow = n;
+    out._backward = () => { this.grad += (n * this.data ** (n - 1)) * out.grad; }; return out; }
+  tanh(){ const t = Math.tanh(this.data); const out = new Value(t, [this], 'tanh');
+    out._backward = () => { this.grad += (1 - t * t) * out.grad; }; return out; }
+  exp(){ const out = new Value(Math.exp(this.data), [this], 'exp');
+    out._backward = () => { this.grad += out.data * out.grad; }; return out; }
+  relu(){ const out = new Value(Math.max(0, this.data), [this], 'relu');
+    out._backward = () => { this.grad += (this.data > 0 ? 1 : 0) * out.grad; }; return out; }
+  neg(){ return this.mul(-1); }
+  sub(o){ o = o instanceof Value ? o : new Value(o); return this.add(o.neg()); }
+  div(o){ o = o instanceof Value ? o : new Value(o); return this.mul(o.pow(-1)); }
+  topo(){ const t = [], vis = new Set(); const b = v => { if (!vis.has(v)) { vis.add(v); v.prev.forEach(b); t.push(v); } }; b(this); return t; }
+  backward(){ const t = this.topo(); for (const v of t) v.grad = 0; this.grad = 1; for (let i = t.length - 1; i >= 0; i--) t[i]._backward(); return t; }
+}
+
+/* -------------------- expression parser: string + var map -> Value graph -------------------- */
+function parseExpr(src, vars) {
+  const leaves = {};
+  const toks = src.match(/\d+\.?\d*|[A-Za-z_]\w*|\*\*|[+\-*/^()]/g) || [];
+  let p = 0;
+  const peek = () => toks[p], next = () => toks[p++];
+  const FUNCS = { tanh: 1, exp: 1, relu: 1 };
+  function primary() {
+    const t = next();
+    if (t === undefined) throw 'unexpected end of expression';
+    if (t === '(') { const e = expr(); if (next() !== ')') throw 'missing ")"'; return e; }
+    if (/^[A-Za-z_]/.test(t)) {
+      if (peek() === '(' && FUNCS[t]) { next(); const a = expr(); if (next() !== ')') throw 'missing ")"'; return a[t](); }
+      if (FUNCS[t]) throw `"${t}" needs parentheses, e.g. ${t}(x)`;
+      if (!(t in leaves)) { const val = (t in vars) ? vars[t] : 0; leaves[t] = new Value(val, [], '', t); }
+      return leaves[t];
+    }
+    if (/^[\d.]/.test(t)) { const v = new Value(parseFloat(t), [], '', t); v._const = true; return v; }
+    throw `unexpected "${t}"`;
+  }
+  function unary() { if (peek() === '-') { next(); return unary().neg(); } if (peek() === '+') { next(); return unary(); } return primary(); }
+  function factor() { let a = unary(); if (peek() === '**' || peek() === '^') { next(); const b = factor();
+      if (b.data === undefined || isNaN(b.data)) throw 'bad exponent'; a = a.pow(b.data); } return a; }
+  function term() { let a = factor(); while (peek() === '*' || peek() === '/') { const op = next(); const b = factor(); a = op === '*' ? a.mul(b) : a.div(b); } return a; }
+  function expr() { let a = term(); while (peek() === '+' || peek() === '-') { const op = next(); const b = term(); a = op === '+' ? a.add(b) : a.sub(b); } return a; }
+  const root = expr();
+  if (p !== toks.length) throw `unexpected "${peek()}"`;
+  return { root, leaves };
+}
+
+/* -------------------- presets (roles label what each leaf means) -------------------- */
+const PRESETS = {
+  "neuron":     { expr: "tanh(x1*w1 + x2*w2 + b)", vars: { x1: 2, w1: -3, x2: 0, w2: 1, b: 6.8813735870 },
+                  roles: { x1:"input", w1:"weight", x2:"input", w2:"weight", b:"bias" } },
+  "a*b + c":    { expr: "a*b + c",                 vars: { a: 2, b: -3, c: 10 },
+                  roles: { a:"value", b:"value", c:"value" } },
+  "shared a":   { expr: "a*b + a",                 vars: { a: 3, b: 4 },
+                  roles: { a:"reused value", b:"value" } },
+  "tanh via exp":{ expr: "(exp(2*n) - 1)/(exp(2*n) + 1)", vars: { n: 0.8814 },
+                  roles: { n:"pre-activation" } },
+  "x²+y²":      { expr: "x**2 + y**2",             vars: { x: 3, y: -4 },
+                  roles: { x:"input", y:"input" } },
+};
+const roleOf = nm => (state.roles && state.roles[nm]) || "";
+function rolesFor(expr){ for(const k in PRESETS){ if(PRESETS[k].expr===expr) return {...(PRESETS[k].roles||{})}; } return {}; }
+
+/* -------------------- stages -------------------- */
+const STAGES = [
+  { id:0, name:"Build the graph", title:"Every value remembers how it was made",
+    desc:"The expression is parsed into a directed graph. Each node is a Value: a scalar, plus the operation and the children it came from. Leaves (dashed) are the inputs we can differentiate with respect to." },
+  { id:1, name:"Forward pass", title:"Compute the value — left to right",
+    desc:"Walk the graph in topological order (children before parents) and fill in each node's data. Dots stream from each child into the operation that consumes it." },
+  { id:2, name:"Seed the gradient", title:"∂L/∂L = 1",
+    desc:"Backprop starts at the output. Its derivative with respect to itself is 1 — that single number seeds the entire reverse pass." },
+  { id:3, name:"Backward pass", title:"The chain rule, one node at a time",
+    desc:"Visit nodes in reverse order. Each node multiplies the gradient arriving from above by its own local derivative and adds the result into each child. Watch gradients flow right-to-left." },
+  { id:4, name:"Read the gradients", title:"∂L/∂(every leaf)",
+    desc:"After one reverse pass, every leaf holds the loss's sensitivity to it. These are exactly the numbers gradient descent steps along — switch to “Learn to predict” to see them put to work." },
+];
+
+/* -------------------- animation control -------------------- */
+let RUN = 0, PAUSED = false, SPEED = 1, RUNNING = false, SKIP = false;
+let state = { mode:"graph", expr:"", vars:{}, roles:{}, root:null, leaves:{}, topo:[], stage:0,
+              lr:0.05, model:null, history:[], trainStep:0 };
+const REDUCED = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = id => document.getElementById(id);
+const fx = (x, p = 2) => { if (x === undefined || x === null || isNaN(x)) return "·"; const v = (+x).toFixed(p); return v === "-0.00" ? "0.00" : v; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function step(ms, run){ if(SKIP){ if(run!==RUN) throw "cancel"; return; } let rem=ms/SPEED; while(rem>0){ if(run!==RUN) throw "cancel"; if(PAUSED){ await sleep(60); continue; } const t=Math.min(40,rem); await sleep(t); rem-=t; } if(run!==RUN) throw "cancel"; }
+function K(t){ try{ return katex.renderToString(t,{displayMode:false,throwOnError:false}); }catch(e){ return t; } }
+function setEq(t, kind){ const b=$("bar"); b.classList.remove("idle"); const tag=b.querySelector(".tag");
+  tag.className="tag"+(kind==="fwd"?" fwd":kind==="bwd"?" bwd":""); tag.textContent=kind==="fwd"?"forward":kind==="bwd"?"backward":"live";
+  $("eq").innerHTML=K(t); }
+function setEqIdle(t){ $("bar").classList.add("idle"); $("bar").querySelector(".tag").textContent="live"; $("eq").textContent=t; }
+
+/* -------------------- node DOM helpers -------------------- */
+const nd  = v => document.getElementById("nd_"+v.id);
+const opb = v => document.getElementById("op_"+v.id);
+function showData(v, pop){ const n=nd(v); if(!n)return; const el=n.querySelector(".vd"); el.textContent=fx(v.data); el.classList.remove("hid");
+  if(pop && !REDUCED){ n.classList.remove("popd"); void n.offsetWidth; n.classList.add("popd"); } }
+function showGrad(v, val, pop){ const n=nd(v); if(!n)return; const el=n.querySelector(".vg"); el.textContent=fx(val); el.classList.remove("hid");
+  if(pop && !REDUCED){ n.classList.remove("popg"); void n.offsetWidth; n.classList.add("popg"); } }
+function hotF(v,on){ nd(v)?.classList.toggle("hotf",on); }
+function hotB(v,on){ nd(v)?.classList.toggle("hotb",on); }
+function clearHot(){ document.querySelectorAll(".node.hotf,.node.hotb").forEach(n=>n.classList.remove("hotf","hotb"));
+  document.querySelectorAll("path.ed.litf,path.ed.litb").forEach(p=>p.classList.remove("litf","litb")); }
+function litEdge(child, parent, cls){ const e=document.getElementById(`ed_${child.id}_${parent.id}`); if(e) e.classList.add(cls); }
+
+/* flow a dot between two node centers (child <-> parent) */
+function flow(fromV, toV, color){
+  if(REDUCED) return;
+  const layer=$("stage").querySelector(".flowlayer"); if(!layer) return;
+  const a=nd(fromV), b=nd(toV); if(!a||!b) return;
+  const sr=$("stage").getBoundingClientRect(), ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+  const x0=ar.left+ar.width/2-sr.left, y0=ar.top+ar.height/2-sr.top;
+  const x1=br.left+br.width/2-sr.left, y1=br.top+br.height/2-sr.top;
+  const d=document.createElement("div"); d.className="dotfx"; d.style.left=x0+"px"; d.style.top=y0+"px";
+  if(color){ d.style.background=color; d.style.boxShadow="0 0 9px "+color; }
+  layer.appendChild(d);
+  requestAnimationFrame(()=>{ d.style.transform=`translate(-50%,-50%) translate(${(x1-x0).toFixed(1)}px,${(y1-y0).toFixed(1)}px) scale(.55)`; d.style.opacity="0"; });
+  setTimeout(()=>d.remove(), 460);
+}
+
+/* -------------------- layout + render the graph -------------------- */
+const COLW = 168, ROWH = 86, NODE_W = 124, PADX = 18, PADY = 14;
+function layout(topo){
+  const depth = new Map();
+  const dof = v => { if(depth.has(v)) return depth.get(v); const d = v.prev.length ? 1+Math.max(...v.prev.map(dof)) : 0; depth.set(v,d); return d; };
+  topo.forEach(dof);
+  const maxD = Math.max(...topo.map(v=>depth.get(v)));
+  const cols = {}; topo.forEach(v=>{ const d=depth.get(v); (cols[d]=cols[d]||[]).push(v); });
+  // order each column by mean child row to reduce crossings
+  const row = new Map();
+  for(let d=0; d<=maxD; d++){
+    const col = cols[d]||[];
+    col.sort((p,q)=>{ const mp=p.prev.length?p.prev.reduce((s,c)=>s+(row.get(c)??0),0)/p.prev.length:0;
+                      const mq=q.prev.length?q.prev.reduce((s,c)=>s+(row.get(c)??0),0)/q.prev.length:0; return mp-mq; });
+    col.forEach((v,i)=>row.set(v,i));
+    cols[d]=col;
+  }
+  const maxRows = Math.max(...Object.values(cols).map(c=>c.length));
+  const pos = new Map();
+  for(let d=0; d<=maxD; d++){
+    const col=cols[d]; const off=(maxRows-col.length)/2;
+    col.forEach((v,i)=>{ pos.set(v, { x: PADX + d*COLW, y: PADY + (off+i)*ROWH }); });
+  }
+  return { pos, depth, width: PADX*2 + maxD*COLW + NODE_W, height: PADY*2 + maxRows*ROWH };
+}
+const opSym = v => v.op.startsWith("**") ? "x"+supers(v.op.slice(2)) : v.op;
+function supers(s){ const M={"-":"⁻","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","0":"⁰",".":"·"}; return [...s].map(c=>M[c]||c).join(""); }
+
+function renderGraph(opts){
+  const { showAllData=false, gradMode="none" } = opts||{};   // gradMode: none | seed | all
+  const topo = state.topo;
+  const L = layout(topo);
+  const wrap = document.createElement("div"); wrap.className="graphwrap"; wrap.style.height=(L.height+6)+"px";
+  const inner = document.createElement("div"); inner.style.position="relative"; inner.style.width=L.width+"px"; inner.style.height=L.height+"px";
+  // edges svg
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(NS,"svg"); svg.setAttribute("class","edges"); svg.setAttribute("width",L.width); svg.setAttribute("height",L.height);
+  topo.forEach(v=>{ const pp=L.pos.get(v);
+    v.prev.forEach(c=>{ const cp=L.pos.get(c);
+      const x1=cp.x+NODE_W, y1=cp.y+ROWH*0.32, x2=pp.x-14, y2=pp.y+ROWH*0.32, mx=(x1+x2)/2;
+      const path=document.createElementNS(NS,"path");
+      path.setAttribute("d",`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`);
+      path.setAttribute("class","ed"); path.setAttribute("id",`ed_${c.id}_${v.id}`); svg.appendChild(path);
+    });
+  });
+  inner.appendChild(svg);
+  // nodes
+  topo.forEach(v=>{ const p=L.pos.get(v);
+    const isLeaf=v.prev.length===0, isOut=(v===state.root);
+    const n=document.createElement("div");
+    n.className="node"+(isLeaf?" leaf":"")+(isOut?" out":"");
+    n.id="nd_"+v.id; n.style.left=p.x+"px"; n.style.top=p.y+"px";
+    const lab = v.label || (v.op||"·");
+    const role = isLeaf ? roleOf(v.label) : "";
+    const dataShown = showAllData || isLeaf;
+    let gradShown=false, gradVal=0;
+    if(gradMode==="all"){ gradShown=true; gradVal=v._finalGrad??v.grad; }
+    else if(gradMode==="seed"){ if(isOut){ gradShown=true; gradVal=1; } }
+    n.innerHTML =
+      `<div class="nlabel" title="${lab}${role?' — '+role:''}">${lab}${role?` <span class="rl">${role}</span>`:''}${isOut?' <span class="rl">◂ out</span>':''}</div>`+
+      `<div class="nrow"><span class="k">data</span><span class="vd ${dataShown?'':'hid'}">${dataShown?fx(v.data):'·'}</span></div>`+
+      `<div class="nrow"><span class="k">grad</span><span class="vg ${gradShown?'':'hid'}">${gradShown?fx(gradVal):'·'}</span></div>`;
+    inner.appendChild(n);
+    if(v.op){ const b=document.createElement("div"); b.className="opbadge"+(opSym(v).length>2?" sm":""); b.id="op_"+v.id;
+      b.style.left=(p.x-14)+"px"; b.style.top=(p.y+ROWH*0.32)+"px"; b.textContent=opSym(v); inner.appendChild(b); }
+  });
+  wrap.appendChild(inner);
+  $("stage").innerHTML=""; $("stage").appendChild(wrap);
+  const fl=document.createElement("div"); fl.className="flowlayer"; $("stage").appendChild(fl);
+  return L;
+}
+function revealNode(v){ nd(v)?.classList.add("shown"); if(v.op) opb(v)?.classList.add("shown"); }
+function revealAll(){ state.topo.forEach(revealNode); }
+
+/* -------------------- local-derivative narration for the backward pass -------------------- */
+function contribs(v){
+  // returns [{child, tex, delta}] describing how v pushes grad into each child
+  const g = v.grad, out=[];
+  const lab = c => c.label || c.op || "·";
+  if(v.op==='+'){ v.prev.forEach(c=>out.push({child:c, tex:`1\\cdot(${fx(g)})`, delta:g})); }
+  else if(v.op==='*'){ const [a,b]=v.prev; out.push({child:a, tex:`${fx(b.data)}\\cdot(${fx(g)})`, delta:b.data*g});
+                       out.push({child:b, tex:`${fx(a.data)}\\cdot(${fx(g)})`, delta:a.data*g}); }
+  else if(v.op.startsWith('**')){ const n=v._pow, c=v.prev[0]; const local=n*Math.pow(c.data,n-1);
+                       out.push({child:c, tex:`${n}\\,(${fx(c.data)})^{${n-1}}\\cdot(${fx(g)})`, delta:local*g}); }
+  else if(v.op==='tanh'){ const c=v.prev[0]; const local=1-v.data*v.data;
+                       out.push({child:c, tex:`(1-${fx(v.data)}^2)\\cdot(${fx(g)})`, delta:local*g}); }
+  else if(v.op==='exp'){ const c=v.prev[0]; out.push({child:c, tex:`${fx(v.data)}\\cdot(${fx(g)})`, delta:v.data*g}); }
+  else if(v.op==='relu'){ const c=v.prev[0]; const local=c.data>0?1:0;
+                       out.push({child:c, tex:`${local}\\cdot(${fx(g)})`, delta:local*g}); }
+  return out;
+}
+function texName(v){ return v.label ? `\\text{${v.label}}` : `\\text{${v.op||'·'}}`; }
+
+/* -------------------- explore: hover a node to inspect it -------------------- */
+function enableExplore(){
+  state.topo.forEach(v=>{ const n=nd(v); if(!n) return;
+    n.style.cursor="crosshair";
+    n.onmouseenter=()=>{ if(RUNNING&&!PAUSED) return; clearHot();
+      hotF(v,true); v.prev.forEach(c=>{ hotB(c,true); litEdge(c,v,"litf"); });
+      if(v.op){ const parts=contribs(v).map(ct=>`\\frac{\\partial L}{\\partial ${texName(ct.child)}}\\!+\\!=${ct.tex}`).join(",\\ ");
+        setEq(`${texName(v)}:\\ \\text{data}=${fx(v.data)},\\ \\frac{\\partial L}{\\partial ${texName(v)}}=${fx(v._finalGrad??v.grad)}\\quad ${parts}`); }
+      else setEq(`${texName(v)}:\\ \\text{data}=${fx(v.data)},\\ \\frac{\\partial L}{\\partial ${texName(v)}}=${fx(v._finalGrad??v.grad)}`);
+    };
+    n.onmouseleave=()=>{ if(RUNNING&&!PAUSED) return; clearHot(); };
+  });
+}
+
+/* ============================================================ stage driver ============================================================ */
+async function animateStage(id, run){
+  const S=STAGES[id];
+  $("stageno").textContent="Stage "+String(id).padStart(2,"0")+" · "+state.topo.length+" nodes";
+  $("stagetitle").textContent=S.title; $("stagedesc").textContent=S.desc;
+  $("hint").innerHTML = id>=4 ? "When it settles, <b>hover any node</b> to inspect its value, gradient and local rule." : "";
+  renderNav();
+
+  if(id===0){
+    renderGraph({ showAllData:false, gradMode:"none" });
+    setEqIdle("a graph of Value nodes — data flows up, gradients will flow back down");
+    for(const v of state.topo){
+      revealNode(v);
+      setEq(`${texName(v)}${v.op?` = \\texttt{${v.op==='+'?'a+b':v.op==='*'?'a*b':v.op.startsWith('**')?'a'+v.op:v.op+'(a)'}}`:`\\ \\text{(leaf input)}`}`, null);
+      await step(150, run);
+    }
+    clearHot();
+    const roleList=Object.keys(state.leaves).filter(nm=>roleOf(nm)).map(nm=>`<b>${nm}</b> = ${roleOf(nm)}`).join(" · ");
+    $("stage").insertAdjacentHTML("beforeend",
+      `<div class="caption">Dashed nodes are <b>leaves</b> — the inputs/parameters we differentiate with respect to. The amber circles are the <span class="s">operations</span>. The outlined node is the output <b>L</b>.`+
+      (roleList?`<br>What each leaf means: ${roleList}.`:``)+`</div>`);
+  }
+
+  else if(id===1){
+    renderGraph({ showAllData:false, gradMode:"none" }); revealAll(); clearHot();
+    setEq("\\text{forward: each node = its operation applied to its children}","fwd");
+    await step(250, run);
+    for(const v of state.topo){
+      if(v.prev.length===0) continue;
+      clearHot(); hotF(v,true);
+      v.prev.forEach(c=>{ hotB(c,true); litEdge(c,v,"litf"); flow(c, v, getCSS("--signal")); });
+      const ch=v.prev;
+      let rhs;
+      if(v.op==='+') rhs=`${fx(ch[0].data)} + ${fx(ch[1].data)}`;
+      else if(v.op==='*') rhs=`${fx(ch[0].data)} \\times ${fx(ch[1].data)}`;
+      else if(v.op.startsWith('**')) rhs=`(${fx(ch[0].data)})^{${v._pow}}`;
+      else rhs=`\\${v.op==='tanh'?'tanh':v.op==='exp'?'exp':v.op}(${fx(ch[0].data)})`;
+      setEq(`${texName(v)} = ${rhs} = ${fx(v.data)}`,"fwd");
+      await step(230, run);
+      showData(v, true);
+      await step(120, run);
+    }
+    clearHot();
+    setEq(`${texName(state.root)} = ${fx(state.root.data)}\\quad\\text{(the output value)}`,"fwd");
+    $("stage").insertAdjacentHTML("beforeend",
+      `<div class="caption">The forward pass is just ordinary arithmetic. The interesting part — the gradients — comes next.</div>`);
+  }
+
+  else if(id===2){
+    renderGraph({ showAllData:true, gradMode:"none" }); revealAll(); clearHot();
+    setEq("\\text{the output's derivative w.r.t. itself is }1","bwd");
+    await step(400, run);
+    hotB(state.root,true);
+    showGrad(state.root, 1, true);
+    setEq(`\\frac{\\partial L}{\\partial L} = 1`,"bwd");
+    await step(300, run);
+    $("stage").insertAdjacentHTML("beforeend",
+      `<div class="caption">This single <span class="g">1.0</span> at the output is the seed. Every other gradient is built from it by the chain rule.</div>`);
+  }
+
+  else if(id===3){
+    renderGraph({ showAllData:true, gradMode:"seed" }); revealAll(); clearHot();
+    // reset grads, seed, then accumulate in reverse topo order, narrating each
+    state.topo.forEach(v=>v.grad=0); state.root.grad=1;
+    hotB(state.root,true); await step(260, run);
+    for(let i=state.topo.length-1; i>=0; i--){
+      const v=state.topo[i];
+      if(v.prev.length===0) continue;
+      clearHot(); hotB(v,true);
+      const cs=contribs(v);
+      // narrate each child contribution
+      for(const ct of cs){
+        hotF(ct.child,true); litEdge(ct.child, v, "litb"); flow(v, ct.child, getCSS("--grad"));
+        setEq(`\\frac{\\partial L}{\\partial ${texName(ct.child)}}\\mathrel{+}= ${ct.tex} = ${fx(ct.delta)}`,"bwd");
+        await step(300, run);
+      }
+      v._backward();                                   // mutate (exact engine result)
+      cs.forEach(ct=>showGrad(ct.child, ct.child.grad, true));   // running totals
+      await step(120, run);
+    }
+    clearHot();
+    setEq("\\text{one reverse pass} \\Rightarrow \\text{every gradient is filled in}","bwd");
+    $("stage").insertAdjacentHTML("beforeend",
+      `<div class="caption">Nodes reached by more than one path <span class="g">accumulate</span> (the <code>+=</code>) — that is the multivariable chain rule. Compare <b>“shared a”</b> in the presets to see it add up.</div>`);
+  }
+
+  else if(id===4){
+    renderGraph({ showAllData:true, gradMode:"all" }); revealAll(); clearHot();
+    const leaves=Object.values(state.leaves);
+    setEq("\\text{the leaf gradients} = \\nabla_{\\text{inputs}}\\,L","bwd");
+    for(const v of leaves){ hotB(v,true);
+      setEq(`\\frac{\\partial L}{\\partial \\text{${v.label}}} = ${fx(v._finalGrad)}`,"bwd");
+      await step(360, run);
+    }
+    enableExplore();
+    const rows=leaves.map(v=>`\\frac{\\partial L}{\\partial \\text{${v.label}}}=${fx(v._finalGrad)}`).join(",\\quad ");
+    setEq(rows,"bwd");
+    $("stage").insertAdjacentHTML("beforeend",
+      `<div class="caption">Each leaf now knows how the output would change if you nudged it. A learning step is just <span class="s">value ← value − lr · grad</span>, repeated. <span class="g">Switch to “Learn to predict”</span> to watch this train a network.</div>`+
+      `<div class="legend"><span><span class="dotleg" style="background:var(--signal)"></span>forward (data)</span><span><span class="dotleg" style="background:var(--grad)"></span>backward (grad)</span><span>dashed = leaf input</span></div>`);
+    const cap=document.createElement("div"); cap.className="endcap";
+    cap.textContent="▸ backpropagation complete — gradients ready for gradient descent"; $("stage").appendChild(cap);
+  }
+}
+function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||"#F5A524"; }
+
+/* ============================================================ TRAIN MODE ============================================================ */
+function makeRng(seed){ let a=seed>>>0; return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+class Neuron{ constructor(nin,rng){ this.w=[]; for(let i=0;i<nin;i++) this.w.push(new Value(rng()*2-1)); this.b=new Value(rng()*2-1); }
+  call(x){ let act=this.b; for(let i=0;i<this.w.length;i++) act=act.add(this.w[i].mul(x[i])); return act.tanh(); }
+  params(){ return [...this.w,this.b]; } }
+class Layer{ constructor(nin,nout,rng){ this.neurons=[]; for(let i=0;i<nout;i++) this.neurons.push(new Neuron(nin,rng)); }
+  call(x){ const o=this.neurons.map(n=>n.call(x)); return o.length===1?o[0]:o; } params(){ return this.neurons.flatMap(n=>n.params()); } }
+class MLP{ constructor(nin,nouts,rng){ const sz=[nin,...nouts]; this.layers=[]; for(let i=0;i<nouts.length;i++) this.layers.push(new Layer(sz[i],sz[i+1],rng)); this.shape=[nin,...nouts]; }
+  call(x){ let v=x.map(e=>e instanceof Value?e:new Value(e)); for(const l of this.layers) v=l.call(v); return v; } params(){ return this.layers.flatMap(l=>l.params()); } }
+const XS=[[2,3,-1],[3,-1,0.5],[0.5,1,1],[1,1,-1]], YS=[1,-1,-1,1];
+
+function newModel(){ state.model=new MLP(3,[4,4,1],makeRng(1337)); state.history=[]; state.trainStep=0; $("nparams").textContent=state.model.params().length; }
+
+function netSVG(){
+  const m=state.model, shape=m.shape, W=520, H=300, padX=46, padY=24;
+  const cols=shape.length, colX=i=>padX+i*((W-2*padX)/(cols-1));
+  const yc=(k,n)=>padY+(n===1?(H-2*padY)/2:k*((H-2*padY)/(n-1)));
+  // weight lookup: layer l connects shape[l] -> shape[l+1]; neuron j has w[i]
+  let edges="", nodes="";
+  let maxW=0.001; m.layers.forEach(l=>l.neurons.forEach(nr=>nr.w.forEach(w=>maxW=Math.max(maxW,Math.abs(w.data)))));
+  for(let l=0;l<m.layers.length;l++){
+    const nin=shape[l], nout=shape[l+1];
+    for(let j=0;j<nout;j++){ const nr=m.layers[l].neurons[j];
+      for(let i=0;i<nin;i++){ const w=nr.w[i].data; const t=Math.min(1,Math.abs(w)/maxW);
+        const col=w>=0?getCSS("--signal"):getCSS("--cool");
+        edges+=`<line x1="${colX(l).toFixed(1)}" y1="${yc(i,nin).toFixed(1)}" x2="${colX(l+1).toFixed(1)}" y2="${yc(j,nout).toFixed(1)}" stroke="${col}" stroke-width="${(0.4+t*3).toFixed(2)}" opacity="${(0.12+t*0.6).toFixed(2)}"/>`;
+      }
+    }
+  }
+  for(let c=0;c<cols;c++){ const n=shape[c];
+    for(let k=0;k<n;k++){ const x=colX(c),y=yc(k,n);
+      const fill=c===0?"#1b2233":c===cols-1?getCSS("--signal"):"#222c44";
+      nodes+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${c===0?9:11}" fill="${fill}" stroke="${c===cols-1?getCSS('--signal-2'):'#3b466a'}" stroke-width="1.5"/>`;
+    }
+    const lblY=H-2; const names=["input x","hidden (4)","hidden (4)","output ŷ"];
+    nodes+=`<text x="${colX(c).toFixed(1)}" y="${lblY}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#5C6680">${names[c]||""}</text>`;
+  }
+  return `<svg class="net" viewBox="0 0 ${W} ${H}">${edges}${nodes}</svg>`;
+}
+function lossSVG(){
+  const h=state.history, W=520, H=200, padX=40, padY=18;
+  if(h.length===0) return `<svg class="net" viewBox="0 0 ${W} ${H}"></svg>`;
+  const max=Math.max(...h), min=0, n=h.length;
+  const X=i=>padX+(n===1?0:i*((W-2*padX)/(n-1))), Y=v=>H-padY-(v-min)/((max-min)||1)*(H-2*padY);
+  const pts=h.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const grid=`<line x1="${padX}" y1="${H-padY}" x2="${W-padX}" y2="${H-padY}" stroke="#283251" stroke-width="1"/>`+
+             `<line x1="${padX}" y1="${padY}" x2="${padX}" y2="${H-padY}" stroke="#283251" stroke-width="1"/>`;
+  const lab=`<text x="${padX}" y="${padY-4}" font-family="JetBrains Mono,monospace" font-size="9" fill="#5C6680">loss ${fx(max,2)}</text>`+
+            `<text x="${W-padX}" y="${H-4}" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="9" fill="#5C6680">step ${n-1}</text>`;
+  const dotLast=`<circle cx="${X(n-1).toFixed(1)}" cy="${Y(h[n-1]).toFixed(1)}" r="3.5" fill="${getCSS('--signal')}"/>`;
+  return `<svg class="net" viewBox="0 0 ${W} ${H}">${grid}<polyline points="${pts}" fill="none" stroke="${getCSS('--signal')}" stroke-width="2"/>${dotLast}${lab}</svg>`;
+}
+function predBars(){
+  const m=state.model; let html="";
+  for(let i=0;i<XS.length;i++){
+    const pred=m.call(XS[i]).data, tgt=YS[i], correct=(pred>0)===(tgt>0);
+    const col=correct?getCSS("--good"):getCSS("--bad");
+    const half=Math.min(1,Math.abs(pred))*50;            // % of half-track
+    const left=pred>=0?50:50-half, w=half;
+    html+=`<div class="brow"><span class="bw">x=[${XS[i].join(",")}] → ${tgt>0?'+1':'−1'}</span>`+
+      `<div class="btrack"><div class="bmid"></div><div class="bfill" style="left:${left}%;width:${w}%;background:${col}"></div></div>`+
+      `<span class="bp" style="color:${col}">${fx(pred)} ${correct?'✓':'✗'}</span></div>`;
+  }
+  return html;
+}
+function renderTrain(){
+  $("stage").innerHTML =
+    `<div class="train">`+
+      `<div class="card"><h3>The network — weights as it learns</h3><div class="sub">amber = positive weight · blue = negative · thickness = |w|</div><div id="netbox">${netSVG()}</div></div>`+
+      `<div style="display:flex;flex-direction:column;gap:22px">`+
+        `<div class="card"><h3>Loss  L = Σ(ŷ − y)²</h3><div class="sub">mean-squared error over the 4 training points</div><div id="lossbox">${lossSVG()}</div><div class="lossnum" id="lossnum">${state.history.length?('loss = '+fx(state.history[state.history.length-1],4)+'  ·  step '+(state.history.length-1)):'press play to train'}</div></div>`+
+        `<div class="card"><h3>Predictions</h3><div class="sub">each ŷ = tanh(...) should reach its ±1 target</div><div class="barchart" id="predbox">${predBars()}</div></div>`+
+      `</div>`+
+    `</div>`;
+}
+function updateTrainViews(){
+  const nb=$("netbox"); if(nb) nb.innerHTML=netSVG();
+  const lb=$("lossbox"); if(lb) lb.innerHTML=lossSVG();
+  const pb=$("predbox"); if(pb) pb.innerHTML=predBars();
+  const ln=$("lossnum"); if(ln && state.history.length) ln.textContent='loss = '+fx(state.history[state.history.length-1],4)+'  ·  step '+(state.history.length-1);
+}
+async function trainLoop(run){
+  RUNNING=true; PAUSED=false; SKIP=false; setPlayLabel();
+  const m=state.model, MAXSTEPS=80;
+  if(state.history.length===0){ const l0=lossOf(m); state.history.push(l0.data); updateTrainViews(); }
+  try{
+    while(state.trainStep<MAXSTEPS){
+      const L=lossOf(m);
+      for(const p of m.params()) p.grad=0;
+      L.backward();
+      for(const p of m.params()) p.data += -state.lr*p.grad;
+      state.trainStep++; state.history.push(L.data);
+      setEq(`\\text{step }${state.trainStep}:\\ L=${fx(L.data,4)} \\Rightarrow \\theta \\leftarrow \\theta - ${state.lr}\\,\\nabla_\\theta L`,"bwd");
+      updateTrainViews();
+      await step(120, run);
+      if(run!==RUN) return;
+    }
+  }catch(e){ return; }
+  RUNNING=false; setPlayLabel();
+  const preds=XS.map(x=>state.model.call(x).data); const ok=preds.every((p,i)=>(p>0)===(YS[i]>0));
+  setEq(`\\text{trained: } L=${fx(state.history[state.history.length-1],4)}${ok?',\\ \\text{all 4 predictions correct}':''}`,"bwd");
+  $("stage").insertAdjacentHTML("beforeend",`<div class="endcap" style="margin:14px 4px 0">▸ the same backward pass from the graph view, run 80×, now predicts every point</div>`);
+}
+function lossOf(m){ const preds=XS.map(x=>m.call(x)); return preds.map((yp,i)=>yp.sub(YS[i]).pow(2)).reduce((a,b)=>a.add(b)); }
+
+/* ============================================================ orchestration ============================================================ */
+function renderNav(){
+  $("nav").innerHTML=STAGES.map(s=>{
+    const cls=(s.id===state.stage?"on":(s.id<state.stage?"done":""));
+    return`<button class="navitem ${cls}" data-stage="${s.id}"><span class="ix">${String(s.id).padStart(2,"0")}</span><span class="nm">${s.name}</span></button>`;
+  }).join("");
+  $("nav").querySelectorAll(".navitem").forEach(b=>b.onclick=()=>jumpStage(+b.dataset.stage));
+  $("prev").disabled=state.mode==="graph"&&state.stage===0;
+  $("next").disabled=state.mode==="graph"&&state.stage===STAGES.length-1;
+}
+function setPlayLabel(){ $("play").innerHTML=RUNNING&&!PAUSED?"❚❚ Pause":(state.mode==="train"?"▶ Train":"▶ Play"); }
+
+/* ---- graph mode: build from current expr + vars ---- */
+function buildGraph(){
+  $("experr").style.display="none"; $("expr").classList.remove("bad");
+  try{
+    _uid=0;
+    const { root, leaves }=parseExpr(state.expr, state.vars);
+    state.root=root; state.leaves=leaves; state.topo=root.topo();
+    // compute final grads once for display/explore, then leave data intact
+    root.backward(); state.topo.forEach(v=>v._finalGrad=v.grad);
+    state.topo.forEach(v=>v.grad=0);
+    return true;
+  }catch(e){
+    $("experr").style.display=""; $("experr").textContent="⚠ "+e; $("expr").classList.add("bad");
+    return false;
+  }
+}
+function renderVars(){
+  const names=Object.keys(state.leaves);
+  $("vars").innerHTML=names.map(nm=>{ const r=roleOf(nm);
+    return `<div class="varrow"><label>${nm}</label><input data-v="${nm}" type="number" step="any" value="${state.vars[nm]}"><span class="vrole">${r||''}</span></div>`;
+  }).join("")||`<div class="err" style="color:var(--muted-2)">no named leaves — add variables like a, b, x1…</div>`;
+  $("vars").querySelectorAll("input").forEach(inp=>inp.oninput=()=>{ const nm=inp.dataset.v; const val=parseFloat(inp.value); if(!isNaN(val)){ state.vars[nm]=val; rebuildGraph(); } });
+  const g=Object.entries(state.leaves).map(([k,v])=>`<span>${k}=<b>${fx(v.data)}</b></span>`).join("");
+  $("gparams").innerHTML=g;
+}
+function rebuildGraph(){
+  RUN++; RUNNING=false; PAUSED=false;
+  if(!buildGraph()){ return; }
+  renderVars(); renderNav(); setPlayLabel(); syncHash();
+  runSingle(state.stage>=STAGES.length?0:state.stage);
+}
+function renderPresets(){
+  $("presets").innerHTML=Object.keys(PRESETS).map(k=>`<span class="chip" data-p="${k}">${k}</span>`).join("");
+  $("presets").querySelectorAll(".chip").forEach(c=>c.onclick=()=>{
+    const pr=PRESETS[c.dataset.p]; state.expr=pr.expr; state.vars={...pr.vars}; state.roles={...(pr.roles||{})}; $("expr").value=pr.expr;
+    state.stage=0; rebuildGraph();
+  });
+}
+
+async function runSingle(id){
+  if(state.mode==="train"){ renderTrain(); return; }
+  RUN++; const run=RUN; RUNNING=true; PAUSED=false; SKIP=false; state.stage=id; setPlayLabel();
+  try{ await animateStage(id, run); }catch(e){ if(e!=="cancel") console.error("stage error:",e); if(run===RUN){ RUNNING=false; setPlayLabel(); } return; }
+  if(run===RUN){ RUNNING=false; setPlayLabel(); }
+}
+function skipStage(){
+  if(state.mode==="train"){ // finish training instantly
+    RUN++; const run=RUN; const prev=SPEED; SKIP=true;
+    trainLoop(run).then(()=>{ SKIP=false; }); return;
+  }
+  RUN++; const run=RUN; SKIP=true; RUNNING=false; PAUSED=false; setPlayLabel();
+  animateStage(state.stage, run).catch(()=>{}).then(()=>{ if(run===RUN) SKIP=false; });
+}
+async function playAll(){
+  RUN++; const run=RUN; RUNNING=true; PAUSED=false; SKIP=false; setPlayLabel();
+  try{ for(let s=state.stage; s<STAGES.length; s++){ state.stage=s; renderNav(); syncHash(); await animateStage(s,run); if(run!==RUN) return; if(s<STAGES.length-1) await step(520,run); } }
+  catch(e){ return; }
+  if(run===RUN){ RUNNING=false; PAUSED=false; setPlayLabel(); }
+}
+function onPlay(){
+  if(state.mode==="train"){
+    if(RUNNING){ PAUSED=!PAUSED; setPlayLabel(); return; }
+    RUN++; trainLoop(RUN); return;
+  }
+  if(RUNNING){ PAUSED=!PAUSED; setPlayLabel(); return; }
+  if(state.stage===STAGES.length-1) state.stage=0;
+  playAll();
+}
+function jumpStage(id){ if(state.mode!=="graph") return; RUN++; state.stage=id; renderNav(); syncHash(); runSingle(id); }
+function gotoPrev(){ if(state.mode==="train"){ if(state.trainStep>0){ trainStepBy(-1);} return; } if(state.stage>0) jumpStage(state.stage-1); }
+function gotoNext(){ if(state.mode==="train"){ trainStepBy(1); return; } if(state.stage<STAGES.length-1) jumpStage(state.stage+1); }
+function trainStepBy(d){
+  RUN++; RUNNING=false; setPlayLabel();
+  if(d>0){ const m=state.model; const L=lossOf(m); for(const p of m.params()) p.grad=0; L.backward(); for(const p of m.params()) p.data+=-state.lr*p.grad; state.trainStep++; state.history.push(L.data);
+    setEq(`\\text{step }${state.trainStep}:\\ L=${fx(L.data,4)}`,"bwd"); updateTrainViews(); }
+  else { // step back = reinit and replay to trainStep-1 (cheap: just reset since deterministic)
+    const target=Math.max(0,state.trainStep-1); newModel(); const m=state.model;
+    const l0=lossOf(m); state.history.push(l0.data);
+    for(let s=0;s<target;s++){ const L=lossOf(m); for(const p of m.params()) p.grad=0; L.backward(); for(const p of m.params()) p.data+=-state.lr*p.grad; state.history.push(L.data); }
+    state.trainStep=target; updateTrainViews();
+  }
+}
+function resetOrReplay(){
+  if(state.mode==="train"){ RUN++; RUNNING=false; PAUSED=false; setPlayLabel(); newModel(); renderTrain(); setEqIdle("press play to train"); return; }
+  jumpStage(state.stage);
+}
+
+function setMode(m){
+  if(m===state.mode) return;
+  RUN++; RUNNING=false; PAUSED=false; state.mode=m;
+  document.querySelectorAll(".gmode").forEach(e=>e.style.display=m==="graph"?"":"none");
+  document.querySelectorAll(".tmode").forEach(e=>e.style.display=m==="train"?"":"none");
+  $("modeseg").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.m===m));
+  setPlayLabel(); syncHash();
+  if(m==="train"){ if(!state.model) newModel(); $("stageno").textContent="Gradient descent · 4 points";
+    $("stagetitle").textContent="Learning to predict"; $("stagedesc").textContent="The same engine, scaled up: an MLP (3→4→4→1) trained by gradient descent. Each step runs a forward pass, one backward pass (exactly the graph view), and nudges every weight downhill. Watch the loss fall and the four predictions snap to their ±1 targets.";
+    $("hint").innerHTML="<b>Play</b> trains 80 steps · <b>◂ ▸</b> single-step · <b>⟲</b> re-initializes the weights.";
+    renderTrain(); setEqIdle("press play to train"); }
+  else { $("hint").innerHTML=""; rebuildGraph(); }
+}
+
+/* ---- URL hash sync ---- */
+function syncHash(){ try{ const h = state.mode==="train" ? `#m=train` : `#m=graph&e=${encodeURIComponent(state.expr)}&st=${state.stage}`; history.replaceState(null,"",h); }catch(e){} }
+function readHash(){
+  try{ const raw=location.hash.replace(/^#/,""); if(!raw) return null; const p={}; raw.split("&").forEach(kv=>{ const i=kv.indexOf("="); if(i>0) p[kv.slice(0,i)]=decodeURIComponent(kv.slice(i+1)); }); return p; }catch(e){ return null; }
+}
+
+/* ============================================================ export (GIF + PNG) ============================================================ */
+let recording=false,_gifWorker=null;
+const BG=()=>getComputedStyle(document.body).backgroundColor||"#0A0D13";
+const APP=()=>document.querySelector(".app");
+function expStat(msg,err){ const e=$("expstat"); if(!e) return; if(!msg){ e.style.display="none"; return; } e.style.display=""; e.classList.toggle("err",!!err); e.textContent=msg; }
+function downloadBlob(blob,name){ const u=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),5000); }
+function drawContain(ctx,img,W,H){ const s=Math.min(W/img.width,H/img.height); const w=img.width*s,h=img.height*s; ctx.drawImage(img,(W-w)/2,(H-h)/2,w,h); }
+function resetExpBtns(){ ["expgif","exppng"].forEach(id=>{ const b=$(id); if(b){ b.disabled=false; b.classList.remove("rec"); } }); }
+async function gifWorkerURL(){ if(_gifWorker) return _gifWorker; const r=await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js"); _gifWorker=URL.createObjectURL(new Blob([await r.text()],{type:"application/javascript"})); return _gifWorker; }
+async function snapPNG(){
+  if(!window.htmlToImage){ expStat("capture library not loaded — check your connection",true); return; }
+  expStat("rendering PNG…");
+  try{ const data=await htmlToImage.toPng(APP(),{pixelRatio:1.5,backgroundColor:BG(),cacheBust:false});
+    downloadBlob(await(await fetch(data)).blob(),`micrograd-window-${Date.now()}.png`); expStat("PNG downloaded."); }
+  catch(e){ expStat("snapshot failed: "+(e&&e.message||e),true); }
+}
+async function recordGIF(){
+  if(recording) return;
+  if(!window.GIF){ expStat("GIF library not loaded — check your connection",true); return; }
+  if(!window.htmlToImage){ expStat("capture library not loaded",true); return; }
+  recording=true; PAUSED=false; SKIP=false;
+  $("expgif").disabled=$("exppng").disabled=true; $("expgif").classList.add("rec"); expStat("preparing…");
+  let workerURL; try{ workerURL=await gifWorkerURL(); }catch(e){ expStat("couldn't load GIF worker: "+(e&&e.message||e),true); recording=false; resetExpBtns(); return; }
+  const node=APP(),rect=node.getBoundingClientRect();
+  const W=Math.min(1000,Math.round(rect.width)),scale=W/rect.width,H=Math.min(1300,Math.round(rect.height*scale));
+  const frame=document.createElement("canvas"); frame.width=W; frame.height=H; const fctx=frame.getContext("2d");
+  const gif=new GIF({workers:2,quality:12,width:W,height:H,workerScript:workerURL,background:"#0A0D13"});
+  let capturing=true,frames=0,last=performance.now();
+  const cap=(async()=>{ while(capturing){ try{ const snap=await htmlToImage.toCanvas(node,{pixelRatio:scale,cacheBust:false,backgroundColor:BG()});
+        fctx.fillStyle=BG(); fctx.fillRect(0,0,W,H); drawContain(fctx,snap,W,H);
+        const now=performance.now(),delay=Math.max(60,Math.min(400,Math.round(now-last))); last=now;
+        gif.addFrame(fctx,{copy:true,delay}); frames++; if(frames%4===0)expStat(`capturing… ${frames} frames`);
+      }catch(e){} await sleep(110); } })();
+  RUN++; const r=RUN; expStat("recording this stage…");
+  try{ if(state.mode==="train"){ newModel(); renderTrain(); await trainLoop(r); } else await animateStage(state.stage,r); }catch(e){}
+  await sleep(450); capturing=false; await cap;
+  if(!frames){ expStat("no frames captured — your browser may block canvas capture (try Chrome).",true); recording=false; resetExpBtns(); return; }
+  expStat(`encoding GIF… ${frames} frames`);
+  gif.on("progress",p=>expStat(`encoding GIF… ${Math.round(p*100)}%`));
+  gif.on("finished",blob=>{ recording=false; resetExpBtns(); expStat(`done — ${(blob.size/1048576).toFixed(1)} MB, ${frames} frames.`); downloadBlob(blob,`micrograd-${Date.now()}.gif`); });
+  gif.render();
+}
+
+/* ============================================================ wiring ============================================================ */
+$("expr").addEventListener("input",()=>{ state.expr=$("expr").value.trim(); state.roles=rolesFor(state.expr); state.stage=0; rebuildGraph(); });
+$("modeseg").querySelectorAll("button").forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+$("lrseg").querySelectorAll("button").forEach(b=>b.onclick=()=>{ state.lr=+b.dataset.lr; $("lrseg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); });
+$("play").onclick=onPlay; $("prev").onclick=gotoPrev; $("next").onclick=gotoNext; $("replay").onclick=resetOrReplay; $("skip").onclick=skipStage;
+$("speed").querySelectorAll("button").forEach(b=>b.onclick=()=>{ SPEED=+b.dataset.s; $("speed").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); });
+$("expgif").onclick=recordGIF; $("exppng").onclick=snapPNG;
+$("copylink").onclick=()=>{ const btn=$("copylink"); const done=()=>{ btn.classList.add("copied"); btn.textContent="✓ Link copied"; setTimeout(()=>{ btn.classList.remove("copied"); btn.textContent="🔗 Copy link"; },1600); };
+  try{ navigator.clipboard.writeText(location.href).then(done,done); }catch(e){ done(); } };
+document.addEventListener("keydown",e=>{ if(e.target.tagName==="INPUT") return;
+  if(e.key==="ArrowLeft")gotoPrev(); if(e.key==="ArrowRight")gotoNext(); if(e.key===" "){ e.preventDefault(); onPlay(); } if(e.key==="Enter")skipStage(); });
+
+/* ============================================================ boot ============================================================ */
+function boot(){
+  if(!window.katex){ setTimeout(boot,60); return; }
+  renderPresets();
+  const p=readHash();
+  state.expr=$("expr").value.trim();
+  state.vars={...PRESETS["neuron"].vars};
+  if(p && p.e){ state.expr=p.e; $("expr").value=p.e; /* keep default vars; unknown leaves default to 0 */ }
+  state.roles=rolesFor(state.expr);
+  buildGraph(); renderVars(); renderNav();
+  if(p && p.m==="train"){ setMode("train"); }
+  else { const st=p&&p.st!=null?+p.st:0; state.stage=(st>=0&&st<STAGES.length)?st:0; setPlayLabel(); runSingle(state.stage); }
+}
+boot();
+</script>
+</body>
+</html>

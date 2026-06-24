@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attention, Animated — watch a Transformer layer compute</title>
+<meta name="description" content="An interactive, in-browser visualizer that animates a full Transformer encoder layer — embeddings, positional encoding, multi-head attention, Add & Norm, feed-forward, and next-word prediction — computed cell by cell. By Abdulsamad Teniola Muyideen.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#0A0D13">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-Research/attention/">
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Attention, Animated — watch a Transformer layer compute">
+<meta property="og:description" content="Type a sentence and watch self-attention compute, cell by cell — through to next-word prediction. An interactive paper-with-code by Abdulsamad Teniola Muyideen.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-Research/attention/">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-Research/attention/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Attention, Animated — watch a Transformer layer compute">
+<meta name="twitter:description" content="Type a sentence and watch self-attention compute, cell by cell — through to next-word prediction.">
+<meta name="twitter:image" content="https://th3samaritan.github.io/AI-Research/attention/preview.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0D13;--chrome:#0F131D;--panel:#141A28;--panel-2:#19202F;
+    --line:#262E43;--line-soft:#1C2333;--txt:#E8ECF5;--muted:#8B95AC;--muted-2:#5C6680;
+    --signal:#F5A524;--signal-2:#FFC85C;--signal-dim:#F5A52426;
+    --cool:#5B8DEF;--good:#5BE3A6;--cellbg:#111726;--celledge:#283251;--radius:13px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{background:
+      radial-gradient(1100px 560px at 80% -8%,#17223c 0%,transparent 55%),
+      radial-gradient(900px 480px at -5% 108%,#1a1430 0%,transparent 52%),var(--ink);
+    color:var(--txt);font-family:"Space Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:300px 1fr;min-height:100vh}
+  @media(max-width:900px){.app{grid-template-columns:1fr}}
+
+  aside{background:linear-gradient(180deg,var(--chrome),var(--ink));border-right:1px solid var(--line);
+    padding:22px 19px 24px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+  @media(max-width:900px){aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--signal)}
+  .title{font-size:23px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:3px 0 0}
+  .title .thin{color:var(--muted)}
+  .byline{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);line-height:1.7;margin-top:2px}
+  .byline a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
+  .byline a:hover{color:var(--signal);border-color:var(--signal)}
+  .block{display:flex;flex-direction:column;gap:8px}
+  .lbl{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2)}
+  input#sent{background:var(--ink);border:1px solid var(--line);border-radius:10px;color:var(--txt);
+    font-family:"Space Grotesk",sans-serif;font-size:15px;padding:11px 12px;outline:none;width:100%;transition:.15s}
+  input#sent:focus{border-color:var(--signal);box-shadow:0 0 0 3px var(--signal-dim)}
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .chip{font-family:"JetBrains Mono",monospace;font-size:11px;padding:4px 8px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);transition:.2s}
+  .chip.lit{background:var(--signal);color:#241a04;border-color:var(--signal);font-weight:700}
+  .params{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px}
+  .params b{color:var(--signal);font-weight:500}
+  .trunc{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--signal);background:#241d0d;border:1px solid #4a3a12;border-radius:7px;padding:6px 9px;line-height:1.4}
+  .linkbtn{font-family:"JetBrains Mono",monospace;font-size:11px;background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer;transition:.14s;text-align:left}
+  .linkbtn:hover{border-color:var(--signal);color:var(--signal)}
+  .linkbtn.copied{border-color:var(--good);color:var(--good)}
+  .exprow{display:flex;gap:6px}
+  .expbtn{flex:1;font-family:"JetBrains Mono",monospace;font-size:11px;background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:8px 6px;cursor:pointer;transition:.14s;text-align:center}
+  .expbtn:hover{border-color:var(--signal);color:var(--signal)}
+  .expbtn:disabled{opacity:.4;cursor:not-allowed}
+  .expbtn.rec{border-color:#e5484d;color:#e5484d}
+  .expstat{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);line-height:1.5;background:#141a28;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+  .expstat.err{color:var(--signal)}
+
+  .seg{display:flex;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px}
+  .seg button{flex:1;background:transparent;border:none;color:var(--muted);font-family:"JetBrains Mono",monospace;font-size:11px;padding:7px 2px;border-radius:6px;cursor:pointer;transition:.14s}
+  .seg button.on{background:var(--panel-2);color:var(--signal);box-shadow:0 1px 0 #fff1 inset}
+
+  .transport{display:flex;gap:6px}
+  .tbtn{flex:1;font-family:"JetBrains Mono",monospace;font-size:13px;background:var(--panel-2);color:var(--txt);
+    border:1px solid var(--line);border-radius:9px;padding:10px 4px;cursor:pointer;transition:.14s}
+  .tbtn:hover{border-color:var(--muted);background:#1f2738}
+  .tbtn.play{flex:2;background:var(--signal);color:#241a04;border-color:var(--signal);font-weight:700;letter-spacing:.03em}
+  .tbtn.play:hover{filter:brightness(1.07)}
+  .tbtn:disabled{opacity:.34;cursor:not-allowed}
+  .tbtn:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+
+  .nav{display:flex;flex-direction:column;gap:1px}
+  .navitem{display:flex;align-items:center;gap:9px;background:transparent;border:none;border-radius:7px;padding:7px 9px;cursor:pointer;text-align:left;color:var(--muted);transition:.14s;width:100%}
+  .navitem:hover{background:#171f30;color:var(--txt)}
+  .navitem.on{background:linear-gradient(90deg,#1d263c,#161d2c);color:var(--txt)}
+  .navitem .ix{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);width:18px}
+  .navitem.on .ix{color:var(--signal)}.navitem.done .ix{color:var(--good)}
+  .navitem .nm{font-size:12.5px;font-weight:500}
+  .navitem.head .nm::after{content:" ·";color:var(--cool)}
+  .spacer{flex:1;min-height:6px}
+  .foot{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);line-height:1.7}
+  .foot a{color:var(--muted);text-decoration:none}.foot a:hover{color:var(--signal)}
+
+  main{padding:24px clamp(16px,4vw,44px) 70px;overflow-x:hidden;display:flex;flex-direction:column}
+  .head .stage-no{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal)}
+  .head h2{font-size:clamp(21px,3vw,29px);font-weight:700;letter-spacing:-.02em;margin:4px 0 4px}
+  .head p{color:var(--muted);font-size:14px;margin:0;max-width:74ch;line-height:1.55}
+
+  .bar{margin:16px 0 20px;min-height:56px;background:linear-gradient(180deg,#0d1320,#0b0f18);border:1px solid var(--line);
+    border-radius:12px;padding:13px 18px;display:flex;align-items:center;gap:13px;overflow-x:auto;box-shadow:0 1px 0 #ffffff08 inset}
+  .bar .tag{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted-2);flex:0 0 auto}
+  .bar .eq{flex:1;min-width:0}
+  .bar .katex{color:var(--txt)!important;font-size:1.04em}
+  .bar.idle .eq{color:var(--muted-2);font-family:"JetBrains Mono",monospace;font-size:13px}
+
+  #stage{position:relative}
+  .scene{display:flex;flex-wrap:wrap;align-items:center;gap:14px 20px;margin:6px 0 8px}
+  .scene+.scene{margin-top:22px}
+  .mblk{display:flex;flex-direction:column;gap:6px}
+  .mname{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
+  .mname .sz{color:var(--muted-2);font-size:9.5px}
+  .glyph{font-size:21px;color:var(--signal);font-family:"JetBrains Mono",monospace;align-self:center;opacity:.85}
+  .glyph.sm{font-size:13px}
+
+  table.mx{border-collapse:separate;border-spacing:5px;font-family:"JetBrains Mono",monospace;font-size:12px}
+  table.mx th{color:var(--muted-2);font-weight:500;font-size:9px;padding:0 2px;text-align:center;white-space:nowrap}
+  table.mx th.rh{text-align:right;padding-right:5px;color:var(--muted);font-size:9.5px}
+  td.cell{width:50px;height:34px;text-align:center;border-radius:7px;color:var(--txt);background:var(--cellbg);
+    border:1px solid var(--celledge);transition:background .18s,border-color .18s,transform .12s,color .18s;position:relative}
+  td.cell.empty{color:#2f3a55}td.cell.empty::after{content:"·"}
+  td.cell.hot{border-color:var(--signal);background:#241d0d;box-shadow:0 0 0 1px var(--signal) inset}
+  td.cell.ping{animation:ping .42s ease}
+  @keyframes ping{0%{transform:scale(1)}40%{transform:scale(1.16);background:#3a2e0c}100%{transform:scale(1)}}
+  td.cell.pop{animation:pop .44s cubic-bezier(.2,1.3,.4,1)}
+  @keyframes pop{0%{transform:scale(.4);opacity:0;color:var(--signal-2)}60%{color:var(--signal-2)}100%{transform:scale(1);opacity:1}}
+  td.cell.heatset{border:none;font-weight:600}
+  td.cell.zero{color:#46506e}
+
+  .flowlayer{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:6}
+  .dotfx{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--signal);box-shadow:0 0 9px var(--signal);
+    transform:translate(-50%,-50%);transition:transform .42s cubic-bezier(.4,.1,.3,1),opacity .42s ease;will-change:transform,opacity}
+
+  .legend{display:flex;align-items:center;gap:8px;font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);margin-top:12px}
+  .legbar{height:8px;width:118px;border-radius:5px;background:linear-gradient(90deg,#16205A,#1F7A8C,#F5A524)}
+  .caption{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted-2);margin-top:15px;line-height:1.6}
+  .caption b{color:var(--cool)}
+  .endcap{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--good);margin-top:18px;letter-spacing:.04em}
+  td.cell.explorable{cursor:crosshair}
+  td.cell.explorable:hover{border-color:var(--signal)}
+  .barchart{display:flex;flex-direction:column;gap:7px;margin-top:18px;max-width:480px}
+  .brow{display:flex;align-items:center;gap:11px;padding:4px 7px;border-radius:8px;transition:background .2s}
+  .brow.toprow{background:#241d0d;box-shadow:inset 0 0 0 1px var(--signal)}
+  .bw{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);width:82px;text-align:right}
+  .brow.toprow .bw{color:var(--signal-2)}
+  .btrack{flex:1;height:19px;background:var(--cellbg);border:1px solid var(--celledge);border-radius:6px;overflow:hidden}
+  .bfill{height:100%;width:0;background:linear-gradient(90deg,#1F7A8C,var(--signal));transition:width .55s cubic-bezier(.3,1,.4,1);border-radius:6px}
+  .brow.toprow .bfill{background:linear-gradient(90deg,var(--signal),var(--signal-2))}
+  .bp{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--txt);width:42px}
+  .hint{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);margin-top:7px}
+  .hint b{color:var(--cool)}
+  .arcseg{display:inline-flex;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px;margin:10px 0 4px}
+  .arcseg button{background:transparent;border:none;color:var(--muted);font-family:"JetBrains Mono",monospace;font-size:11px;padding:6px 12px;border-radius:6px;cursor:pointer;transition:.14s}
+  .arcseg button.on{background:var(--panel-2);color:var(--signal);box-shadow:0 1px 0 #fff1 inset}
+  .arcsvg{margin-top:6px;overflow:visible}
+  .arctok{font-family:"JetBrains Mono",monospace;font-size:12px;fill:var(--muted);cursor:pointer}
+  .arctok.lit{fill:var(--signal);font-weight:700}
+  .arcsvg path{transition:opacity .15s}
+  .realstatus{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);margin:14px 0;display:flex;align-items:center;gap:9px}
+  .realstatus .spin{width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--signal);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .realstatus.err{color:var(--signal)}
+  .realbadge{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--good);border:1px solid #2c5a44;background:#0e2018;border-radius:6px;padding:2px 7px;margin-left:8px}
+  @media(prefers-reduced-motion:reduce){td.cell.ping,td.cell.pop{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <div class="eyebrow">Transformer layer · animated</div>
+      <div class="title">Attention, <span class="thin">Animated</span></div>
+      <div class="byline">Abdulsamad Teniola Muyideen<br><a href="https://th3samaritan.github.io/My-Portfolio/" target="_blank" rel="noopener">th3samaritan</a></div>
+    </div>
+    <div class="block">
+      <span class="lbl">Input sentence</span>
+      <input id="sent" type="text" value="Thinking machines are powerful" autocomplete="off" spellcheck="false">
+      <div class="chips" id="chips"></div>
+      <div class="params" id="params"></div>
+      <div class="trunc" id="trunc" style="display:none"></div>
+      <button class="linkbtn" id="copylink" title="Copy a shareable link to this sentence">🔗 Copy link</button>
+    </div>
+    <div class="block">
+      <span class="lbl">Model</span>
+      <div class="seg" id="headcountseg"><button data-hc="2" class="on">2 heads · d_k 2</button><button data-hc="1">1 head · d 4</button></div>
+    </div>
+    <div class="block" id="headblock">
+      <span class="lbl">Attention head</span>
+      <div class="seg" id="headseg"><button data-h="0" class="on">Head 1</button><button data-h="1">Head 2</button></div>
+    </div>
+    <div class="block">
+      <span class="lbl">Next-word source</span>
+      <div class="seg" id="realseg"><button data-r="0" class="on">Toy vocab</button><button data-r="1">Real (distilgpt2)</button></div>
+    </div>
+    <div class="block">
+      <span class="lbl">Playback</span>
+      <div class="transport">
+        <button class="tbtn" id="prev" title="Previous stage">◂</button>
+        <button class="tbtn play" id="play" title="Play / pause">▶ Play</button>
+        <button class="tbtn" id="next" title="Next stage">▸</button>
+        <button class="tbtn" id="skip" title="Show this stage's result instantly">⏭</button>
+        <button class="tbtn" id="replay" title="Replay this stage">⟲</button>
+      </div>
+      <div class="seg" id="speed"><button data-s="0.5">0.5×</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button></div>
+    </div>
+    <div class="block">
+      <span class="lbl">Export</span>
+      <button class="expbtn" id="expgif">◉ Record stage → GIF</button>
+      <button class="expbtn" id="exppng">⤓ PNG of full window</button>
+      <div class="expstat" id="expstat" style="display:none"></div>
+    </div>
+    <div class="block">
+      <span class="lbl">Stages</span>
+      <div class="nav" id="nav"></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="foot">d_model = 4 · heads = 2 · d_k = 2<br>one full encoder layer → next-word, in-browser<br>
+      <a href="https://th3samaritan.github.io/My-Portfolio/" target="_blank" rel="noopener">th3samaritan.github.io</a> · v0.5</div>
+  </aside>
+
+  <main>
+    <div class="head">
+      <div class="stage-no" id="stageno"></div>
+      <h2 id="stagetitle"></h2>
+      <p id="stagedesc"></p>
+      <div class="hint">When a stage settles, <b>hover any filled cell</b> to replay its exact calculation.</div>
+    </div>
+    <div class="bar idle" id="bar"><span class="tag">live</span><span class="eq" id="eq">press play to watch it compute</span></div>
+    <div id="stage"></div>
+  </main>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Attention, Animated — one full Transformer encoder layer,
+   computed live in the browser. d_model = 4, heads = 2, d_k = 2.
+   ============================================================ */
+const D=4,MAX_TOK=8;
+/* two-head config (d_k = 2 each) */
+const WQ2=[ [[.5,-.2],[.1,.4],[-.2,.3],[.2,.1]], [[.1,.3],[.4,-.2],[.2,.5],[-.3,.1]] ];
+const WK2=[ [[.3,.2],[-.2,.5],[.4,-.1],[.1,.2]], [[.2,-.1],[.5,.2],[-.1,.3],[.2,.4]] ];
+const WV2=[ [[.2,.4],[.3,-.1],[-.1,.2],[.4,.1]], [[-.2,.3],[.4,.1],[.2,-.3],[.1,.5]] ];
+/* one-head config (d_k = 4) — clean √dₖ = 2 */
+const WQ1=[[.5,-.2,.1,.3],[.1,.4,-.3,.2],[-.2,.3,.5,-.1],[.2,.1,-.4,.5]];
+const WK1=[[.3,.2,-.1,.4],[-.2,.5,.2,-.1],[.4,-.1,.3,.2],[.1,.2,.4,-.3]];
+const WV1=[[.2,.4,.1,-.2],[.3,-.1,.4,.2],[-.1,.2,-.3,.5],[.4,.1,.2,.3]];
+const WO=[[.4,.1,-.2,.3],[.1,.5,.2,-.1],[-.2,.2,.4,.1],[.3,-.1,.1,.4]];
+const W1=[[.5,0,.2,.1],[.1,.4,0,.3],[.2,.2,.5,0],[0,.1,.3,.6]];
+const W2=[[.3,.1,0,.2],[0,.5,.2,.1],[.4,0,.3,.1],[.1,.2,.4,.3]];
+const CFG={2:{H:2,DK:2,WQ:WQ2,WK:WK2,WV:WV2,WO},1:{H:1,DK:4,WQ:[WQ1],WK:[WK1],WV:[WV1],WO}};
+
+function hash32(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h>>>0;}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function embed(t){const r=mulberry32(hash32(t.toLowerCase()));const v=[];for(let i=0;i<D;i++)v.push(Math.round(r()*100)/100);return v;}
+const dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0);
+const T=M=>M[0].map((_,j)=>M.map(r=>r[j]));
+const mm=(A,B)=>{const Bt=T(B);return A.map(r=>Bt.map(c=>dot(r,c)));};
+const addM=(A,B)=>A.map((r,i)=>r.map((x,j)=>x+B[i][j]));
+function smax(r){const m=Math.max(...r);const e=r.map(x=>Math.exp(x-m));const s=e.reduce((a,b)=>a+b,0);return e.map(x=>x/s);}
+function pe(i){return [Math.sin(i),Math.cos(i),Math.sin(i/100),Math.cos(i/100)].map(x=>Math.round(x*1000)/1000);}
+function lnRow(x){const mu=x.reduce((a,b)=>a+b,0)/x.length;const v=x.reduce((a,b)=>a+(b-mu)**2,0)/x.length;const s=Math.sqrt(v+1e-5);return{mu,sd:s,out:x.map(e=>(e-mu)/s)};}
+const ln=M=>M.map(r=>lnRow(r).out);
+const relu=M=>M.map(r=>r.map(x=>Math.max(0,x)));
+
+function compute(tokens,cfg){
+  const H=cfg.H,DK=cfg.DK,SQRT_DK=Math.sqrt(DK);
+  const E=tokens.map(embed), PE=tokens.map((_,i)=>pe(i)), X=addM(E,PE);
+  const heads=[];
+  for(let h=0;h<H;h++){
+    const Q=mm(X,cfg.WQ[h]),Kk=mm(X,cfg.WK[h]),V=mm(X,cfg.WV[h]),KT=T(Kk);
+    const sc=mm(Q,T(Kk)),scaled=sc.map(r=>r.map(x=>x/SQRT_DK)),w=scaled.map(smax),out=mm(w,V);
+    heads.push({Q,K:Kk,V,KT,sc,scaled,w,out});
+  }
+  const concat=X.map((_,i)=>{const row=[];for(let h=0;h<H;h++)for(const v of heads[h].out[i])row.push(v);return row;});
+  const MH=mm(concat,cfg.WO);
+  const res1=addM(X,MH),AN1=ln(res1);
+  const h1=mm(AN1,W1),hr=relu(h1),F=mm(hr,W2);
+  const res2=addM(AN1,F),OUT=ln(res2);
+  const VOCAB=["ideas","people","machines","future","systems","power"];
+  const WVOC=[[.6,-.2,.3,.1],[.1,.5,-.1,.2],[.3,.2,.4,-.2],[-.1,.3,.2,.5],[.2,-.1,.5,.3],[.4,.1,-.2,.4]];
+  const hlast=OUT[OUT.length-1];
+  const logits=WVOC.map(r=>dot(r,hlast));
+  const probs=smax(logits);
+  const predict={vocab:VOCAB,Wv:WVOC,hlast,logits,probs,idx:OUT.length-1,top:probs.indexOf(Math.max(...probs))};
+  return {E,PE,X,heads,concat,MH,res1,AN1,h1,hr,F,res2,OUT,predict,cfg:{H,DK}};
+}
+
+const STAGES=[
+  {id:0,name:"Embeddings",title:"Tokens become vectors",head:false,
+   desc:"Each word maps to a learned 4-dimensional vector. Watch each token's row fill in."},
+  {id:1,name:"Positional encoding",title:"Inject word order",head:false,
+   desc:"Attention has no built-in sense of order, so a sinusoidal position signal is added: X = E + PE."},
+  {id:2,name:"Q · K · V",title:"Project into queries, keys, values",head:true,
+   desc:"Each head projects X down into d_k = 2 dimensions. Every output cell is a dot product of an X row with a weight column."},
+  {id:3,name:"Scores",title:"Score queries against keys",head:true,
+   desc:"Q · Kᵀ. A query row and a key column light up and stream into each result cell as the dot product accumulates."},
+  {id:4,name:"Scale",title:"Divide by √dₖ",head:true,
+   desc:"d_k = 2, so each score is divided by √2 ≈ 1.41 to keep the softmax from saturating."},
+  {id:5,name:"Softmax",title:"Turn each row into attention",head:true,
+   desc:"Exponentiate and normalise each row so it sums to 1. The matrix blooms into a heatmap of where each word looks."},
+  {id:6,name:"Head output",title:"Blend the values",head:true,
+   desc:"weights · V gives this head's output. There are H = 2 heads — switch heads in the sidebar to watch the other."},
+  {id:7,name:"Multi-head merge",title:"Concatenate heads, mix with Wᴼ",head:false,
+   desc:"Both heads' outputs are concatenated back to width 4, then mixed by Wᴼ so the heads can interact."},
+  {id:8,name:"Add & Norm ①",title:"Residual + LayerNorm",head:false,
+   desc:"Add the input back (residual) and normalise each row to zero mean, unit variance — the glue that makes deep stacks trainable."},
+  {id:9,name:"Feed-forward",title:"Position-wise FFN",head:false,
+   desc:"Two linear layers with a ReLU between. Watch negatives clamp to zero in the middle."},
+  {id:10,name:"Add & Norm ②",title:"Residual + LayerNorm → layer output",head:false,
+   desc:"One more residual and norm. The result is the encoder layer's output — it becomes the input to the next layer."},
+  {id:11,name:"Next word",title:"Predict the next token",head:false,
+   desc:"The language-model head: project the last token's vector onto a toy vocabulary and softmax it into a probability over the next word."},
+];
+const di2=["d0","d1"], di4=["d0","d1","d2","d3"];
+
+/* ---- animation control ---- */
+let RUN=0,PAUSED=false,SPEED=1,RUNNING=false,SKIP=false;
+let state={tokens:[],model:null,stage:0,head:0,heads:2,real:false,text:""};
+const REDUCED=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $=id=>document.getElementById(id);
+const fx=(x,p=2)=>{const v=(+x).toFixed(p);return v==="-0.00"?"0.00":v;};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function step(ms,run){if(SKIP){if(run!==RUN)throw"cancel";return;}let rem=ms/SPEED;while(rem>0){if(run!==RUN)throw"cancel";if(PAUSED){await sleep(60);continue;}const t=Math.min(40,rem);await sleep(t);rem-=t;}if(run!==RUN)throw"cancel";}
+function K(t){try{return katex.renderToString(t,{displayMode:false,throwOnError:false});}catch(e){return t;}}
+function setEq(t){$("bar").classList.remove("idle");$("eq").innerHTML=K(t);}
+function setEqIdle(t){$("bar").classList.add("idle");$("eq").textContent=t;}
+function heat(t){const s=[[22,32,90],[31,122,140],[245,165,36]];const g=t<.5?0:1,lt=t<.5?t/.5:(t-.5)/.5,a=s[g],b=s[g+1];const c=[0,1,2].map(i=>Math.round(a[i]+(b[i]-a[i])*lt));return`rgb(${c[0]},${c[1]},${c[2]})`;}
+
+/* ---- matrix DOM ---- */
+function mxHTML(name,M,{rows,cols,empty=false,sz=""}={}){
+  const t=state.tokens, rl=rows||t, cl=cols||t;
+  let h=`<div class="mblk"><div class="mname">${name}${sz?`<span class="sz">${sz}</span>`:""}</div><table class="mx"><tr><th></th>`;
+  cl.forEach(c=>h+=`<th>${c}</th>`);h+=`</tr>`;
+  M.forEach((row,i)=>{h+=`<tr><th class="rh">${rl[i]}</th>`;row.forEach((v,j)=>{
+    h+=`<td class="cell ${empty?'empty':''}" id="${cid(name,i,j)}">${empty?'':fx(v)}</td>`;});h+=`</tr>`;});
+  return h+`</table></div>`;
+}
+const cid=(name,i,j)=>name.replace(/[^a-zA-Z0-9]/g,'')+"_"+i+"_"+j;
+const cell=(name,i,j)=>document.getElementById(cid(name,i,j));
+function hotRow(name,i,n){for(let d=0;d<n;d++)cell(name,i,d)?.classList.add("hot");}
+function hotCol(name,j,n){for(let d=0;d<n;d++)cell(name,d,j)?.classList.add("hot");}
+function clearHot(){document.querySelectorAll(".cell.hot").forEach(c=>c.classList.remove("hot"));}
+function ping(name,i,j){const c=cell(name,i,j);if(!c)return;c.classList.remove("ping");void c.offsetWidth;c.classList.add("ping");}
+function fillCell(name,i,j,val,bg,zero){const c=cell(name,i,j);if(!c)return;c.classList.remove("empty");c.textContent=val;
+  c.classList.remove("pop");void c.offsetWidth;c.classList.add("pop");
+  if(bg){c.classList.add("heatset");c.style.background=bg;c.style.color=( +val>0.55||/^0\.[6-9]/.test(val))?"#241a04":"#eef3ff";}
+  if(zero)c.classList.add("zero");}
+
+/* ---- flow trail: stream a cell into a target cell ---- */
+function flow(fromName,fi,fj,toName,ti,tj,color){
+  if(REDUCED)return;
+  const layer=$("stage").querySelector(".flowlayer");if(!layer)return;
+  const a=cell(fromName,fi,fj),b=cell(toName,ti,tj);if(!a||!b)return;
+  const sr=$("stage").getBoundingClientRect(),ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
+  const x0=ar.left+ar.width/2-sr.left,y0=ar.top+ar.height/2-sr.top;
+  const x1=br.left+br.width/2-sr.left,y1=br.top+br.height/2-sr.top;
+  const d=document.createElement("div");d.className="dotfx";d.style.left=x0+"px";d.style.top=y0+"px";
+  if(color){d.style.background=color;d.style.boxShadow="0 0 9px "+color;}
+  layer.appendChild(d);
+  requestAnimationFrame(()=>{d.style.transform=`translate(-50%,-50%) translate(${(x1-x0).toFixed(1)}px,${(y1-y0).toFixed(1)}px) scale(.55)`;d.style.opacity="0";});
+  setTimeout(()=>d.remove(),460);
+}
+
+function scaffold(html){$("stage").innerHTML=html+`<div class="flowlayer"></div>`;}
+
+/* ---- attention arc diagram ---- */
+function arcSVG(Wt,tokens){
+  const n=tokens.length, w=Math.max(380,n*96), h=210, pad=46, y=h-58;
+  const xs=tokens.map((_,i)=>pad+(n===1?(w-2*pad)/2:i*(w-2*pad)/(n-1)));
+  let arcs="";
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){
+    const wt=Wt[i][j];if(wt<0.06)continue;
+    const sw=(0.6+wt*5.5).toFixed(2), op=(0.18+wt*0.72).toFixed(2), col=heat(wt);
+    if(i===j){const x=xs[i],r=12+wt*16;
+      arcs+=`<path d="M ${(x-7).toFixed(1)} ${y} A ${r.toFixed(1)} ${r.toFixed(1)} 0 1 1 ${(x+7).toFixed(1)} ${y}" fill="none" stroke="${col}" stroke-width="${sw}" opacity="${op}" data-i="${i}"/>`;
+    }else{const x1=xs[i],x2=xs[j],mx=(x1+x2)/2,lift=Math.min(130,34+Math.abs(x2-x1)*0.55);
+      arcs+=`<path d="M ${x1.toFixed(1)} ${y} Q ${mx.toFixed(1)} ${(y-lift).toFixed(1)} ${x2.toFixed(1)} ${y}" fill="none" stroke="${col}" stroke-width="${sw}" opacity="${op}" data-i="${i}"/>`;}
+  }
+  let labels="";
+  tokens.forEach((tk,i)=>{labels+=`<circle cx="${xs[i].toFixed(1)}" cy="${y}" r="4" fill="#F5A524"/><text x="${xs[i].toFixed(1)}" y="${y+24}" text-anchor="middle" class="arctok" data-tok="${i}">${tk}</text>`;});
+  return `<svg class="arcsvg" viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px">${arcs}${labels}</svg>`;
+}
+function wireArc(){
+  const svg=$("stage").querySelector(".arcsvg");if(!svg)return;
+  svg.querySelectorAll(".arctok").forEach(t=>{
+    t.onmouseenter=()=>{const i=+t.dataset.tok;svg.querySelectorAll("path").forEach(p=>p.style.opacity=(+p.dataset.i===i)?p.getAttribute("opacity"):"0.05");svg.querySelectorAll(".arctok").forEach(x=>x.classList.toggle("lit",+x.dataset.tok===i));};
+    t.onmouseleave=()=>{svg.querySelectorAll("path").forEach(p=>p.style.opacity="");svg.querySelectorAll(".arctok").forEach(x=>x.classList.remove("lit"));};
+  });
+}
+function attachArcToggle(weights){
+  const host=document.createElement("div");
+  host.innerHTML=`<div class="arcseg"><button data-v="heat" class="on">Heatmap</button><button data-v="arcs">Arc diagram</button></div><div id="arcpanel" style="display:none">${arcSVG(weights,state.tokens)}</div>`;
+  $("stage").appendChild(host);
+  const scenes=$("stage").querySelectorAll(".scene"), panel=host.querySelector("#arcpanel");
+  host.querySelectorAll(".arcseg button").forEach(b=>b.onclick=()=>{
+    host.querySelectorAll(".arcseg button").forEach(x=>x.classList.toggle("on",x===b));
+    const arcs=b.dataset.v==="arcs";
+    scenes.forEach(s=>s.style.display=arcs?"none":"");
+    panel.style.display=arcs?"":"none";
+    if(arcs)wireArc();
+  });
+}
+
+/* ---- real model: genuine next-word prediction via transformers.js ---- */
+let _tj=null,_tok=null,_lm=null,_load=null;
+async function realNextWord(text,onStatus){
+  if(!_lm){
+    if(!_load){
+      _load=(async()=>{
+        onStatus&&onStatus("loading transformers.js …");
+        _tj=await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+        _tj.env.allowLocalModels=false;
+        onStatus&&onStatus("downloading distilgpt2 (one-time, ~50 MB) …");
+        _tok=await _tj.AutoTokenizer.from_pretrained("Xenova/distilgpt2");
+        _lm=await _tj.AutoModelForCausalLM.from_pretrained("Xenova/distilgpt2",{quantized:true});
+      })();
+    }
+    await _load;
+  }
+  onStatus&&onStatus("running the model …");
+  const inputs=await _tok(text);
+  const out=await _lm(inputs);
+  const lg=out.logits, dims=lg.dims, vocab=dims[dims.length-1], seq=dims[1], data=lg.data, start=(seq-1)*vocab;
+  let max=-Infinity;for(let i=0;i<vocab;i++){const v=data[start+i];if(v>max)max=v;}
+  let sum=0;const ex=new Float64Array(vocab);
+  for(let i=0;i<vocab;i++){const e=Math.exp(data[start+i]-max);ex[i]=e;sum+=e;}
+  const arr=Array.from(ex),top=[];
+  for(let n=0;n<6;n++){let bi=0,bv=-1;for(let i=0;i<vocab;i++){if(arr[i]>bv){bv=arr[i];bi=i;}}top.push({id:bi,prob:arr[bi]/sum});arr[bi]=-1;}
+  return top.map(t=>({word:(_tok.decode([t.id])||"·").replace(/\s+/g," ").trim()||"·",prob:t.prob}));
+}
+
+/* ---- export: GIF recording + PNG snapshot (captures the full window) ---- */
+let recording=false,_gifWorker=null;
+const BG=()=>getComputedStyle(document.body).backgroundColor||"#0A0D13";
+const APP=()=>document.querySelector(".app");
+function expStat(msg,err){const e=$("expstat");if(!e)return;if(!msg){e.style.display="none";return;}e.style.display="";e.classList.toggle("err",!!err);e.textContent=msg;}
+function downloadBlob(blob,name){const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);}
+function drawContain(ctx,img,W,H){const s=Math.min(W/img.width,H/img.height);const w=img.width*s,h=img.height*s;ctx.drawImage(img,(W-w)/2,(H-h)/2,w,h);}
+function resetExpBtns(){["expgif","exppng"].forEach(id=>{const b=$(id);if(b){b.disabled=false;b.classList.remove("rec");}});}
+async function gifWorkerURL(){
+  if(_gifWorker)return _gifWorker;
+  const r=await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js");
+  _gifWorker=URL.createObjectURL(new Blob([await r.text()],{type:"application/javascript"}));
+  return _gifWorker;
+}
+async function snapPNG(){
+  if(!window.htmlToImage){expStat("capture library not loaded — check your connection",true);return;}
+  expStat("rendering PNG…");
+  try{
+    const data=await htmlToImage.toPng(APP(),{pixelRatio:1.5,backgroundColor:BG(),cacheBust:false});
+    downloadBlob(await(await fetch(data)).blob(),`attention-window-${Date.now()}.png`);
+    expStat("PNG downloaded.");
+  }catch(e){expStat("snapshot failed: "+(e&&e.message||e),true);}
+}
+async function recordGIF(){
+  if(recording)return;
+  if(!window.GIF){expStat("GIF library not loaded — check your connection",true);return;}
+  if(!window.htmlToImage){expStat("capture library not loaded",true);return;}
+  recording=true;PAUSED=false;SKIP=false;
+  $("expgif").disabled=$("exppng").disabled=true;$("expgif").classList.add("rec");
+  expStat("preparing…");
+  let workerURL;try{workerURL=await gifWorkerURL();}catch(e){expStat("couldn't load GIF worker: "+(e&&e.message||e),true);recording=false;resetExpBtns();return;}
+  const node=APP(),rect=node.getBoundingClientRect();
+  const W=Math.min(1000,Math.round(rect.width)),scale=W/rect.width,H=Math.min(1300,Math.round(rect.height*scale));
+  const frame=document.createElement("canvas");frame.width=W;frame.height=H;
+  const fctx=frame.getContext("2d");
+  const gif=new GIF({workers:2,quality:12,width:W,height:H,workerScript:workerURL,background:"#0A0D13"});
+  let capturing=true,frames=0,last=performance.now();
+  const cap=(async()=>{
+    while(capturing){
+      try{
+        const snap=await htmlToImage.toCanvas(node,{pixelRatio:scale,cacheBust:false,backgroundColor:BG()});
+        fctx.fillStyle=BG();fctx.fillRect(0,0,W,H);drawContain(fctx,snap,W,H);
+        const now=performance.now(),delay=Math.max(60,Math.min(400,Math.round(now-last)));last=now;
+        gif.addFrame(fctx,{copy:true,delay});frames++;
+        if(frames%4===0)expStat(`capturing… ${frames} frames`);
+      }catch(e){}
+      await sleep(110);
+    }
+  })();
+  RUN++;const r=RUN;expStat("recording this stage…");
+  try{await animateStage(state.stage,r);}catch(e){}
+  await sleep(450);capturing=false;await cap;
+  if(!frames){expStat("no frames captured — your browser may block canvas capture (try Chrome).",true);recording=false;resetExpBtns();return;}
+  expStat(`encoding GIF… ${frames} frames`);
+  gif.on("progress",p=>expStat(`encoding GIF… ${Math.round(p*100)}%`));
+  gif.on("finished",blob=>{
+    recording=false;resetExpBtns();
+    expStat(`done — ${(blob.size/1048576).toFixed(1)} MB, ${frames} frames.`);
+    downloadBlob(blob,`attention-stage-${Date.now()}.gif`);
+  });
+  gif.render();
+}
+
+/* ---- explore: hover a settled cell to replay its derivation ---- */
+function enableExplore(Rname,R,deriveFn){
+  for(let i=0;i<R.length;i++)for(let j=0;j<R[0].length;j++){
+    const c=cell(Rname,i,j);if(!c)continue;c.classList.add("explorable");
+    c.onmouseenter=()=>{if(RUNNING&&!PAUSED)return;clearHot();const r=deriveFn(i,j);(r.hot||[]).forEach(q=>cell(q[0],q[1],q[2])?.classList.add("hot"));cell(Rname,i,j)?.classList.add("hot");setEq(r.tex);};
+    c.onmouseleave=()=>{if(RUNNING&&!PAUSED)return;clearHot();};
+  }
+}
+
+/* ============================================================ reusable animations ============================================================ */
+async function animMatmul(run,Aname,A,Bname,Bdisp,Rname,R,labelFn){
+  const rows=R.length,inner=A[0].length,cols=R[0].length;
+  for(let i=0;i<rows;i++)for(let j=0;j<cols;j++){
+    clearHot();hotRow(Aname,i,inner);hotCol(Bname,j,inner);
+    let acc=0;const terms=[];
+    for(let d=0;d<inner;d++){
+      const a=A[i][d],b=Bdisp[d][j];acc+=a*b;terms.push(`(${fx(a)})(${fx(b)})`);
+      ping(Aname,i,d);ping(Bname,d,j);
+      flow(Aname,i,d,Rname,i,j);flow(Bname,d,j,Rname,i,j);
+      setEq(`${labelFn(i,j)} = ${terms.join("+")}${d<inner-1?"+\\cdots":"="+fx(acc)}`);
+      await step(205,run);
+    }
+    fillCell(Rname,i,j,fx(acc));await step(140,run);
+  }
+  clearHot();
+  enableExplore(Rname,R,(i,j)=>{const terms=A[i].map((a,d)=>`(${fx(a)})(${fx(Bdisp[d][j])})`).join("+");const hot=[];for(let d=0;d<A[0].length;d++){hot.push([Aname,i,d]);hot.push([Bname,d,j]);}return{tex:`${labelFn(i,j)} = ${terms} = ${fx(R[i][j])}`,hot};});
+}
+async function animAdd(run,Aname,A,Bname,B,Rname,labelFn){
+  for(let i=0;i<A.length;i++)for(let j=0;j<A[0].length;j++){
+    clearHot();cell(Aname,i,j)?.classList.add("hot");cell(Bname,i,j)?.classList.add("hot");
+    ping(Aname,i,j);ping(Bname,i,j);flow(Aname,i,j,Rname,i,j);flow(Bname,i,j,Rname,i,j);
+    const v=A[i][j]+B[i][j];
+    setEq(`${labelFn(i,j)} = ${fx(A[i][j])} + ${fx(B[i][j])} = ${fx(v)}`);
+    fillCell(Rname,i,j,fx(v));await step(120,run);
+  }
+  clearHot();
+  enableExplore(Rname,A,(i,j)=>({tex:`${labelFn(i,j)} = ${fx(A[i][j])} + ${fx(B[i][j])} = ${fx(A[i][j]+B[i][j])}`,hot:[[Aname,i,j],[Bname,i,j]]}));
+}
+async function animLayerNorm(run,srcName,src,Rname,labelTok){
+  for(let i=0;i<src.length;i++){
+    clearHot();hotRow(srcName,i,src[i].length);
+    const {mu,sd,out}=lnRow(src[i]);
+    setEq(`\\text{LN}(${labelTok(i)}):\\ \\mu=${fx(mu)},\\ \\sigma=${fx(sd)}\\ \\Rightarrow\\ [${out.map(fx).join(",\\ ")}]`);
+    await step(380,run);
+    for(let j=0;j<out.length;j++){flow(srcName,i,j,Rname,i,j);fillCell(Rname,i,j,fx(out[j]));await step(90,run);}
+    await step(120,run);
+  }
+  clearHot();
+  enableExplore(Rname,src,(i,j)=>{const {mu,sd,out}=lnRow(src[i]);const hot=src[i].map((_,k)=>[srcName,i,k]);return{tex:`\\frac{${fx(src[i][j])}-${fx(mu)}}{${fx(sd)}} = ${fx(out[j])}`,hot};});
+}
+
+/* ============================================================ stage driver ============================================================ */
+async function animateStage(id,run){
+  const m=state.model,t=state.tokens,h=state.head;
+  const DK=m.cfg.DK, dh=DK===2?di2:di4, sqrtDK=Math.sqrt(DK), sqTex=DK===2?"\\sqrt 2":"\\sqrt 4", sqLbl=DK===2?"√2":"√4 = 2";
+  const S=STAGES[id];
+  $("stageno").textContent="Stage "+String(id).padStart(2,"0")+(S.head?` — Head ${h+1}`:"")+" · "+t.length+" tokens";
+  $("stagetitle").textContent=S.title;$("stagedesc").textContent=S.desc;
+  renderNav();$("chips").querySelectorAll(".chip").forEach(c=>c.classList.remove("lit"));
+
+  if(id===0){
+    scaffold(`<div class="scene">${mxHTML("E",m.E,{cols:di4,empty:true,sz:"n × 4"})}</div>
+      <div class="caption">Each row is one token's learned embedding <b>e_i ∈ ℝ⁴</b>.</div>`);
+    for(let i=0;i<t.length;i++){
+      $("chips").querySelectorAll(".chip")[i]?.classList.add("lit");
+      setEq(`e_{\\text{${t[i]}}} = [${m.E[i].map(fx).join(",\\ ")}]`);
+      for(let j=0;j<D;j++){fillCell("E",i,j,fx(m.E[i][j]));await step(85,run);}
+      await step(150,run);$("chips").querySelectorAll(".chip")[i]?.classList.remove("lit");
+    }
+    enableExplore("E",m.E,(i,j)=>({tex:`e_{\\text{${t[i]}}} = [${m.E[i].map(fx).join(",\\ ")}]`,hot:m.E[i].map((_,k)=>["E",i,k])}));
+  }
+
+  else if(id===1){
+    scaffold(`<div class="scene">${mxHTML("E",m.E,{cols:di4,sz:"n × 4"})}<span class="glyph">+</span>${mxHTML("PE",m.PE,{cols:di4,empty:true,sz:"n × 4"})}<span class="glyph">=</span>${mxHTML("X",m.X,{cols:di4,empty:true,sz:"n × 4"})}</div>
+      <div class="caption">PE(pos,2k)=sin, PE(pos,2k+1)=cos, at frequencies that grow with the dimension. Position <b>0</b> gives [0,1,0,1].</div>`);
+    for(let i=0;i<t.length;i++){
+      setEq(`PE(${i},\\cdot)=[\\sin ${i},\\ \\cos ${i},\\ \\sin\\tfrac{${i}}{100},\\ \\cos\\tfrac{${i}}{100}]`);
+      for(let j=0;j<D;j++){fillCell("PE",i,j,fx(m.PE[i][j]));await step(75,run);}
+      await step(130,run);
+    }
+    await step(200,run);
+    await animAdd(run,"E",m.E,"PE",m.PE,"X",(i,j)=>`x_{${i}${j}}`);
+  }
+
+  else if(id===2){
+    const dks=DK+"";
+    scaffold(
+      `<div class="scene">${mxHTML("X",m.X,{cols:di4,sz:"n × 4"})}<span class="glyph">×</span>${mxHTML("WQ",m.cfg.H===2?WQ2[h]:WQ1,{rows:di4,cols:dh,sz:"4 × "+dks})}<span class="glyph">=</span>${mxHTML("Q",m.heads[h].Q,{cols:dh,empty:true,sz:"n × "+dks})}</div>`+
+      `<div class="scene">${mxHTML("X2",m.X,{cols:di4,sz:"n × 4"})}<span class="glyph">×</span>${mxHTML("WK",m.cfg.H===2?WK2[h]:WK1,{rows:di4,cols:dh,sz:"4 × "+dks})}<span class="glyph">=</span>${mxHTML("Kc",m.heads[h].K,{cols:dh,empty:true,sz:"n × "+dks})}</div>`+
+      `<div class="scene">${mxHTML("X3",m.X,{cols:di4,sz:"n × 4"})}<span class="glyph">×</span>${mxHTML("WV",m.cfg.H===2?WV2[h]:WV1,{rows:di4,cols:dh,sz:"4 × "+dks})}<span class="glyph">=</span>${mxHTML("V",m.heads[h].V,{cols:dh,empty:true,sz:"n × "+dks})}</div>`+
+      `<div class="caption">${m.cfg.H===2?`Head ${h+1}`:"Single head"}: <b>Q</b> (asks) · <b>K</b> (offers) · <b>V</b> (passes on), each in d_k = ${DK} dimensions.</div>`);
+    const wq=m.cfg.H===2?WQ2[h]:WQ1, wk=m.cfg.H===2?WK2[h]:WK1, wv=m.cfg.H===2?WV2[h]:WV1;
+    await animMatmul(run,"X",m.X,"WQ",wq,"Q",m.heads[h].Q,(i,j)=>`q_{${i}${j}}`);
+    await animMatmul(run,"X2",m.X,"WK",wk,"Kc",m.heads[h].K,(i,j)=>`k_{${i}${j}}`);
+    await animMatmul(run,"X3",m.X,"WV",wv,"V",m.heads[h].V,(i,j)=>`v_{${i}${j}}`);
+  }
+
+  else if(id===3){
+    scaffold(`<div class="scene">${mxHTML("Q",m.heads[h].Q,{cols:dh,sz:"n × "+DK})}<span class="glyph">×</span>${mxHTML("KT",m.heads[h].KT,{rows:dh,cols:t,sz:DK+" × n"})}<span class="glyph">=</span>${mxHTML("S",m.heads[h].sc,{empty:true,sz:"n × n"})}</div>
+      <div class="caption">Each score <b>sᵢⱼ = qᵢ · kⱼ</b> — row and column stream into the cell as the dot product builds.</div>`);
+    await animMatmul(run,"Q",m.heads[h].Q,"KT",m.heads[h].KT,"S",m.heads[h].sc,(i,j)=>`s_{${i}${j}}=q_{${i}}\\!\\cdot\\!k_{${j}}`);
+  }
+
+  else if(id===4){
+    scaffold(`<div class="scene">${mxHTML("S",m.heads[h].sc,{sz:"n × n"})}<span class="glyph sm">÷ ${sqLbl}</span>${mxHTML("SC",m.heads[h].scaled,{empty:true,sz:"n × n"})}</div>
+      <div class="caption">√dₖ = ${sqLbl}${DK===2?" ≈ 1.41":""}. Every entry shrinks by the same factor.</div>`);
+    for(let i=0;i<t.length;i++)for(let j=0;j<t.length;j++){
+      clearHot();cell("S",i,j)?.classList.add("hot");flow("S",i,j,"SC",i,j);
+      setEq(`\\tilde{s}_{${i}${j}}=\\dfrac{${fx(m.heads[h].sc[i][j])}}{${sqTex}}=${fx(m.heads[h].scaled[i][j])}`);
+      ping("S",i,j);fillCell("SC",i,j,fx(m.heads[h].scaled[i][j]));await step(130,run);
+    }
+    clearHot();
+    enableExplore("SC",m.heads[h].scaled,(i,j)=>({tex:`\\tilde{s}_{${i}${j}}=\\dfrac{${fx(m.heads[h].sc[i][j])}}{${sqTex}}=${fx(m.heads[h].scaled[i][j])}`,hot:[["S",i,j]]}));
+  }
+
+  else if(id===5){
+    scaffold(`<div class="scene">${mxHTML("SC",m.heads[h].scaled,{sz:"n × n"})}<span class="glyph sm">softmax →</span>${mxHTML("A",m.heads[h].w,{empty:true,sz:"rows → 1"})}</div>
+      <div class="legend"><span>low</span><span class="legbar"></span><span>high</span><span style="margin-left:4px">attention</span></div>
+      <div class="caption">Each query row becomes a distribution — <b>where that word looks</b>.</div>`);
+    for(let i=0;i<t.length;i++){
+      clearHot();hotRow("SC",i,t.length);
+      const row=m.heads[h].scaled[i],ex=row.map(x=>Math.exp(x)),sum=ex.reduce((a,b)=>a+b,0);
+      setEq(`a_{${i}\\cdot}=\\frac{[${ex.map(fx).join(",\\ ")}]}{${fx(sum)}}=[${m.heads[h].w[i].map(fx).join(",\\ ")}]`);
+      await step(400,run);
+      for(let j=0;j<t.length;j++){fillCell("A",i,j,fx(m.heads[h].w[i][j]),heat(m.heads[h].w[i][j]));await step(100,run);}
+      await step(150,run);
+    }
+    clearHot();
+    enableExplore("A",m.heads[h].w,(i,j)=>{const row=m.heads[h].scaled[i],ex=row.map(x=>Math.exp(x)),sum=ex.reduce((a,b)=>a+b,0);return{tex:`a_{${i}${j}}=\\frac{e^{${fx(row[j])}}}{${fx(sum)}}=${fx(m.heads[h].w[i][j])}`,hot:row.map((_,k)=>["SC",i,k])};});
+    attachArcToggle(m.heads[h].w);
+  }
+
+  else if(id===6){
+    scaffold(`<div class="scene">${mxHTML("A",m.heads[h].w,{sz:"n × n"})}<span class="glyph">×</span>${mxHTML("V",m.heads[h].V,{cols:dh,sz:"n × "+DK})}<span class="glyph">=</span>${mxHTML("Z",m.heads[h].out,{cols:dh,empty:true,sz:"n × "+DK})}</div>
+      <div class="caption">${m.cfg.H===2?`Head ${h+1}`:"Head"} output <b>zᵢ = Σⱼ aᵢⱼ vⱼ</b>.${m.cfg.H===2?" Switch heads in the sidebar to watch the other one.":""}</div>`);
+    for(let i=0;i<t.length;i++)for(let j=0;j<t.length;j++){const c=cell("A",i,j);if(c){c.classList.add("heatset");c.style.background=heat(m.heads[h].w[i][j]);c.style.color=m.heads[h].w[i][j]>.55?"#241a04":"#eef3ff";}}
+    await animMatmul(run,"A",m.heads[h].w,"V",m.heads[h].V,"Z",m.heads[h].out,(i,j)=>`z_{${i}${j}}`);
+  }
+
+  else if(id===7){
+    if(m.cfg.H===2){
+      scaffold(
+        `<div class="scene">${mxHTML("H0",m.heads[0].out,{cols:di2,sz:"head 1 · n × 2"})}${mxHTML("H1",m.heads[1].out,{cols:di2,sz:"head 2 · n × 2"})}<span class="glyph sm">concat →</span>${mxHTML("CC",m.concat,{cols:di4,empty:true,sz:"n × 4"})}</div>`+
+        `<div class="scene">${mxHTML("CC2",m.concat,{cols:di4,empty:true,sz:"n × 4"})}<span class="glyph">×</span>${mxHTML("WO",WO,{rows:di4,cols:di4,sz:"4 × 4"})}<span class="glyph">=</span>${mxHTML("MH",m.MH,{cols:di4,empty:true,sz:"n × 4"})}</div>`+
+        `<div class="caption">Two d_k=2 heads concatenate back to width 4, then <b>Wᴼ</b> mixes them so the heads interact.</div>`);
+      setEq(`\\text{Concat}(\\text{head}_1,\\text{head}_2)`);
+      for(let i=0;i<t.length;i++){
+        for(let j=0;j<2;j++){flow("H0",i,j,"CC",i,j);fillCell("CC",i,j,fx(m.heads[0].out[i][j]));await step(70,run);}
+        for(let j=0;j<2;j++){flow("H1",i,j,"CC",i,2+j);fillCell("CC",i,2+j,fx(m.heads[1].out[i][j]));await step(70,run);}
+      }
+    }else{
+      scaffold(
+        `<div class="scene">${mxHTML("H0",m.heads[0].out,{cols:di4,sz:"head · n × 4"})}<span class="glyph sm">→</span>${mxHTML("CC",m.concat,{cols:di4,empty:true,sz:"n × 4"})}</div>`+
+        `<div class="scene">${mxHTML("CC2",m.concat,{cols:di4,empty:true,sz:"n × 4"})}<span class="glyph">×</span>${mxHTML("WO",WO,{rows:di4,cols:di4,sz:"4 × 4"})}<span class="glyph">=</span>${mxHTML("MH",m.MH,{cols:di4,empty:true,sz:"n × 4"})}</div>`+
+        `<div class="caption">With one head, the d_k=4 output is already full width — <b>Wᴼ</b> still applies as the output projection.</div>`);
+      setEq(`\\text{single head} \\rightarrow W^O`);
+      for(let i=0;i<t.length;i++)for(let j=0;j<4;j++){flow("H0",i,j,"CC",i,j);fillCell("CC",i,j,fx(m.concat[i][j]));await step(60,run);}
+    }
+    for(let i=0;i<t.length;i++)for(let j=0;j<4;j++)fillCell("CC2",i,j,fx(m.concat[i][j]));
+    await step(220,run);
+    await animMatmul(run,"CC2",m.concat,"WO",WO,"MH",m.MH,(i,j)=>`\\text{mh}_{${i}${j}}`);
+  }
+
+  else if(id===8){
+    scaffold(
+      `<div class="scene">${mxHTML("X",m.X,{cols:di4,sz:"input · n × 4"})}<span class="glyph">+</span>${mxHTML("MH",m.MH,{cols:di4,sz:"attn · n × 4"})}<span class="glyph">=</span>${mxHTML("R1",m.res1,{cols:di4,empty:true,sz:"residual"})}</div>`+
+      `<div class="scene">${mxHTML("R1b",m.res1,{cols:di4,empty:true,sz:"residual"})}<span class="glyph sm">LayerNorm →</span>${mxHTML("AN",m.AN1,{cols:di4,empty:true,sz:"n × 4"})}</div>`+
+      `<div class="caption">Residual <b>X + attention</b>, then normalise each row to mean 0, variance 1.</div>`);
+    await animAdd(run,"X",m.X,"MH",m.MH,"R1",(i,j)=>`r_{${i}${j}}`);
+    for(let i=0;i<t.length;i++)for(let j=0;j<4;j++)fillCell("R1b",i,j,fx(m.res1[i][j]));
+    await step(200,run);
+    await animLayerNorm(run,"R1b",m.res1,"AN",(i)=>`\\text{“${t[i]}”}`);
+  }
+
+  else if(id===9){
+    scaffold(
+      `<div class="scene">${mxHTML("AN",m.AN1,{cols:di4,sz:"n × 4"})}<span class="glyph">×</span>${mxHTML("W1",W1,{rows:di4,cols:di4,sz:"4 × 4"})}<span class="glyph">=</span>${mxHTML("H1m",m.h1,{cols:di4,empty:true,sz:"hidden"})}</div>`+
+      `<div class="scene"><span class="glyph sm">ReLU →</span>${mxHTML("HR",m.hr,{cols:di4,empty:true,sz:"≥ 0"})}<span class="glyph">×</span>${mxHTML("W2",W2,{rows:di4,cols:di4,sz:"4 × 4"})}<span class="glyph">=</span>${mxHTML("FF",m.F,{cols:di4,empty:true,sz:"n × 4"})}</div>`+
+      `<div class="caption">Two linear layers with a <b>ReLU</b> between — negatives clamp to zero before the second multiply.</div>`);
+    await animMatmul(run,"AN",m.AN1,"W1",W1,"H1m",m.h1,(i,j)=>`h_{${i}${j}}`);
+    // ReLU
+    for(let i=0;i<t.length;i++)for(let j=0;j<4;j++){
+      const neg=m.h1[i][j]<0;clearHot();cell("H1m",i,j)?.classList.add("hot");flow("H1m",i,j,"HR",i,j);
+      setEq(`\\text{ReLU}(${fx(m.h1[i][j])}) = ${fx(m.hr[i][j])}`);
+      fillCell("HR",i,j,fx(m.hr[i][j]),null,neg);await step(95,run);
+    }
+    clearHot();await step(160,run);
+    await animMatmul(run,"HR",m.hr,"W2",W2,"FF",m.F,(i,j)=>`f_{${i}${j}}`);
+  }
+
+  else if(id===10){
+    scaffold(
+      `<div class="scene">${mxHTML("AN",m.AN1,{cols:di4,sz:"n × 4"})}<span class="glyph">+</span>${mxHTML("FF",m.F,{cols:di4,sz:"ffn · n × 4"})}<span class="glyph">=</span>${mxHTML("R2",m.res2,{cols:di4,empty:true,sz:"residual"})}</div>`+
+      `<div class="scene">${mxHTML("R2b",m.res2,{cols:di4,empty:true,sz:"residual"})}<span class="glyph sm">LayerNorm →</span>${mxHTML("OUT",m.OUT,{cols:di4,empty:true,sz:"layer out"})}</div>`+
+      `<div class="caption">Final residual + norm. <b>This is the encoder layer's output.</b></div>`);
+    await animAdd(run,"AN",m.AN1,"FF",m.F,"R2",(i,j)=>`r_{${i}${j}}`);
+    for(let i=0;i<t.length;i++)for(let j=0;j<4;j++)fillCell("R2b",i,j,fx(m.res2[i][j]));
+    await step(200,run);
+    await animLayerNorm(run,"R2b",m.res2,"OUT",(i)=>`\\text{“${t[i]}”}`);
+    const cap=document.createElement("div");cap.className="endcap";
+    cap.textContent="▸ encoder layer output ready — now the language-model head predicts the next word";
+    $("stage").appendChild(cap);
+  }
+
+  else if(id===11){
+    const P=m.predict;
+    const texSafe=s=>(s||"·").replace(/[\\{}$#%&_^~]/g,"").replace(/[<>]/g,"")||"·";
+    if(state.real){
+      scaffold(
+        `<div class="scene">${mxHTML("OUT",m.OUT,{cols:di4,sz:"layer out · n × 4"})}</div>`+
+        `<div class="caption">The toy layer above is illustrative — this distribution is a <b>real distilgpt2</b> predicting the next token in your browser.<span class="realbadge">live model</span></div>`+
+        `<div class="realstatus" id="rstat"><span class="spin"></span><span id="rmsg">starting…</span></div>`+
+        `<div class="barchart" id="bc"></div>`);
+      const rstat=$("rstat"),rmsg=$("rmsg");
+      try{
+        const preds=await realNextWord(state.text||t.join(" "),s=>{if(rmsg)rmsg.textContent=s;});
+        if(run!==RUN)return;
+        rstat.style.display="none";
+        const top=preds.reduce((a,b,i)=>b.prob>preds[a].prob?i:a,0);
+        $("bc").innerHTML=preds.map((p,i)=>`<div class="brow" id="row_${i}"><span class="bw">${texSafe(p.word)}</span><div class="btrack"><div class="bfill" id="bar_${i}"></div></div><span class="bp" id="pct_${i}">·</span></div>`).join("");
+        for(let i=0;i<preds.length;i++){
+          if(run!==RUN)return;
+          const bar=$("bar_"+i),pct=$("pct_"+i);
+          if(bar)bar.style.width=(preds[i].prob*100).toFixed(1)+"%";
+          if(pct)pct.textContent=(preds[i].prob*100).toFixed(0)+"%";
+          setEq(`P(\\text{${texSafe(preds[i].word)}}) = ${fx(preds[i].prob)}`);
+          await step(210,run);
+        }
+        $("row_"+top)?.classList.add("toprow");
+        setEq(`\\hat{w} = \\text{“${texSafe(preds[top].word)}”}\\quad (${(preds[top].prob*100).toFixed(0)}\\%)`);
+        const cap=document.createElement("div");cap.className="endcap";cap.textContent="▸ real distilgpt2 prediction, computed locally in your browser";$("stage").appendChild(cap);
+      }catch(e){
+        if(run!==RUN)return;
+        rstat.classList.add("err");rstat.innerHTML=`⚠ couldn't load the model (${String(e&&e.message||e||"network error").slice(0,90)}). Check your connection, or switch back to Toy vocab in the sidebar.`;
+      }
+      return;
+    }
+    scaffold(
+      `<div class="scene">${mxHTML("OUT",m.OUT,{cols:di4,sz:"layer out · n × 4"})}<span class="glyph sm">last row → h</span>${mxHTML("WV",P.Wv,{rows:P.vocab,cols:di4,sz:"Wᵥ · |V| × 4"})}<span class="glyph">=</span>${mxHTML("LG",P.logits.map(x=>[x]),{rows:P.vocab,cols:["logit"],empty:true,sz:"|V| × 1"})}</div>`+
+      `<div class="caption">Take the last token <b>“${t[P.idx]}”</b> as the query for the next word: y = Wᵥ · h, then softmax over the vocabulary. <span style="color:var(--muted-2)">Switch to a real model in the sidebar.</span></div>`+
+      `<div class="barchart" id="bc">${P.vocab.map((w,i)=>`<div class="brow" id="row_${i}"><span class="bw">${w}</span><div class="btrack"><div class="bfill" id="bar_${i}"></div></div><span class="bp" id="pct_${i}">·</span></div>`).join("")}</div>`);
+    for(let w=0;w<P.vocab.length;w++){
+      clearHot();hotRow("OUT",P.idx,4);hotRow("WV",w,4);
+      let acc=0;const terms=[];
+      for(let d=0;d<4;d++){
+        acc+=P.Wv[w][d]*P.hlast[d];terms.push(`(${fx(P.Wv[w][d])})(${fx(P.hlast[d])})`);
+        ping("WV",w,d);ping("OUT",P.idx,d);flow("WV",w,d,"LG",w,0);flow("OUT",P.idx,d,"LG",w,0);
+        setEq(`\\text{logit}_{\\text{${P.vocab[w]}}} = ${terms.join("+")}${d<3?"+\\cdots":"="+fx(acc)}`);
+        await step(175,run);
+      }
+      fillCell("LG",w,0,fx(acc));await step(120,run);
+    }
+    clearHot();
+    setEq(`P = \\text{softmax}(\\text{logits})`);await step(360,run);
+    for(let w=0;w<P.vocab.length;w++){
+      const bar=document.getElementById("bar_"+w),pct=document.getElementById("pct_"+w);
+      if(bar)bar.style.width=(P.probs[w]*100).toFixed(1)+"%";
+      if(pct)pct.textContent=(P.probs[w]*100).toFixed(0)+"%";
+      setEq(`P(\\text{${P.vocab[w]}}) = ${fx(P.probs[w])}`);
+      await step(200,run);
+    }
+    document.getElementById("row_"+P.top)?.classList.add("toprow");
+    setEq(`\\hat{w} = \\text{“${P.vocab[P.top]}”}\\quad (${(P.probs[P.top]*100).toFixed(0)}\\%)`);
+    enableExplore("LG",P.logits.map(x=>[x]),(i,j)=>{const terms=P.Wv[i].map((a,d)=>`(${fx(a)})(${fx(P.hlast[d])})`).join("+");const hot=[];for(let d=0;d<4;d++){hot.push(["WV",i,d]);hot.push(["OUT",P.idx,d]);}return{tex:`\\text{logit}_{\\text{${P.vocab[i]}}}=${terms}=${fx(P.logits[i])}`,hot};});
+    const cap=document.createElement("div");cap.className="endcap";
+    cap.textContent="▸ next-word distribution — toy vocabulary, illustrative weights";
+    $("stage").appendChild(cap);
+  }
+}
+
+/* ============================================================ orchestration ============================================================ */
+function renderNav(){
+  $("nav").innerHTML=STAGES.map(s=>{
+    const cls=(s.id===state.stage?"on":(s.id<state.stage?"done":""))+(s.head?" head":"");
+    return`<button class="navitem ${cls}" data-stage="${s.id}"><span class="ix">${String(s.id).padStart(2,"0")}</span><span class="nm">${s.name}</span></button>`;
+  }).join("");
+  $("nav").querySelectorAll(".navitem").forEach(b=>b.onclick=()=>jumpStage(+b.dataset.stage));
+  $("prev").disabled=state.stage===0;$("next").disabled=state.stage===STAGES.length-1;
+  $("headseg").querySelectorAll("button").forEach(b=>b.classList.toggle("on",+b.dataset.h===state.head));
+  $("headcountseg")?.querySelectorAll("button").forEach(b=>b.classList.toggle("on",+b.dataset.hc===state.heads));
+  $("realseg")?.querySelectorAll("button").forEach(b=>b.classList.toggle("on",(+b.dataset.r===1)===state.real));
+  $("headblock").style.display=state.heads===2?"":"none";
+}
+function renderSidebar(){
+  $("chips").innerHTML=state.tokens.map(t=>`<span class="chip">${t}</span>`).join("");
+  const dk=state.heads===2?2:4;
+  $("params").innerHTML=`<span>n=<b>${state.tokens.length}</b></span><span>d=<b>4</b></span><span>h=<b>${state.heads}</b></span><span>d_k=<b>${dk}</b></span>`;
+  renderNav();
+}
+function setPlayLabel(){$("play").innerHTML=RUNNING&&!PAUSED?"❚❚ Pause":"▶ Play";}
+
+async function runSingle(id){
+  RUN++;const run=RUN;RUNNING=true;PAUSED=false;SKIP=false;state.stage=id;setPlayLabel();
+  try{await animateStage(id,run);}catch(e){return;}
+  if(run===RUN){RUNNING=false;setPlayLabel();}
+}
+function skipStage(){
+  RUN++;const run=RUN;SKIP=true;RUNNING=false;PAUSED=false;setPlayLabel();
+  animateStage(state.stage,run).catch(()=>{}).then(()=>{if(run===RUN)SKIP=false;});
+}
+async function playAll(){
+  RUN++;const run=RUN;RUNNING=true;PAUSED=false;SKIP=false;setPlayLabel();
+  try{for(let s=state.stage;s<STAGES.length;s++){state.stage=s;renderNav();await animateStage(s,run);if(run!==RUN)return;if(s<STAGES.length-1)await step(460,run);}}
+  catch(e){return;}
+  if(run===RUN){RUNNING=false;PAUSED=false;setPlayLabel();}
+}
+function onPlay(){if(RUNNING){PAUSED=!PAUSED;setPlayLabel();return;}if(state.stage===STAGES.length-1)state.stage=0;playAll();}
+function jumpStage(id){RUN++;state.stage=id;renderNav();syncHash();runSingle(id);}
+function gotoPrev(){if(state.stage>0)jumpStage(state.stage-1);}
+function gotoNext(){if(state.stage<STAGES.length-1)jumpStage(state.stage+1);}
+
+function rebuild(){
+  RUN++;RUNNING=false;PAUSED=false;
+  const fullVal=$("sent").value.trim();
+  state.text=fullVal;
+  let raw=fullVal.toLowerCase().split(/\s+/).filter(Boolean);
+  const total=raw.length;
+  if(raw.length>MAX_TOK)raw=raw.slice(0,MAX_TOK);
+  if(raw.length===0)raw=["·"];
+  state.tokens=raw;state.model=compute(raw,CFG[state.heads]);state.stage=0;
+  renderSidebar();setPlayLabel();
+  const tn=$("trunc");
+  if(total>MAX_TOK){tn.style.display="";tn.innerHTML=`showing first <b>${MAX_TOK}</b> of ${total} words — matrices stay legible. Drop a word to include the rest.`;}
+  else tn.style.display="none";
+  syncHash();
+  runSingle(0);
+}
+function syncHash(){try{history.replaceState(null,"",`#s=${encodeURIComponent(state.text||"")}&st=${state.stage}&h=${state.head}&hc=${state.heads}`);}catch(e){}}
+
+function readHash(){
+  try{
+    const raw=location.hash.replace(/^#/,"");if(!raw)return null;
+    const p={};raw.split("&").forEach(kv=>{const i=kv.indexOf("=");if(i>0)p[kv.slice(0,i)]=decodeURIComponent(kv.slice(i+1));});
+    if(p.s!=null)$("sent").value=p.s;
+    const out={};
+    if(p.hc==="1"||p.hc==="2")out.hc=+p.hc;
+    if(p.h!=null&&p.h!=="")out.h=+p.h;
+    if(p.st!=null&&p.st!=="")out.st=+p.st;
+    return out;
+  }catch(e){return null;}
+}
+
+$("sent").addEventListener("input",rebuild);
+$("play").onclick=onPlay;$("prev").onclick=gotoPrev;$("next").onclick=gotoNext;$("replay").onclick=()=>jumpStage(state.stage);
+$("skip").onclick=skipStage;
+$("headseg").querySelectorAll("button").forEach(b=>b.onclick=()=>{state.head=+b.dataset.h;renderNav();if(STAGES[state.stage].head)jumpStage(state.stage);});
+$("headcountseg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  const hc=+b.dataset.hc;if(hc===state.heads)return;state.heads=hc;state.head=0;
+  state.model=compute(state.tokens,CFG[hc]);renderSidebar();syncHash();jumpStage(state.stage);
+});
+$("realseg").querySelectorAll("button").forEach(b=>b.onclick=()=>{state.real=+b.dataset.r===1;renderNav();if(state.stage===11)jumpStage(11);});
+$("speed").querySelectorAll("button").forEach(b=>b.onclick=()=>{SPEED=+b.dataset.s;$("speed").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));});
+$("expgif").onclick=recordGIF;
+$("exppng").onclick=snapPNG;
+$("copylink").onclick=()=>{
+  const btn=$("copylink");
+  const done=()=>{btn.classList.add("copied");btn.textContent="✓ Link copied";setTimeout(()=>{btn.classList.remove("copied");btn.textContent="🔗 Copy link";},1600);};
+  try{navigator.clipboard.writeText(location.href).then(done,done);}catch(e){done();}
+};
+document.addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;
+  if(e.key==="ArrowLeft")gotoPrev();if(e.key==="ArrowRight")gotoNext();if(e.key===" "){e.preventDefault();onPlay();}if(e.key==="Enter")skipStage();});
+
+function boot(){
+  if(!window.katex){setTimeout(boot,60);return;}
+  const p=readHash();
+  if(p&&(p.hc===1||p.hc===2))state.heads=p.hc;
+  rebuild();
+  if(p){if(p.h!=null&&state.heads===2)state.head=p.h;if(p.st!=null&&p.st>=0&&p.st<STAGES.length)jumpStage(p.st);}
+}
+boot();
+</script>
+</body>
+</html>
