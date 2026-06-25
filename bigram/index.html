@@ -4,20 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bigram, Animated — watch a language model generate names</title>
-<meta name="description" content="An interactive, in-browser bigram language model: watch character counts become probabilities, then watch a name get generated one character at a time by hopping through the bigram table. By Abdulsamad Teniola Muyideen.">
+<meta name="description" content="An interactive, step-by-step bigram language model: from counting character pairs across 32K names, to probabilities, to generating new names — every number explained. By Abdulsamad Teniola Muyideen.">
 <meta name="author" content="Abdulsamad Teniola Muyideen">
 <meta name="theme-color" content="#0A0D13">
 <link rel="canonical" href="https://th3samaritan.github.io/AI-Research/bigram/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Bigram, Animated — watch a language model generate names">
-<meta property="og:description" content="Counts become probabilities; watch a name generated one character at a time by walking the bigram table. An interactive paper-with-code.">
+<meta property="og:description" content="Step by step: counts become probabilities; watch a name generated one letter at a time by walking the bigram table. An interactive paper-with-code.">
 <meta property="og:url" content="https://th3samaritan.github.io/AI-Research/bigram/">
 <meta property="og:image" content="https://th3samaritan.github.io/AI-Research/bigram/preview.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Bigram, Animated — watch a language model generate names">
-<meta name="twitter:description" content="Counts become probabilities; watch a name generated one character at a time by walking the bigram table.">
+<meta name="twitter:description" content="Step by step: counts become probabilities; watch a name generated one letter at a time.">
 <meta name="twitter:image" content="https://th3samaritan.github.io/AI-Research/bigram/preview.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -31,39 +31,31 @@
     --ink:#0A0D13;--chrome:#0F131D;--panel:#141A28;--panel-2:#19202F;
     --line:#262E43;--line-soft:#1C2333;--txt:#E8ECF5;--muted:#8B95AC;--muted-2:#5C6680;
     --signal:#F5A524;--signal-2:#FFC85C;--signal-dim:#F5A52426;
-    --cool:#5B8DEF;--good:#5BE3A6;--grad:#7C6BF0;--cellbg:#111726;--celledge:#283251;--radius:13px;
+    --cool:#5B8DEF;--good:#5BE3A6;--grad:#7C6BF0;--bad:#E5687A;--cellbg:#111726;--celledge:#283251;--radius:13px;
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;height:100%}
-  body{background:
-      radial-gradient(1100px 560px at 80% -8%,#17223c 0%,transparent 55%),
-      radial-gradient(900px 480px at -5% 108%,#1a1430 0%,transparent 52%),var(--ink);
+  body{background:radial-gradient(1100px 560px at 80% -8%,#17223c 0%,transparent 55%),radial-gradient(900px 480px at -5% 108%,#1a1430 0%,transparent 52%),var(--ink);
     color:var(--txt);font-family:"Space Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
   .app{display:grid;grid-template-columns:300px 1fr;min-height:100vh}
   @media(max-width:900px){.app{grid-template-columns:1fr}}
-  aside{background:linear-gradient(180deg,var(--chrome),var(--ink));border-right:1px solid var(--line);
-    padding:22px 19px 24px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+  aside{background:linear-gradient(180deg,var(--chrome),var(--ink));border-right:1px solid var(--line);padding:22px 19px 24px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
   @media(max-width:900px){aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}}
   .eyebrow{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--signal)}
-  .title{font-size:23px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:3px 0 0}
-  .title .thin{color:var(--muted)}
+  .title{font-size:23px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:3px 0 0}.title .thin{color:var(--muted)}
   .byline{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);line-height:1.7;margin-top:2px}
-  .byline a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
-  .byline a:hover{color:var(--signal);border-color:var(--signal)}
+  .byline a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}.byline a:hover{color:var(--signal);border-color:var(--signal)}
   .block{display:flex;flex-direction:column;gap:8px}
   .lbl{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2)}
   .chips{display:flex;flex-wrap:wrap;gap:4px}
   .chip{font-family:"JetBrains Mono",monospace;font-size:11px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:5px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);transition:.15s;cursor:pointer}
   .chip:hover{border-color:var(--signal);color:var(--signal)}
   .chip.lit{background:var(--signal);color:#241a04;border-color:var(--signal);font-weight:700}
-  .params{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px}
-  .params b{color:var(--signal);font-weight:500}
+  .params{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px}.params b{color:var(--signal);font-weight:500}
   .linkbtn,.expbtn{font-family:"JetBrains Mono",monospace;font-size:11px;background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer;transition:.14s;text-align:left}
-  .linkbtn:hover,.expbtn:hover{border-color:var(--signal);color:var(--signal)}
-  .linkbtn.copied{border-color:var(--good);color:var(--good)}
+  .linkbtn:hover,.expbtn:hover{border-color:var(--signal);color:var(--signal)}.linkbtn.copied{border-color:var(--good);color:var(--good)}
   .expbtn:disabled{opacity:.4;cursor:not-allowed}.expbtn.rec{border-color:#e5484d;color:#e5484d}
-  .expstat{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);line-height:1.5;background:#141a28;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
-  .expstat.err{color:var(--signal)}
+  .expstat{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);line-height:1.5;background:#141a28;border:1px solid var(--line);border-radius:7px;padding:7px 9px}.expstat.err{color:var(--signal)}
   .seg{display:flex;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px}
   .seg button{flex:1;background:transparent;border:none;color:var(--muted);font-family:"JetBrains Mono",monospace;font-size:11px;padding:7px 2px;border-radius:6px;cursor:pointer;transition:.14s}
   .seg button.on{background:var(--panel-2);color:var(--signal);box-shadow:0 1px 0 #fff1 inset}
@@ -73,35 +65,47 @@
   .tbtn.play{flex:2;background:var(--signal);color:#241a04;border-color:var(--signal);font-weight:700;letter-spacing:.03em}
   .tbtn.play:hover{filter:brightness(1.07)}.tbtn:disabled{opacity:.34;cursor:not-allowed}
   .nav{display:flex;flex-direction:column;gap:1px}
-  .navitem{display:flex;align-items:center;gap:9px;background:transparent;border:none;border-radius:7px;padding:8px 9px;cursor:pointer;text-align:left;color:var(--muted);transition:.14s;width:100%}
-  .navitem:hover{background:#171f30;color:var(--txt)}
-  .navitem.on{background:linear-gradient(90deg,#1d263c,#161d2c);color:var(--txt)}
+  .navitem{display:flex;align-items:center;gap:9px;background:transparent;border:none;border-radius:7px;padding:7px 9px;cursor:pointer;text-align:left;color:var(--muted);transition:.14s;width:100%}
+  .navitem:hover{background:#171f30;color:var(--txt)}.navitem.on{background:linear-gradient(90deg,#1d263c,#161d2c);color:var(--txt)}
   .navitem .ix{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);width:18px}
-  .navitem.on .ix{color:var(--signal)}.navitem.done .ix{color:var(--good)}
-  .navitem .nm{font-size:12.5px;font-weight:500}
+  .navitem.on .ix{color:var(--signal)}.navitem.done .ix{color:var(--good)}.navitem .nm{font-size:12px;font-weight:500}
   .spacer{flex:1;min-height:6px}
-  .foot{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);line-height:1.7}
-  .foot a{color:var(--muted);text-decoration:none}.foot a:hover{color:var(--signal)}
+  .foot{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);line-height:1.7}.foot a{color:var(--muted);text-decoration:none}.foot a:hover{color:var(--signal)}
   main{padding:24px clamp(16px,4vw,44px) 70px;overflow-x:hidden;display:flex;flex-direction:column}
   .head .stage-no{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal)}
   .head h2{font-size:clamp(21px,3vw,29px);font-weight:700;letter-spacing:-.02em;margin:4px 0 4px}
-  .head p{color:var(--muted);font-size:14px;margin:0;max-width:76ch;line-height:1.55}
+  .head p{color:var(--muted);font-size:14px;margin:0;max-width:78ch;line-height:1.55}
   .hint{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);margin-top:7px}.hint b{color:var(--cool)}
-  .bar{margin:16px 0 18px;min-height:56px;background:linear-gradient(180deg,#0d1320,#0b0f18);border:1px solid var(--line);border-radius:12px;padding:13px 18px;display:flex;align-items:center;gap:13px;overflow-x:auto;box-shadow:0 1px 0 #ffffff08 inset}
+  .bar{margin:16px 0 18px;min-height:56px;background:linear-gradient(180deg,#0d1320,#0b0f18);border:1px solid var(--line);border-radius:12px;padding:13px 18px;display:flex;align-items:center;gap:13px;overflow-x:auto}
   .bar .tag{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted-2);flex:0 0 auto}
   .bar .eq{flex:1;min-width:0}.bar .katex{color:var(--txt)!important;font-size:1.04em}
   .bar.idle .eq{color:var(--muted-2);font-family:"JetBrains Mono",monospace;font-size:13px}
   #stage{position:relative}
-  .row{display:flex;flex-wrap:wrap;gap:26px 30px;align-items:flex-start}
-  /* name display */
-  .namewrap{display:flex;flex-direction:column;gap:8px}
-  .namebox{font-family:"JetBrains Mono",monospace;font-size:34px;font-weight:700;letter-spacing:.06em;color:var(--txt);
-    background:#0d1320;border:1px solid var(--line);border-radius:12px;padding:14px 20px;min-width:260px;min-height:64px;display:flex;align-items:center;gap:2px}
-  .namebox .cur{color:var(--signal)}.namebox .dot{color:var(--muted-2)}
-  .namebox .cursor{width:3px;height:34px;background:var(--signal);animation:blink 1s steps(2) infinite;margin-left:3px}
-  @keyframes blink{50%{opacity:0}}
-  .genlist{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px;max-width:520px}
-  .genname{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--good);background:#0e2018;border:1px solid #2c5a44;border-radius:7px;padding:4px 9px}
+  .row{display:flex;flex-wrap:wrap;gap:24px 30px;align-items:flex-start}
+  .col{display:flex;flex-direction:column;gap:6px}
+  .mxlabel{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted)}
+  .axislabel{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);text-transform:uppercase;letter-spacing:.12em}
+  /* note / callout */
+  .note{font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.75;color:var(--txt);background:#141d2b;border:1px solid #2a3a52;border-left:3px solid var(--signal);border-radius:8px;padding:11px 14px;max-width:82ch;margin-top:15px}
+  .note.cool{border-left-color:var(--cool)}.note.good{border-left-color:var(--good)}
+  .note b{color:var(--signal-2)}.note .c{color:var(--cool)}.note .g{color:var(--good)}.note .r{color:var(--bad)}
+  .note code{color:#c9d4e8;background:#0d1320;padding:1px 5px;border-radius:4px;font-size:11px}
+  .caption{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted-2);margin-top:14px;line-height:1.7;max-width:82ch}
+  .caption b{color:var(--cool)}.caption .s{color:var(--signal)}
+  .endcap{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--good);margin-top:16px;letter-spacing:.03em}
+  /* vocab + wrapped name */
+  .vocab{display:flex;flex-wrap:wrap;gap:5px;max-width:540px}
+  .vchip{font-family:"JetBrains Mono",monospace;font-size:13px;width:27px;height:27px;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted)}
+  .vchip.dot{color:var(--signal);border-color:var(--signal);background:#241d0d}
+  .wrapseq{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px}
+  .tok{min-width:42px;height:50px;padding:0 6px;border-radius:9px;background:#0d1320;border:1px solid var(--celledge);display:flex;align-items:center;justify-content:center;font-family:"JetBrains Mono",monospace;font-size:24px;font-weight:700;color:var(--txt);transition:.15s}
+  .tok.dot{color:var(--muted-2)}.tok.lit{border-color:var(--signal);box-shadow:0 0 0 1px var(--signal) inset;color:var(--signal)}
+  .arr{color:var(--muted-2);font-size:15px;font-family:"JetBrains Mono",monospace}
+  .pairlist{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .pair{font-family:"JetBrains Mono",monospace;font-size:14px;color:var(--cool);background:#0e1726;border:1px solid #243355;border-radius:7px;padding:4px 10px}
+  .pair.lit{color:var(--signal);border-color:var(--signal);background:#241d0d}
+  .nlist{display:flex;flex-wrap:wrap;gap:6px}
+  .nameitem{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--muted);background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:4px 9px}
   /* heatmap */
   table.mx{border-collapse:separate;border-spacing:2px;font-family:"JetBrains Mono",monospace}
   table.mx th{color:var(--muted-2);font-weight:500;font-size:10px;padding:0 1px;text-align:center}
@@ -112,9 +116,8 @@
   td.cell.ping{animation:ping .5s ease}
   @keyframes ping{0%{transform:scale(1)}45%{transform:scale(1.55);box-shadow:0 0 0 2px var(--signal-2),0 0 12px var(--signal)}100%{transform:scale(1)}}
   td.cell.hot{box-shadow:0 0 0 2px var(--signal) inset}
-  .mxlabel{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);margin-bottom:8px}
-  .axislabel{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);text-transform:uppercase;letter-spacing:.12em}
-  /* bar chart distribution */
+  td.cell.zero{outline:2px solid var(--bad);outline-offset:1px}
+  /* distribution bars */
   .dist{display:flex;flex-direction:column;gap:4px;min-width:300px}
   .drow{display:flex;align-items:center;gap:9px}
   .dch{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);width:16px;text-align:center}
@@ -122,15 +125,30 @@
   .dtrack{flex:1;height:15px;background:var(--cellbg);border:1px solid var(--celledge);border-radius:5px;overflow:hidden}
   .dfill{height:100%;width:0;background:linear-gradient(90deg,#1F7A8C,var(--signal));transition:width .5s cubic-bezier(.3,1,.4,1);border-radius:5px}
   .drow.top .dfill{background:linear-gradient(90deg,var(--signal),var(--signal-2))}
-  .dpct{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);width:42px}
+  .dpct{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);width:46px}
+  /* one-hot row */
+  .onehot{display:flex;gap:2px;flex-wrap:wrap;max-width:560px}
+  .ocell{width:19px;height:24px;border-radius:3px;background:var(--cellbg);border:1px solid #1d2540;display:flex;align-items:center;justify-content:center;font-size:8px;color:#46506e}
+  .ocell.one{background:var(--signal);color:#241a04;font-weight:700;border-color:var(--signal)}
+  .ocell .lab{position:absolute}
+  .ohlabels{display:flex;gap:2px;flex-wrap:wrap;max-width:560px;margin-top:2px}
+  .ohlab{width:19px;text-align:center;font-family:"JetBrains Mono",monospace;font-size:8px;color:var(--muted-2)}
+  /* comparison bars (perplexity) */
+  .cmp{display:flex;flex-direction:column;gap:14px;min-width:320px;margin-top:6px}
+  .cmprow{display:flex;flex-direction:column;gap:5px}
+  .cmptop{display:flex;justify-content:space-between;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted)}
+  .cmptrack{height:26px;background:var(--cellbg);border:1px solid var(--celledge);border-radius:7px;overflow:hidden}
+  .cmpfill{height:100%;width:0;border-radius:7px;transition:width .7s cubic-bezier(.3,1,.4,1)}
+  .lossnum{font-family:"JetBrains Mono",monospace;font-size:22px;color:var(--signal);font-weight:700}
   .legend{display:flex;align-items:center;gap:8px;font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);margin-top:12px}
   .legbar{height:8px;width:118px;border-radius:5px;background:linear-gradient(90deg,#16205A,#1F7A8C,#F5A524)}
-  .caption{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted-2);margin-top:16px;line-height:1.7;max-width:80ch}
-  .caption b{color:var(--cool)}.caption .s{color:var(--signal)}
-  .endcap{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--good);margin-top:16px;letter-spacing:.03em}
   .flowlayer{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:6}
   .dotfx{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--signal);box-shadow:0 0 9px var(--signal);transform:translate(-50%,-50%);transition:transform .42s cubic-bezier(.4,.1,.3,1),opacity .42s ease}
-  .lossnum{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--signal);margin-top:6px}
+  .namebox{font-family:"JetBrains Mono",monospace;font-size:32px;font-weight:700;letter-spacing:.06em;color:var(--txt);background:#0d1320;border:1px solid var(--line);border-radius:12px;padding:12px 18px;min-width:240px;min-height:60px;display:flex;align-items:center;gap:2px}
+  .namebox .cur{color:var(--signal)}.namebox .dot{color:var(--muted-2)}
+  .namebox .cursor{width:3px;height:32px;background:var(--signal);animation:blink 1s steps(2) infinite;margin-left:3px}
+  @keyframes blink{50%{opacity:0}}
+  .genname{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--good);background:#0e2018;border:1px solid #2c5a44;border-radius:7px;padding:4px 9px}
   @media(prefers-reduced-motion:reduce){td.cell.ping{animation:none}}
 </style>
 </head>
@@ -150,9 +168,9 @@
     <div class="block">
       <span class="lbl">Playback</span>
       <div class="transport">
-        <button class="tbtn" id="prev" title="Previous stage">◂</button>
+        <button class="tbtn" id="prev" title="Previous step">◂</button>
         <button class="tbtn play" id="play" title="Play / pause">▶ Play</button>
-        <button class="tbtn" id="next" title="Next stage">▸</button>
+        <button class="tbtn" id="next" title="Next step">▸</button>
         <button class="tbtn" id="skip" title="Show instantly">⏭</button>
         <button class="tbtn" id="replay" title="Replay">⟲</button>
       </div>
@@ -160,18 +178,18 @@
     </div>
     <div class="block">
       <span class="lbl">Export</span>
-      <button class="expbtn" id="expgif">◉ Record stage → GIF</button>
+      <button class="expbtn" id="expgif">◉ Record step → GIF</button>
       <button class="expbtn" id="exppng">⤓ PNG of full window</button>
       <button class="linkbtn" id="copylink">🔗 Copy link</button>
       <div class="expstat" id="expstat" style="display:none"></div>
     </div>
     <div class="block">
-      <span class="lbl">Stages</span>
+      <span class="lbl">Steps</span>
       <div class="nav" id="nav"></div>
     </div>
     <div class="spacer"></div>
-    <div class="foot">P(next | current) from 32K names<br>after Karpathy's makemore (part 1)<br>
-      <a href="https://th3samaritan.github.io/My-Portfolio/" target="_blank" rel="noopener">th3samaritan.github.io</a> · v0.1</div>
+    <div class="foot">P(next | current) from 32,033 names<br>after Karpathy's makemore (part 1)<br>
+      <a href="https://th3samaritan.github.io/My-Portfolio/" target="_blank" rel="noopener">th3samaritan.github.io</a> · v0.2</div>
   </aside>
   <main>
     <div class="head">
@@ -180,7 +198,7 @@
       <p id="stagedesc"></p>
       <div class="hint" id="hint"></div>
     </div>
-    <div class="bar idle" id="bar"><span class="tag">live</span><span class="eq" id="eq">press play to watch it compute</span></div>
+    <div class="bar idle" id="bar"><span class="tag">live</span><span class="eq" id="eq">press play to walk through it</span></div>
     <div id="stage"></div>
   </main>
 </div>
@@ -188,29 +206,53 @@
 "use strict";
 /* ============================================================
    Bigram, Animated — a character-level bigram language model,
-   trained by counting 32K names. After Karpathy's makemore.
+   built by counting 32,033 names. After Karpathy's makemore.
    ============================================================ */
 const DATA = {"itos": [".", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"], "N": [[0, 4410, 1306, 1542, 1690, 1531, 417, 669, 874, 591, 2422, 2963, 1572, 2538, 1146, 394, 515, 92, 1639, 2055, 1308, 78, 376, 307, 134, 535, 929], [6640, 556, 541, 470, 1042, 692, 134, 168, 2332, 1650, 175, 568, 2528, 1634, 5438, 63, 82, 60, 3264, 1118, 687, 381, 834, 161, 182, 2050, 435], [114, 321, 38, 1, 65, 655, 0, 0, 41, 217, 1, 0, 103, 0, 4, 105, 0, 0, 842, 8, 2, 45, 0, 0, 0, 83, 0], [97, 815, 0, 42, 1, 551, 0, 2, 664, 271, 3, 316, 116, 0, 0, 380, 1, 11, 76, 5, 35, 35, 0, 0, 3, 104, 4], [516, 1303, 1, 3, 149, 1283, 5, 25, 118, 674, 9, 3, 60, 30, 31, 378, 0, 1, 424, 29, 4, 92, 17, 23, 0, 317, 1], [3983, 679, 121, 153, 384, 1271, 82, 125, 152, 818, 55, 178, 3248, 769, 2675, 269, 83, 14, 1958, 861, 580, 69, 463, 50, 132, 1070, 181], [80, 242, 0, 0, 0, 123, 44, 1, 1, 160, 0, 2, 20, 0, 4, 60, 0, 0, 114, 6, 18, 10, 0, 4, 0, 14, 2], [108, 330, 3, 0, 19, 334, 1, 25, 360, 190, 3, 0, 32, 6, 27, 83, 0, 0, 201, 30, 31, 85, 1, 26, 0, 31, 1], [2409, 2244, 8, 2, 24, 674, 2, 2, 1, 729, 9, 29, 185, 117, 138, 287, 1, 1, 204, 31, 71, 166, 39, 10, 0, 213, 20], [2489, 2445, 110, 509, 440, 1653, 101, 428, 95, 82, 76, 445, 1345, 427, 2126, 588, 53, 52, 849, 1316, 541, 109, 269, 8, 89, 779, 277], [71, 1473, 1, 4, 4, 440, 0, 0, 45, 119, 2, 2, 9, 5, 2, 479, 1, 0, 11, 7, 2, 202, 5, 6, 0, 10, 0], [363, 1731, 2, 2, 2, 895, 1, 0, 307, 509, 2, 20, 139, 9, 26, 344, 0, 0, 109, 95, 17, 50, 2, 34, 0, 379, 2], [1314, 2623, 52, 25, 138, 2921, 22, 6, 19, 2480, 6, 24, 1345, 60, 14, 692, 15, 3, 18, 94, 77, 324, 72, 16, 0, 1588, 10], [516, 2590, 112, 51, 24, 818, 1, 0, 5, 1256, 7, 1, 5, 168, 20, 452, 38, 0, 97, 35, 4, 139, 3, 2, 0, 287, 11], [6763, 2977, 8, 213, 704, 1359, 11, 273, 26, 1725, 44, 58, 195, 19, 1906, 496, 5, 2, 44, 278, 443, 96, 55, 11, 6, 465, 145], [855, 149, 140, 114, 190, 132, 34, 44, 171, 69, 16, 68, 619, 261, 2411, 115, 95, 3, 1059, 504, 118, 275, 176, 114, 45, 103, 54], [33, 209, 2, 1, 0, 197, 1, 0, 204, 61, 1, 1, 16, 1, 1, 59, 39, 0, 151, 16, 17, 4, 0, 0, 0, 12, 0], [28, 13, 0, 0, 0, 1, 0, 0, 0, 13, 0, 0, 1, 2, 0, 2, 0, 0, 1, 2, 0, 206, 0, 3, 0, 0, 0], [1377, 2356, 41, 99, 187, 1697, 9, 76, 121, 3033, 25, 90, 413, 162, 140, 869, 14, 16, 425, 190, 208, 252, 80, 21, 3, 773, 23], [1169, 1201, 21, 60, 9, 884, 2, 2, 1285, 684, 2, 82, 279, 90, 24, 531, 51, 1, 55, 461, 765, 185, 14, 24, 0, 215, 10], [483, 1027, 1, 17, 0, 716, 2, 2, 647, 532, 3, 0, 134, 4, 22, 667, 0, 0, 352, 35, 374, 78, 15, 11, 2, 341, 105], [155, 163, 103, 103, 136, 169, 19, 47, 58, 121, 14, 93, 301, 154, 275, 10, 16, 10, 414, 474, 82, 3, 37, 86, 34, 13, 45], [88, 642, 1, 0, 1, 568, 0, 0, 1, 911, 0, 3, 14, 0, 8, 153, 0, 0, 48, 0, 0, 7, 7, 0, 0, 121, 0], [51, 280, 1, 0, 8, 149, 2, 1, 23, 148, 0, 6, 13, 2, 58, 36, 0, 0, 22, 20, 8, 25, 0, 2, 0, 73, 1], [164, 103, 1, 4, 5, 36, 3, 0, 1, 102, 0, 0, 39, 1, 1, 41, 0, 0, 0, 31, 70, 5, 0, 3, 38, 30, 19], [2007, 2143, 27, 115, 272, 301, 12, 30, 22, 192, 23, 86, 1104, 148, 1826, 271, 15, 6, 291, 401, 104, 141, 106, 4, 28, 23, 78], [160, 860, 4, 2, 2, 373, 0, 1, 43, 364, 2, 2, 123, 35, 4, 110, 2, 0, 32, 4, 4, 73, 2, 3, 1, 147, 45]]};
 const ITOS = DATA.itos, N = DATA.N, V = 27;
-const labelOf = i => ITOS[i] === '.' ? '.' : ITOS[i];
+const STOI = {}; ITOS.forEach((c,i)=>STOI[c]=i);
+const labelOf = i => ITOS[i];
 
-/* row-normalized probabilities with +1 smoothing (the model) */
-const P = N.map(row => { const s = row.reduce((a, b) => a + b + 1, 0); return row.map(c => (c + 1) / s); });
-/* average negative log-likelihood over the whole training set, computed straight from the counts */
-let TOT = 0, NLL = 0;
-for (let i = 0; i < V; i++) for (let j = 0; j < V; j++) { TOT += N[i][j]; NLL += N[i][j] * -Math.log(P[i][j]); }
-const AVG_NLL = NLL / TOT;
-const MAXLOG = Math.log(Math.max(...N.flat()) + 1);
+/* raw (unsmoothed) row distribution */
+const rowSum = i => N[i].reduce((a,b)=>a+b,0);
+const rawRow = i => { const s=rowSum(i)||1; return N[i].map(c=>c/s); };
+/* smoothed model (+1) used for generation */
+const P = N.map(row => { const s = row.reduce((a,b)=>a+b+1,0); return row.map(c=>(c+1)/s); });
+/* key real numbers */
+const NAMES = rowSum(0);                       // 32033 (one start->first per name)
+const TOTAL = N.flat().reduce((a,b)=>a+b,0);   // 228146
+const A=STOI['a'];
+const A_FIRST = N[0][A];                        // .a  -> a is first   (4410)
+const A_LAST  = N[A][0];                        // a.  -> a is last    (6640)
+const P_FIRST_A = A_FIRST/NAMES;                // 0.1377
+/* loss + perplexity from counts (smoothed) */
+let NLL=0; for(let i=0;i<V;i++)for(let j=0;j<V;j++) NLL += N[i][j]*-Math.log(P[i][j]);
+const AVG_NLL = NLL/TOTAL, PPL = Math.exp(AVG_NLL), UNI=Math.log(V), UNI_PPL=V;
+const MAXLOG = Math.log(Math.max(...N.flat())+1);
+/* a real zero-count bigram, for the smoothing step */
+let ZERO=[0,0]; outer: for(let i=1;i<V;i++)for(let j=1;j<V;j++){ if(N[i][j]===0){ZERO=[i,j];break outer;} }
 
-const STAGES = [
-  { id:0, name:"The count table", title:"Count every pair of characters",
-    desc:"From 32,000 names we tally how often each character follows each other — a 27×27 table (26 letters + the boundary token '.'). Brighter = more frequent. Row = current character, column = the next one." },
-  { id:1, name:"Row → probability", title:"Normalize a row into a distribution",
-    desc:"Pick a current character (left) and its row of counts becomes P(next | current): divide each count by the row total so the 27 numbers sum to 1. That bar chart is everything the model knows after seeing one character." },
-  { id:2, name:"Generate a name", title:"Sample, hop, repeat",
-    desc:"Start at '.', sample the next character from the current row's distribution, append it, move to that character's row, and repeat until '.' is drawn. Watch a name appear one hop at a time." },
-  { id:3, name:"How good is it?", title:"The loss, and the neural twin",
-    desc:"Score the model with the average negative log-likelihood over all the data. The very same model can be written as a 1-layer neural net (one-hot × W → softmax) trained by gradient descent — it reaches the same loss." },
+const STAGES=[
+  {id:0,name:"The data",title:"32,033 names, and a boundary token",
+   desc:"Everything starts from the dataset. The alphabet is the 26 letters plus one special token '.', which marks BOTH the start and the end of a name — 27 symbols in total. Before counting, every name is wrapped: emma becomes . e m m a ."},
+  {id:1,name:"Count the pairs",title:"Tally every adjacent pair into a 27×27 table",
+   desc:"A 'bigram' is two adjacent characters. We slide across each wrapped name and add 1 to N[current, next]. Rows are the current character, columns the next. Across all names that records 228,146 pairs — brighter cells are more frequent."},
+  {id:2,name:"First letters",title:"Reading row 0 — and the .a vs a. trap",
+   desc:"Row 0 (the '.' token) records start→first-letter, so it IS the distribution of first letters. Watch out: .a (start→a) means a is FIRST; a. (a→end) means a is LAST. They are different cells with different counts."},
+  {id:3,name:"Row → probability",title:"Normalize a row into P(next | current)",
+   desc:"Divide each count in a row by that row's total so the 27 numbers sum to 1. That gives the conditional distribution P(next | current) — the maximum-likelihood estimate. Pick any current character in the sidebar to inspect its row."},
+  {id:4,name:"Sample one",title:"One draw from the distribution (a weighted die)",
+   desc:"To pick the next character we sample from the row's distribution: lay the probabilities end to end on [0,1], roll a random number, and see which slice it lands in. Higher-probability characters own bigger slices."},
+  {id:5,name:"Generate a name",title:"Sample, hop, repeat until '.'",
+   desc:"Start at '.', sample the next character, append it, move to that character's row, and repeat until '.' is drawn. A generated name is just a random walk through the table, starting and ending at the boundary token."},
+  {id:6,name:"The loss",title:"Score the whole model in one number (NLL)",
+   desc:"The loss is the average negative log-likelihood: take the probability the model gave each true next character, log it, negate, and average. Lower is better; a perfect model scores 0, a uniform guesser scores log(27) ≈ 3.30."},
+  {id:7,name:"Perplexity",title:"How many choices is it confused among?",
+   desc:"Perplexity = e^loss reads the loss as an 'effective number of choices'. A uniform model over 27 symbols has perplexity 27; our bigram model is far lower — it has genuinely learned structure."},
+  {id:8,name:"Smoothing",title:"Why we add +1 to every count",
+   desc:"If a pair never occurs its count is 0, its probability is 0, and log(0) = −∞ would make the loss infinite. Add-one (Laplace) smoothing adds 1 to every count before normalizing, so every transition stays just barely possible."},
+  {id:9,name:"The neural twin",title:"The same model as a 1-layer neural net",
+   desc:"One-hot a character (a length-27 vector, a single 1), multiply by a 27×27 matrix W to get logits, then softmax. Because the input is one-hot, x·W just SELECTS row i of W — so this network is the bigram model, reachable by gradient descent instead of counting."},
 ];
 
 /* ---- control ---- */
@@ -225,136 +267,238 @@ function K(t){try{return katex.renderToString(t,{displayMode:false,throwOnError:
 function setEq(t){$("bar").classList.remove("idle");$("eq").innerHTML=K(t);}
 function setEqIdle(t){$("bar").classList.add("idle");$("eq").textContent=t;}
 function heat(t){const s=[[22,32,90],[31,122,140],[245,165,36]];const g=t<.5?0:1,lt=t<.5?t/.5:(t-.5)/.5,a=s[g],b=s[g+1];const c=[0,1,2].map(i=>Math.round(a[i]+(b[i]-a[i])*lt));return`rgb(${c[0]},${c[1]},${c[2]})`;}
-function rng(){return Math.random();}
-function sample(probs){const r=rng();let c=0;for(let i=0;i<probs.length;i++){c+=probs[i];if(r<c)return i;}return probs.length-1;}
+function sample(probs){const r=Math.random();let c=0;for(let i=0;i<probs.length;i++){c+=probs[i];if(r<c)return i;}return probs.length-1;}
 const getCSS=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim()||"#F5A524";
+const tex=i=>labelOf(i)==='.'?'\\cdot':`\\text{${labelOf(i)}}`;
+function renderNotes(){document.querySelectorAll(".note,.caption").forEach(el=>{el.innerHTML=el.innerHTML.replace(/\$([^$]+)\$/g,(m,t)=>K(t));});}
 
 /* ---- heatmap ---- */
 const cid=(i,j)=>`hc_${i}_${j}`;
-function heatmapHTML(){
-  let h=`<div class="mxlabel">bigram counts <span class="axislabel">N[current, next]</span></div><table class="mx"><tr><th></th>`;
+function heatmapHTML(showText){
+  let h=`<div class="col"><div class="mxlabel">bigram counts <span class="axislabel">N[current → next]</span></div><table class="mx"><tr><th></th>`;
   for(let j=0;j<V;j++)h+=`<th>${labelOf(j)}</th>`;h+=`</tr>`;
   for(let i=0;i<V;i++){h+=`<tr><th class="rh">${labelOf(i)}</th>`;
-    for(let j=0;j<V;j++){const t=Math.log(N[i][j]+1)/MAXLOG;h+=`<td class="cell" id="${cid(i,j)}" style="background:${heat(t)};color:${t>0.55?'#241a04':'#9fb0d0'}" title="${labelOf(i)}→${labelOf(j)} : ${N[i][j]}"></td>`;}
+    for(let j=0;j<V;j++){const t=Math.log(N[i][j]+1)/MAXLOG;h+=`<td class="cell" id="${cid(i,j)}" style="background:${heat(t)};color:${t>0.55?'#241a04':'#9fb0d0'}" title="${labelOf(i)}→${labelOf(j)} : ${N[i][j]}">${showText?N[i][j]:''}</td>`;}
     h+=`</tr>`;}
-  return h+`</table>`;
+  return h+`</table></div>`;
 }
 const cell=(i,j)=>$(cid(i,j));
-function clearLit(){document.querySelectorAll("td.cell.rowlit,td.cell.collit,td.cell.hot").forEach(c=>c.classList.remove("rowlit","collit","hot"));}
+function clearLit(){document.querySelectorAll("td.cell.rowlit,td.cell.collit,td.cell.hot,td.cell.zero").forEach(c=>c.classList.remove("rowlit","collit","hot","zero"));}
 function litRow(i){for(let j=0;j<V;j++)cell(i,j)?.classList.add("rowlit");}
+function litCol(j){for(let i=0;i<V;i++)cell(i,j)?.classList.add("collit");}
 function ping(i,j){const c=cell(i,j);if(!c)return;c.classList.remove("ping");void c.offsetWidth;c.classList.add("ping");}
 
-/* ---- distribution bar chart ---- */
-function distHTML(i){
-  const order=P[i].map((p,j)=>[j,p]).sort((a,b)=>b[1]-a[1]);
-  const top=order[0][0];
-  let h=`<div class="dist" id="dist"><div class="mxlabel">P(next | <span style="color:var(--signal)">${labelOf(i)}</span>)</div>`;
-  for(let j=0;j<V;j++){const p=P[i][j];
-    h+=`<div class="drow ${j===top?'top':''}" id="dr_${j}"><span class="dch">${labelOf(j)}</span><div class="dtrack"><div class="dfill" id="df_${j}" style="width:0"></div></div><span class="dpct" id="dp_${j}">·</span></div>`;}
-  return h+`</div>`;
+/* ---- distribution bars ---- */
+function distHTML(i,probs,label){
+  const order=probs.map((p,j)=>[j,p]).sort((a,b)=>b[1]-a[1]);const top=order[0][0];
+  let h=`<div class="col"><div class="dist" id="dist"><div class="mxlabel">${label}</div>`;
+  for(let j=0;j<V;j++)h+=`<div class="drow ${j===top?'top':''}" id="dr_${j}"><span class="dch">${labelOf(j)}</span><div class="dtrack"><div class="dfill" id="df_${j}" style="width:0"></div></div><span class="dpct" id="dp_${j}">·</span></div>`;
+  return h+`</div></div>`;
 }
-function fillDist(i,animate){
-  for(let j=0;j<V;j++){const f=$(`df_${j}`),pc=$(`dp_${j}`);if(!f)continue;
-    const p=P[i][j];f.style.width=(p*100).toFixed(2)+"%";if(pc)pc.textContent=(p*100).toFixed(1)+"%";}
+async function fillDistAnim(i,probs,run,eqfn){
+  const order=probs.map((p,j)=>[j,p]).sort((a,b)=>b[1]-a[1]);
+  for(const [j,p] of order){if(p<0.0004)continue;ping(i,j);const f=$(`df_${j}`),pc=$(`dp_${j}`);if(f)f.style.width=(p*100).toFixed(2)+"%";if(pc)pc.textContent=(p*100).toFixed(1)+"%";if(eqfn)setEq(eqfn(j,p));await step(55,run);}
 }
+function fillDist(probs){for(let j=0;j<V;j++){const f=$(`df_${j}`),pc=$(`dp_${j}`);if(f)f.style.width=(probs[j]*100).toFixed(2)+"%";if(pc)pc.textContent=(probs[j]*100).toFixed(1)+"%";}}
 
 /* ---- name display ---- */
-function nameHTML(){
-  return `<div class="namewrap"><div class="mxlabel">generated name</div><div class="namebox" id="namebox"><span class="dot">.</span><span class="cursor"></span></div>
-    <div class="mxlabel" style="margin-top:8px">previous samples</div><div class="genlist" id="genlist"></div></div>`;
-}
-function renderName(chars,cur){
-  const box=$("namebox");if(!box)return;
-  let h=`<span class="dot">.</span>`;
-  chars.forEach(c=>h+=`<span>${c}</span>`);
-  if(cur!=null)h+=`<span class="cur">${cur==='.'?'•':cur}</span>`;
-  h+=`<span class="cursor"></span>`;box.innerHTML=h;
-}
-function flow(fromEl,toEl,color){
-  if(REDUCED||!fromEl||!toEl)return;const layer=$("stage").querySelector(".flowlayer");if(!layer)return;
+function nameHTML(){return `<div class="col"><div class="mxlabel">generated name</div><div class="namebox" id="namebox"><span class="dot">.</span><span class="cursor"></span></div>
+  <div class="mxlabel" style="margin-top:8px">previous samples</div><div class="nlist" id="genlist">${state.gen.map(n=>`<span class="genname">${n}</span>`).join("")}</div></div>`;}
+function renderName(chars,cur){const box=$("namebox");if(!box)return;let h=`<span class="dot">.</span>`;chars.forEach(c=>h+=`<span>${c}</span>`);if(cur!=null)h+=`<span class="cur">${cur==='.'?'•':cur}</span>`;h+=`<span class="cursor"></span>`;box.innerHTML=h;}
+function flow(fromEl,toEl,color){if(REDUCED||!fromEl||!toEl)return;const layer=$("stage").querySelector(".flowlayer");if(!layer)return;
   const sr=$("stage").getBoundingClientRect(),ar=fromEl.getBoundingClientRect(),br=toEl.getBoundingClientRect();
   const x0=ar.left+ar.width/2-sr.left,y0=ar.top+ar.height/2-sr.top,x1=br.left+br.width/2-sr.left,y1=br.top+br.height/2-sr.top;
   const d=document.createElement("div");d.className="dotfx";d.style.left=x0+"px";d.style.top=y0+"px";if(color){d.style.background=color;d.style.boxShadow="0 0 9px "+color;}
-  layer.appendChild(d);requestAnimationFrame(()=>{d.style.transform=`translate(-50%,-50%) translate(${(x1-x0).toFixed(1)}px,${(y1-y0).toFixed(1)}px) scale(.5)`;d.style.opacity="0";});
-  setTimeout(()=>d.remove(),460);
-}
+  layer.appendChild(d);requestAnimationFrame(()=>{d.style.transform=`translate(-50%,-50%) translate(${(x1-x0).toFixed(1)}px,${(y1-y0).toFixed(1)}px) scale(.5)`;d.style.opacity="0";});setTimeout(()=>d.remove(),460);}
 function scaffold(html){$("stage").innerHTML=html+`<div class="flowlayer"></div>`;}
+function addNote(html,cls){const d=document.createElement("div");d.className="note"+(cls?" "+cls:"");d.innerHTML=html;$("stage").appendChild(d);renderNotes();}
+function addCaption(html){const d=document.createElement("div");d.className="caption";d.innerHTML=html;$("stage").appendChild(d);renderNotes();}
 
 /* ============================================================ stage driver ============================================================ */
 async function animateStage(id,run){
   const S=STAGES[id];
-  $("stageno").textContent="Stage "+String(id).padStart(2,"0")+" · vocab 27";
+  $("stageno").textContent="Step "+String(id).padStart(2,"0")+" / "+(STAGES.length-1);
   $("stagetitle").textContent=S.title;$("stagedesc").textContent=S.desc;
-  $("hint").innerHTML=id===0?"Hover any cell to read its exact count.":id===1?"Click a different <b>current character</b> in the sidebar to see its distribution.":"";
+  $("hint").innerHTML = id===0?"":id===3?"Click any <b>current character</b> in the sidebar to inspect its row.":(id===1||id===2)?"Hover any cell to read its exact count.":"";
   renderNav();
 
+  /* ---------- 0 · the data ---------- */
   if(id===0){
-    scaffold(heatmapHTML());
-    setEqIdle("each cell N[i,j] = how many times character j follows character i");
-    // sweep reveal row by row
-    for(let i=0;i<V;i++){litRow(i);setEq(`\\text{row }${labelOf(i)===''?'\\cdot':labelOf(i)}\\text{: how often each letter follows }${labelOf(i)==='.'?'\\text{start/end}':`\\text{“}${labelOf(i)}\\text{”}`}`);await step(70,run);clearLit();}
-    setEqIdle("27 × 27 = 729 transition counts from 228,146 character pairs");
-    $("stage").insertAdjacentHTML("beforeend",`<div class="legend"><span>rare</span><span class="legbar"></span><span>common</span></div><div class="caption">Row 0 is the <b>'.'</b> token: as a <b>row</b> it says which letters <b>start</b> names; as a <b>column</b> it says which letters <b>end</b> them. Notice bright spots like <span class="s">a→n</span>, <span class="s">.→a/k/m</span>.</div>`);
-  }
-
-  else if(id===1){
-    scaffold(`<div class="row">${heatmapHTML()}${distHTML(state.cur)}</div>`);
-    litRow(state.cur);
-    setEq(`P(\\text{next}\\mid ${labelOf(state.cur)==='.'?'\\cdot':labelOf(state.cur)}) = \\dfrac{N[${labelOf(state.cur)==='.'?'\\cdot':labelOf(state.cur)},\\,\\text{next}]}{\\sum_k N[${labelOf(state.cur)==='.'?'\\cdot':labelOf(state.cur)},\\,k]}`);
+    const demo=["emma","olivia","ava","isabella","sophia"];
+    scaffold(`<div class="col" style="gap:16px">
+      <div class="col"><div class="mxlabel">a few of the 32,033 names</div><div class="nlist">${demo.map(n=>`<span class="nameitem">${n}</span>`).join("")}</div></div>
+      <div class="col"><div class="mxlabel">the vocabulary — 26 letters + the boundary token '.', index 0 → <b style="color:var(--signal)">27 symbols</b></div><div class="vocab" id="vocab"></div></div>
+      <div class="col"><div class="mxlabel">every name is wrapped with '.' (start and end), then read as adjacent pairs</div><div class="wrapseq" id="wrapseq"></div><div class="pairlist" id="pairs"></div></div>
+    </div>`);
+    $("vocab").innerHTML=ITOS.map((c,i)=>`<span class="vchip ${c==='.'?'dot':''}" title="index ${i}">${c}</span>`).join("");
+    setEqIdle("a name becomes a sequence of characters between two boundary tokens");
     await step(300,run);
-    // animate bars filling, in descending order
-    const order=P[state.cur].map((p,j)=>[j,p]).sort((a,b)=>b[1]-a[1]);
-    for(const [j,p] of order){if(p<0.0005)continue;ping(state.cur,j);const f=$(`df_${j}`),pc=$(`dp_${j}`);if(f){f.style.width=(p*100).toFixed(2)+"%";}if(pc)pc.textContent=(p*100).toFixed(1)+"%";
-      setEq(`P(${labelOf(j)===''?'\\cdot':labelOf(j)==='.'?'\\cdot':labelOf(j)}\\mid ${labelOf(state.cur)==='.'?'\\cdot':labelOf(state.cur)}) = \\dfrac{${N[state.cur][j]}+1}{${TOT_ROW(state.cur)}} = ${fx(p,3)}`);
-      await step(60,run);}
-    setEq(`\\sum_{\\text{next}} P(\\text{next}\\mid ${labelOf(state.cur)==='.'?'\\cdot':labelOf(state.cur)}) = 1`);
-    $("stage").insertAdjacentHTML("beforeend",`<div class="caption">The <b>+1</b> in the numerator is <b>smoothing</b> — it keeps every transition slightly possible so nothing has probability 0 (and the loss never hits ∞).</div>`);
+    const seq=['.','e','m','m','a','.'];
+    const ws=$("wrapseq");
+    for(let k=0;k<seq.length;k++){
+      const t=document.createElement("div");t.className="tok"+(seq[k]==='.'?' dot':'');t.textContent=seq[k]==='.'?'.':seq[k];ws.appendChild(t);
+      setEq(`\\text{wrap: }\\ \\texttt{.\\,e\\,m\\,m\\,a\\,.}`);
+      await step(160,run);
+      if(k<seq.length-1){const a=document.createElement("span");a.className="arr";a.textContent="→";ws.appendChild(a);}
+    }
+    await step(250,run);
+    const pl=$("pairs");const pairs=[];for(let k=0;k<seq.length-1;k++)pairs.push(seq[k]+seq[k+1]);
+    for(const pr of pairs){const e=document.createElement("span");e.className="pair lit";e.textContent=pr.replace(/\./g,'.');pl.appendChild(e);
+      setEq(`\\text{bigram } \\texttt{${pr.replace('.','\\,.\\,').trim()}}`);await step(220,run);e.classList.remove("lit");}
+    addNote(`The token <b>.</b> does double duty: as the <span class="c">first</span> symbol it teaches the model which letters <b>start</b> names, and as the <span class="c">last</span> symbol which letters <b>end</b> them. <code>emma</code> yields the 5 pairs <b>.e&nbsp; em&nbsp; mm&nbsp; ma&nbsp; a.</b>`);
   }
 
+  /* ---------- 1 · count ---------- */
+  else if(id===1){
+    scaffold(heatmapHTML(false));
+    setEqIdle("N[i,j] = number of times character j follows character i");
+    for(let i=0;i<V;i++){litRow(i);setEq(`\\text{row }${tex(i)}\\text{: how often each letter follows }${i===0?'\\text{“start”}':tex(i)}`);await step(64,run);clearLit();}
+    setEq(`\\textstyle\\sum_{i,j} N[i,j] = ${TOTAL.toLocaleString()}\\ \\text{bigrams counted}`);
+    addNote(`For <code>emma</code> we added 1 to five cells: <b>N[.,e]</b>, <b>N[e,m]</b>, <b>N[m,m]</b>, <b>N[m,a]</b>, <b>N[a,.]</b>. Do that for all 32,033 names and the table holds <b>${TOTAL.toLocaleString()}</b> counts in total.`);
+    addCaption(`<span class="s">Bright</span> = common transition. Row <b>.</b> (top) shows common first letters; column <b>.</b> (left) shows common last letters.`);
+  }
+
+  /* ---------- 2 · first letters / the trap ---------- */
   else if(id===2){
-    scaffold(`<div class="row">${heatmapHTML()}${nameHTML()}</div>`);
+    scaffold(`<div class="row">${heatmapHTML(false)}${distHTML(0,rawRow(0),'P(first letter) = row 0, normalized')}</div>`);
+    litRow(0);
+    setEq(`\\text{row 0 is the }\\cdot\\text{ token} \\Rightarrow \\text{the distribution over first letters}`);
+    await step(350,run);
+    await fillDistAnim(0,rawRow(0),run,(j,p)=>`P(\\text{first}=${tex(j)}) = \\dfrac{N[0,${tex(j)}]}{${NAMES.toLocaleString()}} = ${fx(p,3)}`);
+    // highlight the two confusable cells
+    clearLit();
+    cell(0,A)?.classList.add("hot"); ping(0,A);
+    setEq(`\\texttt{.a} = N[0,\\text{a}] = ${A_FIRST.toLocaleString()}\\quad(\\text{a is the \\emph{first} letter})`);
+    await step(900,run);
+    cell(A,0)?.classList.add("collit"); ping(A,0);
+    setEq(`\\texttt{a.} = N[\\text{a},0] = ${A_LAST.toLocaleString()}\\quad(\\text{a is the \\emph{last} letter})`);
+    await step(900,run);
+    addNote(`<b>The trap:</b> <code>.a</code> and <code>a.</code> are different cells.<br>• <code>.a</code> = <b>N[0,a] = ${A_FIRST.toLocaleString()}</b> → names that <b>start</b> with a.<br>• <code>a.</code> = <b>N[a,0] = ${A_LAST.toLocaleString()}</b> → names that <b>end</b> with a.<br>So $P(\\text{first}=\\text{a}) = \\frac{${A_FIRST}}{${NAMES}} = ${fx(P_FIRST_A,4)}$ — divide by the <span class="c">row-0 sum</span> (= number of names = <b>${NAMES.toLocaleString()}</b>), <span class="r">not</span> by the ${TOTAL.toLocaleString()} total bigrams.`);
+    addCaption(`Each row has its <b>own</b> denominator (its own row sum). Row 0 sums to ${NAMES.toLocaleString()} because there is exactly one start→first-letter transition per name.`);
+  }
+
+  /* ---------- 3 · row -> probability ---------- */
+  else if(id===3){
+    const pr=rawRow(state.cur);
+    scaffold(`<div class="row">${heatmapHTML(false)}${distHTML(state.cur,pr,`P(next | ${labelOf(state.cur)})`)}</div>`);
+    litRow(state.cur);
+    setEq(`P(j \\mid ${tex(state.cur)}) = \\dfrac{N[${tex(state.cur)},\\,j]}{\\sum_k N[${tex(state.cur)},\\,k]}`);
+    await step(300,run);
+    await fillDistAnim(state.cur,pr,run,(j,p)=>`P(${tex(j)}\\mid ${tex(state.cur)}) = \\dfrac{${N[state.cur][j]}}{${rowSum(state.cur).toLocaleString()}} = ${fx(p,3)}`);
+    setEq(`\\textstyle\\sum_j P(j\\mid ${tex(state.cur)}) = 1\\quad\\text{(a valid distribution)}`);
+    addNote(`These empirical frequencies are the <b>maximum-likelihood estimate</b>: the probabilities that make the observed names as likely as possible are simply the proportions we counted.`);
+    addNote(`<b>Shapes matter.</b> Normalizing every row at once is <code>P /= P.sum(1, keepdims=True)</code>. The sum has shape <b>(27,1)</b> so it broadcasts across columns — normalizing each <span class="c">row</span>. Drop <code>keepdims</code> and you get shape <b>(27,)</b>, which normalizes the wrong axis: a silent, model-destroying bug.`,'cool');
+  }
+
+  /* ---------- 4 · sample one ---------- */
+  else if(id===4){
+    const pr=P[state.cur];
+    scaffold(`<div class="row">${distHTML(state.cur,pr,`P(next | ${labelOf(state.cur)}) — slices of a weighted die`)}</div>`);
+    fillDist(pr);
+    setEq(`\\text{lay probabilities on } [0,1],\\ \\text{roll } r\\sim U(0,1),\\ \\text{take the slice it lands in}`);
+    await step(400,run);
+    // do 3 demonstration draws
+    for(let d=0;d<3;d++){
+      const r=Math.random();let c=0,ix=0;for(let j=0;j<V;j++){c+=pr[j];if(r<c){ix=j;break;}}
+      document.querySelectorAll(".drow").forEach(x=>x.classList.remove("top"));
+      $(`dr_${ix}`)?.classList.add("top");
+      setEq(`\\text{roll } r=${fx(r,3)}\\ \\Rightarrow\\ \\text{lands in slice } ${tex(ix)}\\ (p=${fx(pr[ix],3)})`);
+      await step(900,run);
+    }
+    addNote(`This is <code>torch.multinomial(p, 1)</code> — a weighted dice roll. A character with probability 0.15 owns 15% of the line, so it is picked ~15% of the time. <b>Likely characters win more often, but unlikely ones still happen</b> — which is what makes generation varied.`);
+  }
+
+  /* ---------- 5 · generate ---------- */
+  else if(id===5){
+    scaffold(`<div class="row">${heatmapHTML(false)}${nameHTML()}</div>`);
     setEqIdle("start at '.', then sample → hop → repeat");
     await step(200,run);
-    state.gen=[];
-    let cur=0;const out=[];
-    renderName(out,null);
-    let guard=0;
+    let cur=0;const out=[];renderName(out,null);let guard=0;
     while(guard++<40){
       clearLit();litRow(cur);
-      setEq(`\\text{current} = ${labelOf(cur)==='.'?'\\cdot':labelOf(cur)}\\ \\Rightarrow\\ \\text{sample from } P(\\text{next}\\mid ${labelOf(cur)==='.'?'\\cdot':labelOf(cur)})`);
-      await step(280,run);
-      const ix=sample(P[cur]);
-      ping(cur,ix);
-      const fromEl=cell(cur,ix),toEl=$("namebox");flow(fromEl,toEl,getCSS("--signal"));
-      setEq(`\\text{sampled }${labelOf(ix)==='.'?'\\cdot\\ (\\text{end})':`\\text{“}${labelOf(ix)}\\text{”}`}\\quad p=${fx(P[cur][ix],3)}`);
+      setEq(`\\text{current} = ${tex(cur)}\\ \\Rightarrow\\ \\text{sample from } P(\\text{next}\\mid ${tex(cur)})`);
+      await step(260,run);
+      const ix=sample(P[cur]);ping(cur,ix);flow(cell(cur,ix),$("namebox"),getCSS("--signal"));
+      setEq(`\\text{sampled }${ix===0?'\\cdot\\ (\\text{end})':tex(ix)}\\quad p=${fx(P[cur][ix],3)}`);
       if(ix===0){renderName(out,'.');await step(360,run);break;}
-      out.push(labelOf(ix));renderName(out,null);
-      await step(180,run);
-      cur=ix;
+      out.push(labelOf(ix));renderName(out,null);await step(170,run);cur=ix;
     }
-    clearLit();
-    const name=out.join("");
-    state.gen.push(name);
+    clearLit();const name=out.join("");state.gen.unshift(name);if(state.gen.length>12)state.gen.pop();
     $("genlist").innerHTML=state.gen.map(n=>`<span class="genname">${n}</span>`).join("");
     setEq(`\\hat{\\text{name}} = \\text{“${name}”}`);
-    $("stage").insertAdjacentHTML("beforeend",`<div class="endcap">▸ press ▶ again for another name — each is a fresh random walk through the table</div>`);
+    $("stage").insertAdjacentHTML("beforeend",`<div class="endcap">▸ press ▶ again for another — each name is a fresh random walk</div>`);
   }
 
-  else if(id===3){
-    scaffold(`<div class="row" style="flex-direction:column"><div>
-      <div class="mxlabel">the loss — average negative log-likelihood over all 228,146 bigrams</div>
-      <div class="lossnum">L = ${fx(AVG_NLL,4)} nats</div></div></div>`);
-    setEq(`L = -\\frac{1}{n}\\sum_{(i,j)} \\log P(j\\mid i) = ${fx(AVG_NLL,4)}`);
+  /* ---------- 6 · loss ---------- */
+  else if(id===6){
+    scaffold(`<div class="col" style="gap:14px">
+      <div class="col"><div class="mxlabel">build the score for one example name</div><div class="wrapseq" id="lseq"></div></div>
+      <div class="lossnum" id="ln">L = …</div></div>`);
+    const seq=['.','e','m','m','a','.'];const ls=$("lseq");
+    seq.forEach((c,k)=>{const t=document.createElement("div");t.className="tok"+(c==='.'?' dot':'');t.textContent=c==='.'?'.':c;t.id="lt_"+k;ls.appendChild(t);if(k<seq.length-1){const a=document.createElement("span");a.className="arr";a.id="la_"+k;a.textContent="→";ls.appendChild(a);}});
+    setEq(`\\text{likelihood} = \\prod_{(i,j)} P(j\\mid i)\\ \\Rightarrow\\ \\text{log} \\Rightarrow \\text{sum},\\ \\text{negate, average}`);
     await step(500,run);
-    setEq(`\\text{a uniform guesser would score } \\log 27 = ${fx(Math.log(27),4)}\\ \\text{— lower is better}`);
-    $("stage").insertAdjacentHTML("beforeend",
-      `<div class="caption" style="max-width:74ch"><b>The neural twin.</b> One-hot a character into a length-27 vector, multiply by a 27×27 weight matrix <b>W</b> to get <span class="s">logits</span>, then <span class="s">softmax</span>. If we read the logits as log-counts, softmax is exactly the row-normalization above — so this 1-layer net <b>is</b> the bigram model. Trained by gradient descent it reaches the very same loss ≈ ${fx(AVG_NLL,2)}.</div>
-      <div class="caption">$\\text{logits}=x_{\\text{1-hot}}\\,W,\\quad p_j=\\frac{e^{\\text{logit}_j}}{\\sum_k e^{\\text{logit}_k}},\\quad \\text{counts}=e^{\\text{logits}}\\approx N$</div>`);
-    renderMath();
+    let sumlog=0,n=0;
+    for(let k=0;k<seq.length-1;k++){
+      const i=STOI[seq[k]],j=STOI[seq[k+1]],p=P[i][j];sumlog+=Math.log(p);n++;
+      $("lt_"+k).classList.add("lit");$("lt_"+(k+1)).classList.add("lit");
+      setEq(`P(${tex(j)}\\mid ${tex(i)}) = ${fx(p,3)},\\quad -\\log p = ${fx(-Math.log(p),3)}`);
+      await step(600,run);$("lt_"+k).classList.remove("lit");$("lt_"+(k+1)).classList.remove("lit");
+    }
+    $("ln").innerHTML=`average over <b>${TOTAL.toLocaleString()}</b> bigrams &nbsp;→&nbsp; <span style="color:var(--signal)">L = ${fx(AVG_NLL,4)}</span>`;
+    setEq(`L = -\\frac{1}{n}\\sum_{(i,j)}\\log P(j\\mid i) = ${fx(AVG_NLL,4)}\\quad(\\text{uniform: }\\log 27 = ${fx(UNI,3)})`);
+    addNote(`Each term <b>−log p</b> is the model's "surprise": confident-and-right (p near 1) → near 0; confident-and-wrong (p near 0) → huge. Averaging gives one score. <b>Lower is better</b>; a perfect model scores 0, random guessing scores ${fx(UNI,2)}. Our bigram model: <b>${fx(AVG_NLL,4)}</b> — well below random, so it has learned real structure. (This average NLL is exactly the <span class="c">cross-entropy</span> between the data and the model.)`);
+  }
+
+  /* ---------- 7 · perplexity ---------- */
+  else if(id===7){
+    scaffold(`<div class="col"><div class="cmp" id="cmp">
+      <div class="cmprow"><div class="cmptop"><span>uniform guesser (no learning)</span><span id="pu">·</span></div><div class="cmptrack"><div class="cmpfill" id="fu" style="background:linear-gradient(90deg,#3b466a,#5C6680)"></div></div></div>
+      <div class="cmprow"><div class="cmptop"><span style="color:var(--signal-2)">our bigram model</span><span id="pb" style="color:var(--signal-2)">·</span></div><div class="cmptrack"><div class="cmpfill" id="fb" style="background:linear-gradient(90deg,var(--signal),var(--signal-2))"></div></div></div>
+    </div></div>`);
+    setEq(`\\text{perplexity} = e^{\\,L}`);await step(400,run);
+    $("fu").style.width="100%";$("pu").textContent="27.0 choices";
+    setEq(`\\text{uniform: } e^{\\log 27} = 27`);await step(800,run);
+    $("fb").style.width=(PPL/UNI_PPL*100).toFixed(1)+"%";$("pb").textContent=fx(PPL,1)+" choices";
+    setEq(`\\text{bigram: } e^{${fx(AVG_NLL,3)}} \\approx ${fx(PPL,1)}`);await step(500,run);
+    addNote(`Perplexity reads the loss as <b>"how many characters is the model effectively choosing between."</b> Pure guessing is confused among all <b>27</b>. Our bigram model is confused among only <b>~${fx(PPL,1)}</b> — it has more than halved the uncertainty just by knowing the single previous character.`);
+  }
+
+  /* ---------- 8 · smoothing ---------- */
+  else if(id===8){
+    const [zi,zj]=ZERO;const rs=rowSum(zi);
+    scaffold(`<div class="row">${heatmapHTML(false)}<div class="col" id="smoothcol"><div class="mxlabel">a pair that never occurs: <b style="color:var(--bad)">${labelOf(zi)}${labelOf(zj)}</b></div></div></div>`);
+    cell(zi,zj)?.classList.add("zero");ping(zi,zj);
+    setEq(`N[${tex(zi)},${tex(zj)}] = 0`);
+    await step(700,run);
+    const col=$("smoothcol");
+    col.insertAdjacentHTML("beforeend",`<div class="note r" style="border-left-color:var(--bad)">Without smoothing: $P = \\frac{0}{${rs}} = 0$, and the loss needs $\\log(0) = -\\infty$. <b>One</b> unseen pair makes the entire loss infinite.</div>`);
+    renderNotes();setEq(`\\text{raw: } P = \\tfrac{0}{${rs}} = 0 \\Rightarrow \\log 0 = -\\infty`);
+    await step(1100,run);
+    const sm=(0+1)/(rs+V);
+    col.insertAdjacentHTML("beforeend",`<div class="note good">Add-one smoothing: $P = \\frac{0+1}{${rs}+27} = ${fx(sm,5)}$ — tiny, but <b>not zero</b>, so the log is finite and the model is safe.</div>`);
+    renderNotes();setEq(`P(j\\mid i) = \\dfrac{N[i,j] + 1}{\\sum_k (N[i,k] + 1)}`);
+    addNote(`The misconception to drop: it isn't "divide by infinity". The count (numerator) is <b>0</b>, so the probability is 0, and it is <b>log(0) = −∞</b> that breaks the loss. Larger smoothing pushes every row toward <span class="c">uniform</span> (safer, less confident); this is the count-world twin of <b>L2 regularization</b> in the neural version.`);
+  }
+
+  /* ---------- 9 · neural twin ---------- */
+  else if(id===9){
+    const i=state.cur, raw=rawRow(i);
+    scaffold(`<div class="col" style="gap:16px">
+      <div class="col"><div class="mxlabel">one-hot the current character <b style="color:var(--signal)">${labelOf(i)}</b> → a length-27 vector (one 1, rest 0)</div><div class="onehot" id="oh"></div></div>
+      <div class="row" style="gap:24px">${heatmapHTML(false)}${distHTML(i,raw,`softmax(logits) = P(next | ${labelOf(i)})`)}</div>
+    </div>`);
+    $("oh").innerHTML=ITOS.map((c,k)=>`<div class="ocell ${k===i?'one':''}" title="${c}">${k===i?'1':'0'}</div>`).join("");
+    setEq(`\\text{logits} = x_{\\text{1-hot}}\\,W`);
+    await step(500,run);
+    litRow(i);
+    setEq(`x\\ \\text{is one-hot} \\Rightarrow xW = \\text{row } ${tex(i)}\\text{ of } W\\ \\ (\\text{the “log-counts” for what follows }${tex(i)})`);
+    await step(900,run);
+    await fillDistAnim(i,raw,run,(j,p)=>`\\text{softmax: } p_${'{'+labelOf(j).replace('.','\\cdot')+'}'} = \\dfrac{e^{\\text{logit}_j}}{\\sum_k e^{\\text{logit}_k}} = ${fx(p,3)}`);
+    addNote(`The 26 zeros are just placeholders that make the vector length 27 — they are not "erased". The single <b>1</b> at position ${i} makes <code>x·W</code> select <b>row ${i} of W</b>. If we read those numbers as <b>log-counts</b>, then $\\text{exp}$ gives counts and dividing by their sum (softmax) is exactly the row-normalization from step 3.`);
+    addNote(`So the one-layer softmax network <b>is</b> the bigram model. Counting gets there directly; <span class="c">gradient descent</span> gets there by nudging W to minimize the same loss — and both land at L ≈ ${fx(AVG_NLL,2)}. That is the bridge from statistics to neural nets, and the next model (the <b>MLP</b>) keeps this exact loss while feeding in more context.`,'cool');
   }
 }
-function TOT_ROW(i){return N[i].reduce((a,b)=>a+b+1,0);}
-function renderMath(){document.querySelectorAll(".caption").forEach(el=>{el.innerHTML=el.innerHTML.replace(/\$([^$]+)\$/g,(m,t)=>K(t));});}
 
 /* ============================================================ orchestration ============================================================ */
 function renderNav(){
@@ -364,8 +508,8 @@ function renderNav(){
 }
 function renderChips(){
   $("chips").innerHTML=Array.from({length:V},(_,i)=>`<span class="chip ${i===state.cur?'lit':''}" data-c="${i}">${labelOf(i)}</span>`).join("");
-  $("chips").querySelectorAll(".chip").forEach(c=>c.onclick=()=>{state.cur=+c.dataset.c;renderChips();if(state.stage===1)jumpStage(1);else{state.stage=1;jumpStage(1);}});
-  $("params").innerHTML=`<span>current=<b>${labelOf(state.cur)}</b></span><span>loss=<b>${fx(AVG_NLL,3)}</b></span>`;
+  $("chips").querySelectorAll(".chip").forEach(c=>c.onclick=()=>{state.cur=+c.dataset.c;renderChips();const s=[3,4,9].includes(state.stage)?state.stage:3;jumpStage(s);});
+  $("params").innerHTML=`<span>current=<b>${labelOf(state.cur)}</b></span><span>loss=<b>${fx(AVG_NLL,3)}</b></span><span>ppl=<b>${fx(PPL,1)}</b></span>`;
 }
 function setPlayLabel(){$("play").innerHTML=RUNNING&&!PAUSED?"❚❚ Pause":"▶ Play";}
 async function runSingle(id){RUN++;const run=RUN;RUNNING=true;PAUSED=false;SKIP=false;state.stage=id;setPlayLabel();
@@ -373,9 +517,9 @@ async function runSingle(id){RUN++;const run=RUN;RUNNING=true;PAUSED=false;SKIP=
   if(run===RUN){RUNNING=false;setPlayLabel();}}
 function skipStage(){RUN++;const run=RUN;SKIP=true;RUNNING=false;PAUSED=false;setPlayLabel();animateStage(state.stage,run).catch(()=>{}).then(()=>{if(run===RUN)SKIP=false;});}
 async function playAll(){RUN++;const run=RUN;RUNNING=true;PAUSED=false;SKIP=false;setPlayLabel();
-  try{for(let s=state.stage;s<STAGES.length;s++){state.stage=s;renderNav();syncHash();await animateStage(s,run);if(run!==RUN)return;if(s<STAGES.length-1)await step(520,run);}}catch(e){return;}
+  try{for(let s=state.stage;s<STAGES.length;s++){state.stage=s;renderNav();syncHash();await animateStage(s,run);if(run!==RUN)return;if(s<STAGES.length-1)await step(560,run);}}catch(e){return;}
   if(run===RUN){RUNNING=false;PAUSED=false;setPlayLabel();}}
-function onPlay(){if(RUNNING){PAUSED=!PAUSED;setPlayLabel();return;}if(state.stage===2){runSingle(2);return;}if(state.stage===STAGES.length-1)state.stage=0;playAll();}
+function onPlay(){if(RUNNING){PAUSED=!PAUSED;setPlayLabel();return;}if(state.stage===5){runSingle(5);return;}if(state.stage===STAGES.length-1)state.stage=0;playAll();}
 function jumpStage(id){RUN++;state.stage=id;renderNav();renderChips();syncHash();runSingle(id);}
 function gotoPrev(){if(state.stage>0)jumpStage(state.stage-1);}
 function gotoNext(){if(state.stage<STAGES.length-1)jumpStage(state.stage+1);}
@@ -411,7 +555,7 @@ $("copylink").onclick=()=>{const b=$("copylink");const done=()=>{b.classList.add
 document.addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;if(e.key==="ArrowLeft")gotoPrev();if(e.key==="ArrowRight")gotoNext();if(e.key===" "){e.preventDefault();onPlay();}if(e.key==="Enter")skipStage();});
 
 function boot(){if(!window.katex){setTimeout(boot,60);return;}
-  const p=readHash();if(p){if(p.c!=null)state.cur=Math.max(0,Math.min(26,+p.c||0));}
+  const p=readHash();if(p&&p.c!=null)state.cur=Math.max(0,Math.min(26,+p.c||0));
   renderChips();renderNav();setPlayLabel();
   const st=p&&p.st!=null?+p.st:0;state.stage=(st>=0&&st<STAGES.length)?st:0;runSingle(state.stage);}
 boot();
