@@ -4,20 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MLP, Animated — watch a neural language model predict the next letter</title>
-<meta name="description" content="An interactive, step-by-step multi-layer perceptron language model (Bengio 2003): a 3-character context flows through embeddings, a tanh hidden layer, and softmax to predict and generate the next letter. By Abdulsamad Teniola Muyideen.">
+<meta name="description" content="An interactive, step-by-step multi-layer perceptron language model (Bengio 2003): vocabulary encoding, context window, embeddings, a tanh hidden layer, softmax, and cross-entropy — every step explained with real numbers. By Abdulsamad Teniola Muyideen.">
 <meta name="author" content="Abdulsamad Teniola Muyideen">
 <meta name="theme-color" content="#0A0D13">
 <link rel="canonical" href="https://th3samaritan.github.io/AI-Research/mlp/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="MLP, Animated — watch a neural language model predict the next letter">
-<meta property="og:description" content="Step by step: a 3-character context flows through embeddings, a tanh hidden layer, and softmax to generate names — with the real trained weights.">
+<meta property="og:description" content="Step by step: vocabulary → context → embeddings → tanh hidden → softmax → cross-entropy → generate names, with the real trained weights.">
 <meta property="og:url" content="https://th3samaritan.github.io/AI-Research/mlp/">
 <meta property="og:image" content="https://th3samaritan.github.io/AI-Research/mlp/preview.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="MLP, Animated — watch a neural language model predict the next letter">
-<meta name="twitter:description" content="Step by step: context → embeddings → tanh hidden → softmax → the next letter, generated live.">
+<meta name="twitter:description" content="Step by step: context → embeddings → tanh hidden → softmax → cross-entropy → the next letter.">
 <meta name="twitter:image" content="https://th3samaritan.github.io/AI-Research/mlp/preview.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -101,10 +101,12 @@
   .drow{display:flex;align-items:center;gap:8px}
   .dch{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);width:14px;text-align:center}
   .drow.top .dch{color:var(--signal-2);font-weight:700}
-  .dtrack{flex:1;height:14px;background:var(--cellbg);border:1px solid var(--celledge);border-radius:5px;overflow:hidden}
+  .drow.truth .dch{color:var(--good);font-weight:700}
+  .dtrack{flex:1;height:14px;background:var(--cellbg);border:1px solid var(--celledge);border-radius:5px;overflow:hidden;position:relative}
   .dfill{height:100%;width:0;background:linear-gradient(90deg,#1F7A8C,var(--signal));transition:width .45s cubic-bezier(.3,1,.4,1);border-radius:5px}
   .drow.top .dfill{background:linear-gradient(90deg,var(--signal),var(--signal-2))}
-  .dpct{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);width:42px}
+  .drow.truth .dfill{background:linear-gradient(90deg,#1F7A8C,var(--good))}
+  .dpct{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);width:64px}
   .namewrap{display:flex;flex-direction:column;gap:8px;margin-top:6px}
   .namebox{font-family:"JetBrains Mono",monospace;font-size:30px;font-weight:700;letter-spacing:.06em;color:var(--txt);background:#0d1320;border:1px solid var(--line);border-radius:12px;padding:12px 18px;min-width:240px;min-height:58px;display:flex;align-items:center;gap:2px}
   .namebox .cur{color:var(--signal)}.namebox .dot{color:var(--muted-2)}
@@ -112,6 +114,12 @@
   @keyframes blink{50%{opacity:0}}
   .genlist{display:flex;flex-wrap:wrap;gap:7px;max-width:560px}
   .genname{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--good);background:#0e2018;border:1px solid #2c5a44;border-radius:7px;padding:4px 9px}
+  .vocab{display:flex;flex-wrap:wrap;gap:6px;max-width:600px}
+  .vchip{display:flex;flex-direction:column;align-items:center;gap:2px}
+  .vchip .ch{font-family:"JetBrains Mono",monospace;font-size:15px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--txt)}
+  .vchip.dot .ch{color:var(--signal);border-color:var(--signal);background:#241d0d}
+  .vchip .ix{font-family:"JetBrains Mono",monospace;font-size:9px;color:var(--muted-2)}
+  .vchip.dot .ix{color:var(--signal)}
   .cwrows{display:flex;flex-direction:column;gap:6px}
   .cwrow{display:flex;align-items:center;gap:6px;opacity:0;transition:opacity .3s}
   .cwrow.show{opacity:1}.cwrow.lit .cb{border-color:var(--signal)}
@@ -119,8 +127,9 @@
   .cb.d{color:var(--muted-2)}
   .cwarr{color:var(--muted-2);font-family:"JetBrains Mono",monospace;font-size:13px;margin:0 4px}
   .cwt{width:30px;height:34px;border-radius:7px;background:#0e2018;border:1px solid #2c5a44;display:flex;align-items:center;justify-content:center;font-family:"JetBrains Mono",monospace;font-size:17px;font-weight:700;color:var(--good)}
+  .cwidx{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);margin-left:8px}
   .note{font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.75;color:var(--txt);background:#141d2b;border:1px solid #2a3a52;border-left:3px solid var(--signal);border-radius:8px;padding:11px 14px;max-width:82ch;margin-top:15px}
-  .note.cool{border-left-color:var(--cool)}.note.good{border-left-color:var(--good)}
+  .note.cool{border-left-color:var(--cool)}.note.good{border-left-color:var(--good)}.note.bad{border-left-color:var(--bad)}
   .note b{color:var(--signal-2)}.note .c{color:var(--cool)}.note .g{color:var(--good)}.note .r{color:var(--bad)}
   .note code{color:#c9d4e8;background:#0d1320;padding:1px 5px;border-radius:4px;font-size:11px}
   .caption{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted-2);margin-top:14px;line-height:1.7;max-width:82ch}
@@ -133,6 +142,7 @@
   .cmptop{display:flex;justify-content:space-between;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted)}
   .cmptrack{height:22px;background:var(--cellbg);border:1px solid var(--celledge);border-radius:7px;overflow:hidden}
   .cmpfill{height:100%;width:0;border-radius:7px;transition:width .7s cubic-bezier(.3,1,.4,1)}
+  svg.curve{background:#0d1320;border:1px solid var(--line);border-radius:10px}
   .flowlayer{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:6}
   @media(prefers-reduced-motion:reduce){.vcell.ping{animation:none}}
 </style>
@@ -173,8 +183,8 @@
       <div class="nav" id="nav"></div>
     </div>
     <div class="spacer"></div>
-    <div class="foot">embed → tanh hidden → softmax<br>after Bengio 2003 · Karpathy makemore (part 2)<br>
-      <a href="https://th3samaritan.github.io/My-Portfolio/" target="_blank" rel="noopener">th3samaritan.github.io</a> · v0.2</div>
+    <div class="foot">vocab → context → embed → tanh → softmax<br>after Bengio 2003 · Karpathy makemore (part 2)<br>
+      <a href="https://th3samaritan.github.io/My-Portfolio/" target="_blank" rel="noopener">th3samaritan.github.io</a> · v0.3</div>
   </aside>
   <main>
     <div class="head">
@@ -197,32 +207,37 @@ const M = {"itos": [".", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", 
 const C=M.C, W1=M.W1, b1=M.b1, W2=M.W2, b2=M.b2, ITOS=M.itos, V=M.vocab, EMB=M.emb, HID=M.hidden, BLOCK=M.block;
 const STOI={}; ITOS.forEach((c,i)=>STOI[c]=i);
 const lab=i=>ITOS[i];
-const NPARAMS = C.length*EMB + (EMB*BLOCK)*HID + HID + HID*V + V;
+const NP_C=C.length*EMB, NP_W1=(EMB*BLOCK)*HID, NP_b1=HID, NP_W2=HID*V, NP_b2=V;
+const NPARAMS=NP_C+NP_W1+NP_b1+NP_W2+NP_b2;
 
 function forward(ctx){
   const emb = ctx.map(ix=>C[ix]);
   const x = emb.flat();
   const h=[]; for(let j=0;j<HID;j++){let s=b1[j];for(let k=0;k<x.length;k++)s+=x[k]*W1[k][j];h.push(Math.tanh(s));}
   const logits=[]; for(let j=0;j<V;j++){let s=b2[j];for(let k=0;k<HID;k++)s+=h[k]*W2[k][j];logits.push(s);}
-  const m=Math.max(...logits), ex=logits.map(v=>Math.exp(v-m)), Z=ex.reduce((a,b)=>a+b,0);
-  return {emb,x,h,logits,probs:ex.map(v=>v/Z)};
+  const m=Math.max(...logits), counts=logits.map(v=>Math.exp(v-m)), Z=counts.reduce((a,b)=>a+b,0);
+  return {emb,x,h,logits,counts,Z,probs:counts.map(v=>v/Z)};
 }
 
 const STAGES=[
-  {id:0,name:"The context window",title:"Predict each letter from the previous 3",
-   desc:"The model reads a fixed window of the last 3 characters and predicts the next. Each name is scanned left to right, the context padded with '.' and sliding forward one step at a time — turning every name into several (context → next) training examples."},
-  {id:1,name:"Embeddings",title:"Each character becomes a learned vector",
-   desc:"Instead of a 27-long one-hot, every character has a dense, learnable 10-dimensional embedding (a row of the table C). We look up the 3 context characters and concatenate them into one 30-number feature vector. Looking up a row is identical to one-hot × C — just faster."},
-  {id:2,name:"Hidden layer",title:"tanh(emb · W1 + b1) — mix the context",
-   desc:"The 30 features feed a fully-connected layer of 200 units, squashed by tanh into (−1, 1). This non-linear layer lets the network model interactions between the three context characters — something the bigram's single matrix never could."},
-  {id:3,name:"Logits",title:"A score for each of the 27 next characters",
-   desc:"A second linear layer maps the 200 hidden units to 27 raw scores — the logits — one per possible next character. These are exactly like the bigram's logits, just produced by a richer function of more context."},
-  {id:4,name:"Softmax",title:"Turn the 27 logits into probabilities",
-   desc:"Softmax exponentiates each logit and normalizes, giving a probability for every next character. This is the same softmax + cross-entropy objective as the bigram model — only the front of the network got richer."},
-  {id:5,name:"The loss",title:"Cross-entropy, and does it generalize?",
-   desc:"Training minimizes the average negative log-likelihood (cross-entropy) of the true next character. On held-out names this model scores ~2.21 — below the bigram's 2.45 — and its train and dev losses are close, so it is generalizing, not memorizing."},
-  {id:6,name:"Generate a name",title:"Predict, sample, slide, repeat",
-   desc:"Sample the next character from the distribution, append it, slide it into the context (dropping the oldest), and run the whole forward pass again — until the model emits the end token. Watch a name appear, one forward pass per letter."},
+  {id:0,name:"Vocabulary",title:"Encode characters as integers",
+   desc:"Neural nets need numbers, not letters. We map the 26 letters to 1…26 and reserve index 0 for the boundary token '.'. That single shift (i+1, then '.'=0) is why the vocabulary size is 26 + 1 = 27, and why '.' is the 'zero token' used for padding and end-of-name."},
+  {id:1,name:"Context window",title:"Predict each letter from the previous 3",
+   desc:"With block_size = 3 the model conditions on the last 3 characters. Each name is scanned left to right, the context padded with '.' (index 0) and sliding forward — turning every name into several (context → next) integer examples, stacked into tensors X of shape (N, 3) and Y of shape (N,)."},
+  {id:2,name:"Embeddings",title:"Each character becomes a learned vector",
+   desc:"Each character has a dense, learnable 10-dimensional embedding (a row of the table C, shape 27×10). The lookup C[X] turns the (N, 3) integer contexts into (N, 3, 10) vectors, which we concatenate into one 30-number feature per example. Lookup is identical to one-hot × C — just faster."},
+  {id:3,name:"Hidden layer",title:"tanh(emb · W1 + b1) — mix the context",
+   desc:"The 30 features feed a fully-connected layer of 200 units (W1 is 30×200), then tanh squashes each into (−1, 1). This non-linear layer models interactions between the three context characters — something a single linear map cannot."},
+  {id:4,name:"Logits",title:"A score for each of the 27 next characters",
+   desc:"A second linear layer (W2 is 200×27) maps the 200 hidden units to 27 raw scores — the logits. They can be negative and do not sum to 1; the biggest logit will become the most likely next character."},
+  {id:5,name:"Softmax",title:"exp the logits, then normalize",
+   desc:"Softmax is two steps. First counts = exp(logits) makes every score positive. Then divide by the row sum so they add to 1 — a probability distribution over the 27 next characters. counts / counts.sum(1, keepdims=True)."},
+  {id:6,name:"Cross-entropy",title:"The loss is −log( P of the true letter )",
+   desc:"Training compares the predicted probabilities to the true next character with cross-entropy: take the probability the model gave the correct letter, and the loss is −log of it. It is always ≥ 0, small when the model is confident-and-right, and large when it is confident-and-wrong."},
+  {id:7,name:"Training",title:"Minibatch SGD, learning rate, and Adam",
+   desc:"Each step samples a random minibatch (the 'stochastic' part), runs forward + backward, and nudges every parameter downhill: p.data += −lr · p.grad (the SGD update). A learning-rate sweep finds a good lr (~0.1); Adam automates the step size per parameter."},
+  {id:8,name:"Generate a name",title:"Predict, sample, slide, repeat",
+   desc:"Sample the next character from the distribution, append it, slide it into the context (dropping the oldest), and run the whole forward pass again — until the model emits the end token '.'. One forward pass per letter."},
 ];
 
 /* ---- control ---- */
@@ -252,7 +267,7 @@ function embHTML(){let h=`<div class="panel"><div class="ptitle">embeddings<span
   return h+`</div></div>`;}
 function hidHTML(){let h=`<div class="panel"><div class="ptitle">hidden (tanh)<span class="sz">${HID}</span></div><div class="hid" id="hidgrid">`;
   for(let j=0;j<HID;j++)h+=`<div class="hcell" id="hc_${j}"></div>`;return h+`</div></div>`;}
-function distHTML(){let h=`<div class="panel"><div class="ptitle">P(next char)<span class="sz">softmax · ${V}</span></div><div class="dist" id="dist">`;
+function distHTML(title){let h=`<div class="panel"><div class="ptitle">${title||'P(next char)'}<span class="sz">${V}</span></div><div class="dist" id="dist">`;
   for(let j=0;j<V;j++)h+=`<div class="drow" id="dr_${j}"><span class="dch">${lab(j)}</span><div class="dtrack"><div class="dfill" id="df_${j}"></div></div><span class="dpct" id="dp_${j}">·</span></div>`;
   return h+`</div></div>`;}
 function nameHTML(){return `<div class="namewrap"><div class="ptitle">generated name</div><div class="namebox" id="namebox"><span class="cursor"></span></div>
@@ -260,112 +275,157 @@ function nameHTML(){return `<div class="namewrap"><div class="ptitle">generated 
 function scaffold(html){$("stage").innerHTML=html+`<div class="flowlayer"></div>`;}
 function paintEmb(emb){for(let r=0;r<BLOCK;r++)for(let c=0;c<EMB;c++){const el=$(`ev_${r}_${c}`);if(el)el.style.background=dcol(emb[r][c],2);}}
 function paintHid(h){for(let j=0;j<HID;j++){const el=$(`hc_${j}`);if(el)el.style.background=dcol(h[j],1);}}
-function paintDist(probs){const top=probs.indexOf(Math.max(...probs));
-  for(let j=0;j<V;j++){const f=$(`df_${j}`),pc=$(`dp_${j}`),row=$(`dr_${j}`);if(f)f.style.width=(probs[j]*100).toFixed(2)+"%";if(pc)pc.textContent=(probs[j]*100>=0.1?(probs[j]*100).toFixed(1)+"%":"·");if(row)row.classList.toggle("top",j===top);}}
+function paintDist(probs,fmt){const top=probs.indexOf(Math.max(...probs));
+  for(let j=0;j<V;j++){const f=$(`df_${j}`),pc=$(`dp_${j}`),row=$(`dr_${j}`);if(f)f.style.width=(probs[j]*100).toFixed(2)+"%";if(pc)pc.textContent=fmt?fmt(j):(probs[j]*100>=0.1?(probs[j]*100).toFixed(1)+"%":"·");if(row)row.classList.toggle("top",j===top);}}
 function renderName(chars,cur){const box=$("namebox");if(!box)return;let h="";chars.forEach(c=>h+=`<span>${c}</span>`);if(cur!=null)h+=`<span class="cur">${cur==='.'?'•':cur}</span>`;h+=`<span class="cursor"></span>`;box.innerHTML=h;}
+
+/* -log(p) curve SVG */
+function curveSVG(pTrue){
+  const W=420,H=240,pad=40;
+  const X=p=>pad+p*(W-2*pad), Yc=L=>{const Lc=Math.min(5,L);return H-pad-(Lc/5)*(H-2*pad);};
+  let path="";for(let i=1;i<=100;i++){const p=i/100,L=-Math.log(p);const x=X(p),y=Yc(L);path+=(i===1?'M':'L')+x.toFixed(1)+' '+y.toFixed(1)+' ';}
+  const mk=(p,col,labtxt)=>{const L=-Math.log(p),x=X(p),y=Yc(L);return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${col}"/><line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${x.toFixed(1)}" y2="${(H-pad).toFixed(1)}" stroke="${col}" stroke-dasharray="3 3" opacity="0.5"/><text x="${x.toFixed(1)}" y="${(y-8).toFixed(1)}" fill="${col}" font-family="JetBrains Mono,monospace" font-size="10" text-anchor="middle">${labtxt}</text>`;};
+  const axes=`<line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="#3b466a"/><line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="#3b466a"/>
+    <text x="${W/2}" y="${H-8}" fill="#8B95AC" font-family="JetBrains Mono,monospace" font-size="10" text-anchor="middle">p = probability of the true letter →</text>
+    <text x="14" y="${H/2}" fill="#8B95AC" font-family="JetBrains Mono,monospace" font-size="10" text-anchor="middle" transform="rotate(-90 14 ${H/2})">loss = −log(p)</text>
+    <text x="${pad-6}" y="${pad+4}" fill="#5C6680" font-family="JetBrains Mono,monospace" font-size="9" text-anchor="end">5+</text>
+    <text x="${pad-6}" y="${H-pad}" fill="#5C6680" font-family="JetBrains Mono,monospace" font-size="9" text-anchor="end">0</text>
+    <text x="${X(1).toFixed(1)}" y="${H-pad+14}" fill="#5C6680" font-family="JetBrains Mono,monospace" font-size="9" text-anchor="middle">1</text>`;
+  return `<svg class="curve" viewBox="0 0 ${W} ${H}" width="${W}">${axes}<path d="${path}" fill="none" stroke="${getCSS('--signal')}" stroke-width="2"/>${mk(0.05,getCSS('--bad'),'p=.05 → 3.0')}${mk(0.7,getCSS('--cool'),'p=.7 → .36')}${pTrue?mk(pTrue,getCSS('--good'),'true → '+fx(-Math.log(pTrue),2)):''}</svg>`;
+}
 
 /* ============================================================ stage driver ============================================================ */
 async function animateStage(id,run){
   const S=STAGES[id];
   $("stageno").textContent="Step "+String(id).padStart(2,"0")+" / "+(STAGES.length-1)+" · "+NPARAMS.toLocaleString()+" params";
   $("stagetitle").textContent=S.title;$("stagedesc").textContent=S.desc;
-  $("hint").innerHTML=id>=1&&id<=4?"Edit the <b>context</b> in the sidebar (e.g. <b>emm</b>) to watch the prediction change.":id===6?"Press ▶ again for another name.":"";
+  $("hint").innerHTML=id>=2&&id<=6?"Edit the <b>context</b> in the sidebar (e.g. <b>emm</b>) to watch the numbers change.":id===8?"Press ▶ again for another name.":"";
   renderNav();
   const f=forward(state.ctx);
 
-  /* ---------- 0 · context window ---------- */
+  /* ---------- 0 · vocabulary ---------- */
   if(id===0){
+    scaffold(`<div class="panel"><div class="ptitle">26 letters → 1…26, and '.' → 0 &nbsp;(<b style="color:var(--signal)">stoi</b>: string → integer)</div><div class="vocab" id="vocab"></div></div>`);
+    setEqIdle("characters can't go into a network — encode each as an integer id");
+    await step(300,run);
+    const order=[...Array(27).keys()];
+    const vc=$("vocab");
+    vc.innerHTML=order.map(i=>`<div class="vchip ${ITOS[i]==='.'?'dot':''}" id="vk_${i}" style="opacity:.25"><div class="ch">${ITOS[i]}</div><div class="ix">${i}</div></div>`).join("");
+    for(const i of order){$("vk_"+i).style.opacity="1";setEq(`\\texttt{stoi[${ITOS[i]==='.'?'\\cdot':ITOS[i]}]} = ${i}`);await step(70,run);}
+    addNote(`The code is <code>stoi = {s:i+1 for i,s in enumerate(chars)}</code> then <code>stoi['.']=0</code>. The <b>+1</b> shifts the letters up so that <b>index 0 is free</b> for the special <span class="c">'.'</span> token — used both as padding before a name starts and as the end-of-name marker. <code>itos</code> is just the inverse map (integer → character) for decoding.`);
+    addNote(`Vocabulary size = <b>number of unique characters + 1</b> = 26 + 1 = <b>27</b>. Every later shape — the 27 rows of C, the 27 logits, the 27-way softmax — comes from this count.`,'cool');
+  }
+
+  /* ---------- 1 · context window ---------- */
+  else if(id===1){
     scaffold(`<div style="display:flex;flex-direction:column;gap:16px">
       <div class="panel"><div class="ptitle">a few of the 32,033 names</div><div class="nlist">${["emma","olivia","ava","isabella"].map(n=>`<span class="nameitem">${n}</span>`).join("")}</div></div>
-      <div class="panel"><div class="ptitle">sliding a 3-char window over <b style="color:var(--good)">emma</b> &nbsp;(padded with '.')</div><div class="cwrows" id="cw"></div></div>
+      <div class="panel"><div class="ptitle">sliding a 3-char window over <b style="color:var(--good)">emma</b> &nbsp;(padded with '.' = 0)</div><div class="cwrows" id="cw"></div></div>
     </div>`);
     setEqIdle("each name → several (3-char context → next char) examples");
     await step(300,run);
     const seq=['.','.','.','e','m','m','a','.'];
     const rows=[];for(let t=3;t<seq.length;t++)rows.push([seq.slice(t-3,t),seq[t]]);
     const cw=$("cw");
-    cw.innerHTML=rows.map((r,k)=>`<div class="cwrow" id="cw_${k}">${r[0].map(c=>`<div class="cb ${c==='.'?'d':''}">${c}</div>`).join("")}<span class="cwarr">→</span><div class="cwt">${r[1]==='.'?'.':r[1]}</div></div>`).join("");
-    for(let k=0;k<rows.length;k++){
-      const el=$("cw_"+k);el.classList.add("show","lit");
-      setEq(`\\texttt{${rows[k][0].join('')}}\\ \\rightarrow\\ \\texttt{${rows[k][1]}}`);
-      await step(360,run);el.classList.remove("lit");
-    }
-    addNote(`The 3-character window is the model's <b>context length</b>. The first prediction sees only boundary tokens (<code>...</code> → e), and the window slides one step per character. Across all names this yields about <b>228k</b> training examples, split <b>80 / 10 / 10</b> into train / dev / test.`);
-    addNote(`<b>Why three splits?</b> <span class="c">Train</span> fits the weights; <span class="c">dev</span> tunes the choices we make by hand (sizes, learning rate); <span class="c">test</span> is touched once for an honest final number. Train ≈ dev means it is generalizing; train far below dev means it is memorizing.`,'cool');
+    cw.innerHTML=rows.map((r,k)=>`<div class="cwrow" id="cw_${k}">${r[0].map(c=>`<div class="cb ${c==='.'?'d':''}">${c}</div>`).join("")}<span class="cwarr">→</span><div class="cwt">${r[1]==='.'?'.':r[1]}</div><span class="cwidx">X=[${r[0].map(c=>STOI[c]).join(',')}]  Y=${STOI[r[1]]}</span></div>`).join("");
+    for(let k=0;k<rows.length;k++){const el=$("cw_"+k);el.classList.add("show","lit");
+      setEq(`\\texttt{[${rows[k][0].map(c=>STOI[c]).join(',')}]}\\ \\rightarrow\\ \\texttt{${STOI[rows[k][1]]}}\\quad(\\texttt{${rows[k][0].join('')}} \\to \\texttt{${rows[k][1]}})`);
+      await step(340,run);el.classList.remove("lit");}
+    addNote(`The context starts as <code>[0,0,0]</code> (all '.') and updates with <code>context = context[1:] + [ix]</code> — "crop the oldest, append the newest". Stacked over all names, the inputs become a tensor <b>X</b> of shape <b>(N, 3)</b> and the targets <b>Y</b> of shape <b>(N,)</b> — about <b>228k</b> examples, split 80/10/10 into train / dev / test.`);
+    addNote(`<b>Is this a "trigram"?</b> Not quite. An n-gram model conditions on <b>n − 1</b> previous tokens (bigram → 1, trigram → 2). This one conditions on <b>3</b> previous characters, so strictly it is a <span class="c">4-gram</span> model. (People loosely say "trigram", but the window of 3 inputs + 1 output is 4 symbols.)`,'cool');
   }
 
-  /* ---------- 1 · embeddings ---------- */
-  else if(id===1){
+  /* ---------- 2 · embeddings ---------- */
+  else if(id===2){
     scaffold(`<div class="pipe">${ctxHTML()}<span class="glyph">→</span>${embHTML()}</div>`);
-    setEq(`\\text{emb} = [\\,C[c_1],\\ C[c_2],\\ C[c_3]\\,] \\in \\mathbb{R}^{${BLOCK}\\times${EMB}}`);
+    setEq(`\\text{emb} = C[X] \\in \\mathbb{R}^{${BLOCK}\\times${EMB}}\\ \\Rightarrow\\ \\text{concat to } ${EMB*BLOCK}`);
     for(let r=0;r<BLOCK;r++){$(`cb_${r}`)?.classList.add("lit");
       setEq(`C[\\,\\text{${ITOS[state.ctx[r]]==='.'?'\\cdot':ITOS[state.ctx[r]]}}\\,] = [${f.emb[r].slice(0,4).map(v=>fx(v)).join(',\\,')},\\dots]\\ (${EMB}\\text{ numbers})`);
       for(let c=0;c<EMB;c++){const el=$(`ev_${r}_${c}`);if(el){el.style.background=dcol(f.emb[r][c],2);el.classList.remove("ping");void el.offsetWidth;el.classList.add("ping");}await step(40,run);}
       await step(180,run);$(`cb_${r}`)?.classList.remove("lit");}
-    setEq(`\\text{concatenate the 3 rows} \\Rightarrow \\text{one } ${EMB*BLOCK}\\text{-number vector}`);
-    addNote(`Looking up a row of <b>C</b> is exactly the same as multiplying a one-hot vector by C (a one-hot selects one row) — just instant. Blue = negative, amber = positive.`);
-    addNote(`<b>Why dense vectors?</b> The network can place <span class="c">similar characters near each other</span> (e.g. the vowels). A pattern learned for one context then transfers to similar ones the model never saw — the generalization a sparse n-gram count table cannot get. This is the key idea from Bengio (2003).`,'cool');
+    setEq(`\\text{emb.view(-1, ${EMB*BLOCK})}:\\ (N,${BLOCK},${EMB}) \\rightarrow (N,${EMB*BLOCK})`);
+    addNote(`Looking up a row of <b>C</b> equals multiplying a one-hot vector by C (a one-hot selects one row) — just instant. <code>C[X]</code> turns (N, 3) integers into (N, 3, 10) vectors; <code>.view(-1, 30)</code> flattens each example's 3 rows into one 30-number vector with no copy. Blue = negative, amber = positive.`);
+    addNote(`<b>Why dense vectors?</b> The network can place <span class="c">similar characters near each other</span> (e.g. the vowels), so a pattern learned in one context transfers to similar ones never seen — the generalization a sparse n-gram count table cannot get. This is Bengio's (2003) key idea.`,'cool');
   }
 
-  /* ---------- 2 · hidden ---------- */
-  else if(id===2){
+  /* ---------- 3 · hidden ---------- */
+  else if(id===3){
     scaffold(`<div class="pipe">${embHTML()}<span class="glyph">→</span>${hidHTML()}</div>`);
     paintEmb(f.emb);
     setEq(`h = \\tanh(\\text{emb}\\cdot W_1 + b_1),\\quad W_1\\in\\mathbb{R}^{${EMB*BLOCK}\\times${HID}}`);
     await step(350,run);
     for(let j=0;j<HID;j++){const el=$(`hc_${j}`);if(el)el.style.background=dcol(f.h[j],1);if(j%12===0)await step(28,run);}
     setEq(`\\text{200 hidden units, each squashed into }(-1,1)\\text{ by }\\tanh`);
-    addNote(`The <b>tanh</b> is the non-linearity — it lets the 200 units represent <b>interactions</b> between the three context characters (for example, "q is almost always followed by u"), which a purely linear model cannot. <code>emb.view(-1, 30)</code> does the concatenation for free, with no copy.`);
+    addNote(`<b>tanh</b> is the non-linearity — it lets the 200 units represent <b>interactions</b> between the three context characters (e.g. "q is almost always followed by u"), which a purely linear model cannot.`);
+    addNote(`<b>Parameter count.</b> $C$: $27{\\times}10 = ${NP_C.toLocaleString()}$, $\\ W_1$: $30{\\times}200 = ${NP_W1.toLocaleString()}$, $\\ b_1$: $${NP_b1}$, $\\ W_2$: $200{\\times}27 = ${NP_W2.toLocaleString()}$, $\\ b_2$: $${NP_b2}$ &nbsp;→&nbsp; total <b>${NPARAMS.toLocaleString()}</b> trainable numbers. Each gets <code>requires_grad = True</code> so autograd tracks it.`,'cool');
   }
 
-  /* ---------- 3 · logits ---------- */
-  else if(id===3){
-    scaffold(`<div class="pipe">${hidHTML()}<span class="glyph">→</span>${distHTML()}</div>`);
+  /* ---------- 4 · logits ---------- */
+  else if(id===4){
+    scaffold(`<div class="pipe">${hidHTML()}<span class="glyph">→</span>${distHTML('logits (raw scores)')}</div>`);
     paintHid(f.h);
     const lg=f.logits, mn=Math.min(...lg), mx=Math.max(...lg);
-    setEq(`\\text{logits} = h\\,W_2 + b_2 \\in \\mathbb{R}^{${V}}\\quad(\\text{raw scores, not yet probabilities})`);
+    setEq(`\\text{logits} = h\\,W_2 + b_2 \\in \\mathbb{R}^{${V}}\\quad(\\text{raw scores, not probabilities})`);
     await step(350,run);
     const order=lg.map((v,j)=>[j,v]).sort((a,b)=>b[1]-a[1]);
-    for(const [j,v] of order){const fl=$(`df_${j}`),pc=$(`dp_${j}`);const w=((v-mn)/((mx-mn)||1))*100;if(fl)fl.style.width=w.toFixed(1)+"%";if(pc)pc.textContent=fx(v,1);if(Math.abs(v)>0.01)setEq(`\\text{logit}_{${lab(j)==='.'?'\\cdot':lab(j)}} = ${fx(v,2)}`);await step(45,run);}
+    for(const [j,v] of order){const fl=$(`df_${j}`),pc=$(`dp_${j}`);const w=((v-mn)/((mx-mn)||1))*100;if(fl)fl.style.width=w.toFixed(1)+"%";if(pc)pc.textContent=fx(v,2);if(Math.abs(v)>0.01)setEq(`\\text{logit}_{${lab(j)==='.'?'\\cdot':lab(j)}} = ${fx(v,2)}`);await step(45,run);}
     $(`dr_${order[0][0]}`)?.classList.add("top");
-    addNote(`Logits are just <b>raw scores</b> — they can be negative and they do not sum to 1. The biggest logit will become the most likely character after softmax. (Bars here are scaled for display; the next step converts them to real probabilities.)`);
+    addNote(`Logits are <b>raw scores</b> — they can be negative and do not sum to 1. (Bars are scaled for display.) The biggest logit becomes the most likely character after softmax, next.`);
   }
 
-  /* ---------- 4 · softmax ---------- */
-  else if(id===4){
-    scaffold(`<div class="pipe">${hidHTML()}<span class="glyph">→</span>${distHTML()}</div>`);
-    paintHid(f.h);
-    setEq(`p_j = \\dfrac{e^{\\text{logit}_j}}{\\sum_k e^{\\text{logit}_k}}`);
-    await step(350,run);
-    const order=f.probs.map((p,j)=>[j,p]).sort((a,b)=>b[1]-a[1]);
-    for(const [j,p] of order){const fl=$(`df_${j}`),pc=$(`dp_${j}`);if(fl)fl.style.width=(p*100).toFixed(2)+"%";if(pc)pc.textContent=(p*100>=0.1?(p*100).toFixed(1)+"%":"·");
-      if(p>0.01){$(`dr_${j}`)?.classList.toggle("top",j===order[0][0]);setEq(`P(${lab(j)==='.'?'\\cdot':lab(j)}\\mid \\text{ctx}) = ${fx(p,3)}`);await step(70,run);}}
-    $(`dr_${order[0][0]}`)?.classList.add("top");
-    setEq(`\\hat{c} = \\text{“${lab(order[0][0])==='.'?'\\cdot':lab(order[0][0])}”}\\ \\text{most likely}\\ (${fx(order[0][1]*100,1)}\\%)`);
-    addNote(`<b>Numerical stability:</b> a large logit makes $e^{\\text{logit}}$ overflow to infinity. The fix is to subtract the largest logit before exponentiating — softmax is unchanged by that shift, but every exponent becomes ≤ 0 and safe. <code>F.cross_entropy</code> does exactly this and fuses softmax with the loss into one stable step.`);
-  }
-
-  /* ---------- 5 · the loss / generalization ---------- */
+  /* ---------- 5 · softmax (two steps) ---------- */
   else if(id===5){
+    scaffold(`<div class="pipe">${distHTML('P(next char)')}</div>`);
+    setEq(`\\textbf{step 1: } \\text{counts} = e^{\\text{logits}}\\quad(\\text{make every score positive})`);
+    const cmax=Math.max(...f.counts);
+    const order=f.counts.map((v,j)=>[j,v]).sort((a,b)=>b[1]-a[1]);
+    for(const [j,v] of order){const fl=$(`df_${j}`),pc=$(`dp_${j}`);if(fl)fl.style.width=(v/cmax*100).toFixed(1)+"%";if(pc)pc.textContent=fx(v,2);if(v>0.05)setEq(`e^{${fx(f.logits[j],2)}} = ${fx(v,2)}`);await step(45,run);}
+    await step(400,run);
+    setEq(`\\textbf{step 2: } p_j = \\dfrac{\\text{counts}_j}{\\sum_k \\text{counts}_k},\\quad \\textstyle\\sum_k\\text{counts}_k = ${fx(f.Z,2)}`);
+    for(const [j,v] of order){const fl=$(`df_${j}`),pc=$(`dp_${j}`);const p=f.probs[j];if(fl)fl.style.width=(p*100).toFixed(2)+"%";if(pc)pc.textContent=(p*100>=0.1?(p*100).toFixed(1)+"%":"·");if(p>0.01){$(`dr_${j}`)?.classList.toggle("top",j===order[0][0]);await step(60,run);}}
+    $(`dr_${order[0][0]}`)?.classList.add("top");
+    addNote(`A tiny worked example: logits <code>[2.0, −1.0, 0.5]</code> → counts <code>[7.39, 0.37, 1.65]</code> (sum 9.41) → probabilities <code>[0.79, 0.04, 0.17]</code>. The two lines <code>counts = logits.exp()</code> and <code>counts / counts.sum(1, keepdims=True)</code> together are the <b>softmax</b>.`);
+    addNote(`<b>Numerical stability:</b> a large logit makes $e^{\\text{logit}}$ overflow to ∞. Subtracting the largest logit first leaves softmax unchanged but keeps every exponent ≤ 0. <code>F.cross_entropy</code> fuses this stable softmax with the loss in one step.`,'cool');
+  }
+
+  /* ---------- 6 · cross-entropy ---------- */
+  else if(id===6){
+    const probs=f.probs, top=probs.indexOf(Math.max(...probs)), pT=probs[top];
+    scaffold(`<div class="pipe" style="gap:26px"><div class="panel"><div class="ptitle">the loss curve <span class="sz">L = −log(p)</span></div><div id="curvebox"></div></div>
+      <div class="panel"><div class="ptitle">loss if each letter were the truth</div>${distHTML('P(next char)')}</div></div>`);
+    paintDist(probs,j=>fx(-Math.log(probs[j]),2));
+    $("curvebox").innerHTML=curveSVG(pT);
+    setEq(`L_i = -\\log\\big(p_{\\,\\text{true letter}}\\big)`);
+    await step(500,run);
+    setEq(`\\text{model's top letter }\\text{“${lab(top)==='.'?'\\cdot':lab(top)}”}:\\ p=${fx(pT,3)} \\Rightarrow -\\log p = ${fx(-Math.log(pT),3)}`);
+    await step(700,run);
+    addNote(`Each row's number on the right is its <b>loss if that letter were the truth</b> = −log(p). The model is rewarded for putting probability on the right letter: $-\\log(0.7)=0.36$ (good), $-\\log(0.05)=3.0$ (bad). The batch loss averages this over every example.`);
+    addNote(`<b>The confusion to clear up:</b> the loss is a <span class="r">penalty, not a probability</span>. Probabilities stay in $[0,1]$, but $-\\log(p)$ ranges over $[0,\\infty)$. So a loss of <b>4.6</b> is <span class="r">not</span> "close to 1" — it means $p\\approx0.01$ (very wrong). The loss is <b>always ≥ 0</b>: it is 0 only when $p=1$, and shoots up toward ∞ as $p\\to0$.`,'bad');
+    addNote(`This is cross-entropy. In one-hot terms the true distribution is 1 on the correct class and 0 elsewhere, so the sum collapses to the single term $-\\log p_{\\text{true}}$.`,'cool');
+  }
+
+  /* ---------- 7 · training ---------- */
+  else if(id===7){
     scaffold(`<div><div class="cmp" id="cmp">
       <div class="cmprow"><div class="cmptop"><span>bigram model (1 char of context)</span><span id="lb">·</span></div><div class="cmptrack"><div class="cmpfill" id="fb" style="background:linear-gradient(90deg,#3b466a,#5C6680)"></div></div></div>
       <div class="cmprow"><div class="cmptop"><span style="color:var(--good)">this MLP — train loss</span><span id="lt" style="color:var(--good)">·</span></div><div class="cmptrack"><div class="cmpfill" id="ft" style="background:linear-gradient(90deg,#1F7A8C,var(--good))"></div></div></div>
       <div class="cmprow"><div class="cmptop"><span style="color:var(--signal-2)">this MLP — dev loss (held-out)</span><span id="ld" style="color:var(--signal-2)">·</span></div><div class="cmptrack"><div class="cmpfill" id="fd" style="background:linear-gradient(90deg,var(--signal),var(--signal-2))"></div></div></div>
     </div></div>`);
     const BIG=2.45,TR=2.19,DV=2.21,scale=v=>(v/3.30*100).toFixed(1)+"%";
-    setEq(`\\text{loss} = -\\frac{1}{N}\\sum_t \\log p_{\\,t,\\,y_t}\\quad(\\text{average cross-entropy})`);
-    await step(400,run);
-    $("fb").style.width=scale(BIG);$("lb").textContent="2.45";await step(700,run);
-    $("ft").style.width=scale(TR);$("lt").textContent="2.19";await step(600,run);
-    $("fd").style.width=scale(DV);$("ld").textContent="2.21";await step(500,run);
-    setEq(`\\text{MLP train} \\approx 2.19,\\quad \\text{dev} \\approx 2.21,\\quad \\text{bigram} \\approx 2.45`);
-    addNote(`Two things to read here. <b>(1) Lower than the bigram:</b> 2.21 vs 2.45 — the extra context and the hidden layer genuinely help. <b>(2) Train ≈ dev:</b> the model is <span class="g">generalizing</span>, not memorizing. If train were far below dev we would be overfitting; if both were high and equal we would be underfitting and would grow the network.`);
-    addNote(`The loss, the softmax, and the cross-entropy are <b>identical</b> to the bigram model — we only enriched the front of the network with embeddings and a hidden layer. That is the whole recipe for scaling a language model: keep the objective, feed in more context, give it capacity to represent it.`,'cool');
+    setEq(`\\theta \\leftarrow \\theta - \\eta\\,\\nabla_\\theta L\\quad(\\text{the SGD update: } \\texttt{p.data += -lr * p.grad})`);
+    await step(450,run);
+    $("fb").style.width=scale(BIG);$("lb").textContent="2.45";await step(650,run);
+    $("ft").style.width=scale(TR);$("lt").textContent="2.19";await step(550,run);
+    $("fd").style.width=scale(DV);$("ld").textContent="2.21";await step(450,run);
+    setEq(`\\text{train} \\approx 2.19,\\quad \\text{dev} \\approx 2.21,\\quad \\text{bigram} \\approx 2.45`);
+    addNote(`<b>Where is the SGD?</b> Two parts: (1) the <span class="c">stochastic</span> bit — each step takes a <b>random minibatch</b> of 32 examples (<code>torch.randint(0, Xtr.shape[0], (32,))</code>); (2) the <b>gradient-descent</b> bit — the update <code>p.data += -lr * p.grad</code>, i.e. $\\theta \\leftarrow \\theta - \\eta\\nabla_\\theta L$. Wherever you see "random batch + that update", that's SGD.`);
+    addNote(`<b>Picking the learning rate.</b> Sweep $\\eta$ from $10^{-3}$ to $10^{0}$ (<code>10**torch.linspace(-3,0,1000)</code>) and watch where the loss falls fastest — the valley before it spikes, here around <b>0.1</b>. <b>Adam</b> goes further: it keeps a running mean and variance of the gradients and gives each parameter its own adaptive step, so it often just works with the default $10^{-3}$.`,'cool');
+    addNote(`<b>train ≈ dev</b> means it is <span class="g">generalizing</span>, not memorizing; both below the bigram's 2.45 means more context + a hidden layer genuinely helped. The loss, softmax, and cross-entropy are identical to the bigram — only the front of the network got richer.`,'good');
   }
 
-  /* ---------- 6 · generate ---------- */
-  else if(id===6){
-    scaffold(`<div class="pipe" style="align-items:flex-start">${ctxHTML()}<span class="glyph">→</span>${distHTML()}${nameHTML()}</div>`);
+  /* ---------- 8 · generate ---------- */
+  else if(id===8){
+    scaffold(`<div class="pipe" style="align-items:flex-start">${ctxHTML()}<span class="glyph">→</span>${distHTML('P(next char)')}${nameHTML()}</div>`);
     setEqIdle("start with '...', forward, sample, slide, repeat");
     await step(200,run);
     let ctx=[0,0,0];const out=[];renderName(out,null);let guard=0;
@@ -407,7 +467,7 @@ function skipStage(){RUN++;const run=RUN;SKIP=true;RUNNING=false;PAUSED=false;se
 async function playAll(){RUN++;const run=RUN;RUNNING=true;PAUSED=false;SKIP=false;setPlayLabel();
   try{for(let s=state.stage;s<STAGES.length;s++){state.stage=s;renderNav();syncHash();await animateStage(s,run);if(run!==RUN)return;if(s<STAGES.length-1)await step(560,run);}}catch(e){return;}
   if(run===RUN){RUNNING=false;PAUSED=false;setPlayLabel();}}
-function onPlay(){if(RUNNING){PAUSED=!PAUSED;setPlayLabel();return;}if(state.stage===6){runSingle(6);return;}if(state.stage===STAGES.length-1)state.stage=0;playAll();}
+function onPlay(){if(RUNNING){PAUSED=!PAUSED;setPlayLabel();return;}if(state.stage===8){runSingle(8);return;}if(state.stage===STAGES.length-1)state.stage=0;playAll();}
 function jumpStage(id){RUN++;state.stage=id;renderNav();syncHash();runSingle(id);}
 function gotoPrev(){if(state.stage>0)jumpStage(state.stage-1);}
 function gotoNext(){if(state.stage<STAGES.length-1)jumpStage(state.stage+1);}
@@ -436,7 +496,7 @@ async function recordGIF(){if(recording)return;if(!window.GIF||!window.htmlToIma
   gif.on("finished",b=>{recording=false;resetExp();expStat(`done — ${(b.size/1048576).toFixed(1)} MB`);dl(b,`mlp-${Date.now()}.gif`);});gif.render();}
 
 /* ---- wiring ---- */
-$("ctx").addEventListener("input",()=>{ctxFromInput();if(state.stage>=1&&state.stage<=4)runSingle(state.stage);else syncHash();});
+$("ctx").addEventListener("input",()=>{ctxFromInput();if(state.stage>=2&&state.stage<=6)runSingle(state.stage);else syncHash();});
 $("play").onclick=onPlay;$("prev").onclick=gotoPrev;$("next").onclick=gotoNext;$("skip").onclick=skipStage;$("replay").onclick=()=>jumpStage(state.stage);
 $("speed").querySelectorAll("button").forEach(b=>b.onclick=()=>{SPEED=+b.dataset.s;$("speed").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));});
 $("expgif").onclick=recordGIF;$("exppng").onclick=snapPNG;
