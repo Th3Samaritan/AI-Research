@@ -1,0 +1,1576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLP + Batch Normalization — Deep Dive</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// MathJax config
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre'] }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1e2736;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #f78166;
+    --accent3: #3fb950;
+    --accent4: #d2a8ff;
+    --accent5: #ffa657;
+    --code-bg: #0d1117;
+    --yellow: #e3b341;
+    --red: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.7; }
+
+  /* NAV */
+  nav {
+    position: fixed; top: 0; left: 0; width: 260px; height: 100vh;
+    background: var(--surface); border-right: 1px solid var(--border);
+    overflow-y: auto; z-index: 100; padding: 20px 0;
+  }
+  nav h2 { color: var(--accent); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; padding: 0 20px 12px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  nav a { display: block; padding: 6px 20px; color: var(--muted); text-decoration: none; font-size: 13px; border-left: 3px solid transparent; transition: all .2s; }
+  nav a:hover, nav a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,.06); }
+  nav .nav-section { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent5); padding: 14px 20px 4px; font-weight: 700; }
+
+  /* MAIN */
+  main { margin-left: 260px; max-width: 900px; padding: 40px 48px 120px; }
+
+  /* HERO */
+  .hero { padding: 60px 0 40px; border-bottom: 1px solid var(--border); margin-bottom: 60px; }
+  .hero h1 { font-size: 2.4rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent4)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 12px; }
+  .hero p { color: var(--muted); font-size: 1.1rem; max-width: 640px; }
+  .hero .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .hero .tag { background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 12px; font-size: 12px; color: var(--accent); }
+
+  /* SECTIONS */
+  section { margin-bottom: 80px; scroll-margin-top: 80px; }
+  h2.section-title { font-size: 1.6rem; font-weight: 700; color: var(--text); margin-bottom: 6px; padding-bottom: 12px; border-bottom: 2px solid var(--accent); display: inline-block; }
+  h3.sub { font-size: 1.1rem; font-weight: 600; color: var(--accent4); margin: 28px 0 10px; }
+  h4.sub2 { font-size: .95rem; font-weight: 600; color: var(--accent5); margin: 20px 0 8px; }
+  p { margin-bottom: 14px; color: var(--text); }
+  .muted { color: var(--muted); font-size: .92rem; }
+
+  /* CODE */
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; overflow-x: auto; margin: 16px 0; font-size: .85rem; line-height: 1.6; }
+  code { font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace; }
+  pre code { color: #e6edf3; }
+  .kw { color: #ff7b72; }
+  .fn { color: #d2a8ff; }
+  .str { color: #a5d6ff; }
+  .cm { color: #8b949e; font-style: italic; }
+  .num { color: #79c0ff; }
+  .var { color: #ffa657; }
+
+  /* CALLOUTS */
+  .callout { border-left: 4px solid; border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 18px 0; }
+  .callout.what { border-color: var(--accent); background: rgba(88,166,255,.07); }
+  .callout.why { border-color: var(--accent3); background: rgba(63,185,80,.07); }
+  .callout.how { border-color: var(--accent4); background: rgba(210,168,255,.07); }
+  .callout.warn { border-color: var(--yellow); background: rgba(227,179,65,.07); }
+  .callout.math { border-color: var(--accent2); background: rgba(247,129,102,.07); }
+  .callout-title { font-size: .75rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 6px; }
+  .callout.what .callout-title { color: var(--accent); }
+  .callout.why .callout-title { color: var(--accent3); }
+  .callout.how .callout-title { color: var(--accent4); }
+  .callout.warn .callout-title { color: var(--yellow); }
+  .callout.math .callout-title { color: var(--accent2); }
+
+  /* MATH BLOCK */
+  .math-block { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; margin: 16px 0; overflow-x: auto; text-align: center; font-size: 1.05rem; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: .88rem; }
+  th { background: var(--surface2); color: var(--accent); padding: 10px 14px; text-align: left; border: 1px solid var(--border); }
+  td { padding: 9px 14px; border: 1px solid var(--border); color: var(--text); }
+  tr:nth-child(even) td { background: rgba(255,255,255,.02); }
+
+  /* STEP CARDS */
+  .steps { display: flex; flex-direction: column; gap: 0; margin: 20px 0; }
+  .step { display: flex; gap: 0; }
+  .step-line { display: flex; flex-direction: column; align-items: center; width: 40px; flex-shrink: 0; }
+  .step-dot { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #000; font-weight: 800; font-size: .85rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step-connector { width: 2px; background: var(--border); flex: 1; min-height: 20px; }
+  .step-body { padding: 4px 0 28px 16px; flex: 1; }
+  .step-body h4 { color: var(--accent); font-size: .95rem; margin-bottom: 6px; }
+
+  /* INTERACTIVE */
+  .interactive-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; }
+  .interactive-box h3 { color: var(--accent4); margin-bottom: 16px; font-size: 1rem; }
+  .slider-row { display: flex; align-items: center; gap: 14px; margin: 10px 0; }
+  .slider-row label { color: var(--muted); font-size: .88rem; width: 140px; flex-shrink: 0; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .slider-row .val { color: var(--accent5); font-weight: 700; font-size: .9rem; width: 60px; text-align: right; }
+  .btn { background: var(--accent); color: #000; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: .88rem; margin-top: 12px; }
+  .btn:hover { opacity: .85; }
+  .btn.secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  canvas { max-width: 100%; border-radius: 8px; }
+  .output-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .output-card { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; }
+  .output-card .label { font-size: .75rem; text-transform: uppercase; color: var(--muted); letter-spacing: 1px; margin-bottom: 4px; }
+  .output-card .value { font-size: 1.3rem; font-weight: 700; color: var(--accent5); }
+
+  /* GRADIENT FLOW DIAGRAM */
+  .flow-diagram { display: flex; align-items: center; gap: 0; overflow-x: auto; padding: 20px 0; }
+  .flow-node { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; min-width: 100px; text-align: center; }
+  .flow-node .node-name { font-size: .75rem; color: var(--muted); }
+  .flow-node .node-eq { font-size: .8rem; color: var(--accent4); margin-top: 4px; }
+  .flow-arrow { color: var(--accent); font-size: 1.4rem; padding: 0 4px; flex-shrink: 0; }
+  .flow-back { color: var(--red); font-size: .75rem; text-align: center; margin-top: 4px; }
+
+  /* NUMERIC DEMO */
+  .num-demo { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin: 16px 0; }
+  .num-demo h4 { color: var(--accent3); margin-bottom: 12px; }
+  .num-step { display: flex; gap: 12px; margin: 8px 0; align-items: flex-start; }
+  .num-step .ns-num { color: var(--muted); font-size: .8rem; width: 20px; }
+  .num-step .ns-body { color: var(--text); font-size: .9rem; }
+  .highlight { color: var(--accent5); font-weight: 700; }
+  .highlight2 { color: var(--accent3); font-weight: 700; }
+  .highlight3 { color: var(--accent4); font-weight: 700; }
+
+  /* TRAJECTORY TABLE */
+  .traj-table td:first-child { color: var(--accent); font-weight: 700; }
+  .traj-table .grad-col { color: var(--accent2); }
+  .traj-table .val-col { color: var(--accent3); }
+
+  /* RESPONSIVE */
+  @media (max-width: 900px) {
+    nav { width: 100%; height: auto; position: relative; }
+    main { margin-left: 0; padding: 20px; }
+    .output-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR NAV -->
+<nav>
+  <h2>MLP + Batch Norm</h2>
+  <div class="nav-section">Setup</div>
+  <a href="#overview">Overview</a>
+  <a href="#dataset">Dataset & Vocab</a>
+  <a href="#architecture">Architecture</a>
+
+  <div class="nav-section">Core Concepts</div>
+  <a href="#embeddings">Embeddings (C)</a>
+  <a href="#linear">Linear Layer (W1)</a>
+  <a href="#batchnorm">Batch Normalization</a>
+  <a href="#bn-params">BN Parameters γ, β</a>
+  <a href="#bn-running">Running Statistics</a>
+  <a href="#tanh">Tanh Nonlinearity</a>
+  <a href="#output">Output & Loss</a>
+
+  <div class="nav-section">Training Loop</div>
+  <a href="#forward">Full Forward Pass</a>
+  <a href="#backward">Backpropagation</a>
+  <a href="#update">Parameter Update</a>
+  <a href="#lr-decay">Learning Rate Decay</a>
+
+  <div class="nav-section">Diagnostics</div>
+  <a href="#activation-hist">Activation Histograms</a>
+  <a href="#gradient-hist">Gradient Histograms</a>
+  <a href="#saturation">Saturation & Vanishing Grads</a>
+
+  <div class="nav-section">Deep Network</div>
+  <a href="#classes">Custom Classes</a>
+  <a href="#deeper">Deeper Architecture</a>
+  <a href="#inference">Inference & Sampling</a>
+  <a href="#bn-widget">BN Widget Demo</a>
+  <a href="#linear-bn-stats">Linear vs Linear+BN</a>
+
+  <div class="nav-section">Running Example</div>
+  <a href="#running-example">Animated Forward Pass</a>
+
+  <div class="nav-section">Interactive</div>
+  <a href="#interactive-bn">Live BN Simulator</a>
+  <a href="#gradient-flow">Gradient Flow</a>
+  <a href="#trajectory">Update Trajectory</a>
+</nav>
+
+<main>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>MLP + Batch Normalization</h1>
+  <p>A complete cell-by-cell breakdown of Andrej Karpathy's <em>makemore</em> BN notebook — covering the what, why, when, where, and how of every formula, with interactive demos and numerical examples.</p>
+  <div class="tags">
+    <span class="tag">PyTorch</span>
+    <span class="tag">Batch Normalization</span>
+    <span class="tag">MLP</span>
+    <span class="tag">Backpropagation</span>
+    <span class="tag">Gradient Flow</span>
+    <span class="tag">Character LM</span>
+  </div>
+</div>
+
+<!-- ===== OVERVIEW ===== -->
+<section id="overview">
+  <h2 class="section-title">Overview — What Is This Notebook?</h2>
+
+  <p>This notebook (<code>build_makemore_batchnorm.ipynb</code>) extends the basic MLP name-generator by adding <strong>Batch Normalization</strong> — a 2015 technique that dramatically stabilises training of deep networks. We also PyTorchify the code into reusable <code>Linear</code>, <code>BatchNorm1d</code>, and <code>Tanh</code> classes, then stack 6 layers deep.</p>
+
+  <div class="callout what">
+    <div class="callout-title">What is Batch Normalization?</div>
+    Batch Normalization normalises the inputs to each layer so they have zero mean and unit variance across a mini-batch, then applies learnable scale (γ) and shift (β) parameters. Introduced by Ioffe & Szegedy (2015).
+  </div>
+
+  <div class="callout why">
+    <div class="callout-title">Why do we need it?</div>
+    Without BN, activations in deep networks explode or vanish — especially through saturating nonlinearities like tanh. BN keeps activations in a healthy range, stabilising gradients and speeding up convergence.
+  </div>
+
+  <p>The notebook goes through these phases:</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-line"><div class="step-dot">1</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Setup — dataset, vocab, splits</h4><p>32,033 names → character vocabulary of 27 tokens. Split 80/10/10 into train/val/test.</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">2</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Simple MLP with inline BN</h4><p>One-hidden-layer MLP (200 neurons) with hand-coded BN, running stats, training loop 200k steps.</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">3</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>PyTorchify into classes</h4><p>Rewrite as <code>Linear</code>, <code>BatchNorm1d</code>, <code>Tanh</code> classes matching PyTorch's <code>nn.Module</code> API.</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">4</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Deeper 6-layer network</h4><p>Stack 5 hidden layers + output, with BN after each linear. Diagnostic histograms for activations, gradients, and weight update ratios.</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">5</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Sampling & bonus widget</h4><p>Generate names, interactive BN demo, Linear vs Linear+BN statistics comparison.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== DATASET ===== -->
+<section id="dataset">
+  <h2 class="section-title">Cell 1–5: Dataset & Vocabulary</h2>
+
+  <pre><code><span class="cm"># read in all the words</span>
+words = open(<span class="str">'names.txt'</span>, <span class="str">'r'</span>).read().splitlines()
+<span class="cm"># build vocabulary</span>
+chars = sorted(list(set(<span class="str">''</span>.join(words))))
+stoi = {s:i+<span class="num">1</span> <span class="kw">for</span> i,s <span class="kw">in</span> enumerate(chars)}
+stoi[<span class="str">'.'</span>] = <span class="num">0</span>    <span class="cm"># special end-of-word token</span>
+itos = {i:s <span class="kw">for</span> s,i <span class="kw">in</span> stoi.items()}
+vocab_size = len(itos)  <span class="cm"># = 27</span></code></pre>
+
+  <table>
+    <tr><th>Variable</th><th>Value</th><th>Meaning</th></tr>
+    <tr><td><code>vocab_size</code></td><td>27</td><td>26 letters + special '.' token (index 0)</td></tr>
+    <tr><td><code>block_size</code></td><td>3</td><td>Context window — how many past chars to look at</td></tr>
+    <tr><td>Training set</td><td>182,625 examples</td><td>80% of 32,033 names</td></tr>
+    <tr><td>Val set</td><td>22,655 examples</td><td>10%</td></tr>
+    <tr><td>Test set</td><td>22,866 examples</td><td>10%</td></tr>
+  </table>
+
+  <div class="callout how">
+    <div class="callout-title">How the dataset is built</div>
+    Each name is processed character-by-character. A sliding context window of 3 characters predicts the next character. The word "emma" becomes training pairs: <code>[.,.,.]→e</code>, <code>[.,.,e]→m</code>, <code>[.,e,m]→m</code>, <code>[e,m,m]→a</code>, <code>[m,m,a]→.</code>
+  </div>
+</section>
+
+<!-- ===== ARCHITECTURE ===== -->
+<section id="architecture">
+  <h2 class="section-title">Architecture — The Full Pipeline</h2>
+
+  <div class="flow-diagram">
+    <div class="flow-node">
+      <div class="node-name">Input</div>
+      <div class="node-eq">x ∈ ℤ³</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="node-name">Embedding</div>
+      <div class="node-eq">C[x]</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="node-name">Linear W₁</div>
+      <div class="node-eq">xW₁</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node" style="border-color: var(--accent2);">
+      <div class="node-name" style="color:var(--accent2);">BatchNorm</div>
+      <div class="node-eq">γ·x̂+β</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="node-name">Tanh</div>
+      <div class="node-eq">tanh(·)</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="node-name">Linear W₂</div>
+      <div class="node-eq">hW₂+b₂</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="node-name">Loss</div>
+      <div class="node-eq">Cross-Entropy</div>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:8px;">In the deeper 6-layer version, the Linear→BatchNorm→Tanh block is stacked 5 times before the final output linear.</p>
+</section>
+
+<!-- ===== EMBEDDINGS ===== -->
+<section id="embeddings">
+  <h2 class="section-title">Cell 6: Embedding Matrix C</h2>
+
+  <pre><code>n_embd = <span class="num">10</span>   <span class="cm"># each character → 10-dimensional vector</span>
+C = torch.randn((vocab_size, n_embd), generator=g)
+<span class="cm"># vocab_size=27, n_embd=10  →  shape: (27, 10)</span></code></pre>
+
+  <h3 class="sub">What is C?</h3>
+  <p>C is a lookup table — an <strong>embedding matrix</strong>. Every character index $i$ maps to a dense 10-dimensional vector:</p>
+  <div class="math-block">$$e_i = C[i] \quad \in \mathbb{R}^{10}$$</div>
+  <p>This is much better than one-hot encoding (which would be 27-dimensional and sparse). The model learns what these 10 dimensions mean during training.</p>
+
+  <h3 class="sub">How does the lookup work?</h3>
+  <pre><code><span class="cm"># Xb has shape (batch_size, block_size) = (32, 3)</span>
+emb = C[Xb]         <span class="cm"># shape: (32, 3, 10)</span>
+embcat = emb.view(emb.shape[<span class="num">0</span>], -<span class="num">1</span>)  <span class="cm"># flatten → (32, 30)</span></code></pre>
+
+  <div class="num-demo">
+    <h4>Numerical Example</h4>
+    <p>Suppose context = [<code>e</code>=5, <code>m</code>=13, <code>m</code>=13]. We look up three rows of C:</p>
+    <div class="num-step"><div class="ns-num">1.</div><div class="ns-body">$C[5] = [0.12, -0.34, 0.07, \ldots]$ — embedding for 'e'</div></div>
+    <div class="num-step"><div class="ns-num">2.</div><div class="ns-body">$C[13] = [-0.21, 0.55, 0.18, \ldots]$ — embedding for 'm'</div></div>
+    <div class="num-step"><div class="ns-num">3.</div><div class="ns-body">$C[13] = [-0.21, 0.55, 0.18, \ldots]$ — same 'm' again</div></div>
+    <div class="num-step"><div class="ns-num">4.</div><div class="ns-body">Concatenate: $x = [C[5], C[13], C[13]] \in \mathbb{R}^{30}$</div></div>
+  </div>
+
+  <div class="callout why">
+    <div class="callout-title">Why embeddings instead of one-hot?</div>
+    One-hot vectors have no notion of similarity. With embeddings, similar characters can end up close in 10-D space. Crucially, the 10-D space is much more compact — 27×10=270 parameters instead of 27×27=729 for a one-hot weight matrix.
+  </div>
+</section>
+
+<!-- ===== LINEAR ===== -->
+<section id="linear">
+  <h2 class="section-title">Cell 6: First Linear Layer W₁ — Kaiming Init</h2>
+
+  <pre><code>n_hidden = <span class="num">200</span>
+W1 = torch.randn((n_embd * block_size, n_hidden), generator=g) * (<span class="num">5</span>/<span class="num">3</span>)/((n_embd * block_size)**<span class="num">0.5</span>)
+<span class="cm"># shape: (30, 200)
+# scaling = (5/3) / sqrt(30) ≈ 0.304</span></code></pre>
+
+  <h3 class="sub">The Forward Computation</h3>
+  <div class="math-block">$$h_{\text{pre}} = X \cdot W_1 \in \mathbb{R}^{B \times 200}$$</div>
+  <p>Where $X \in \mathbb{R}^{B \times 30}$ is the flattened embedding batch and $W_1 \in \mathbb{R}^{30 \times 200}$.</p>
+
+  <h3 class="sub">Why the Scaling Factor (5/3)/√n?</h3>
+  <p>This is <strong>Kaiming (He) initialization</strong> adapted for tanh. The goal is to keep the variance of activations roughly constant as signals pass through the layer.</p>
+
+  <div class="callout math">
+    <div class="callout-title">The Math</div>
+    <p>If $w \sim \mathcal{N}(0,1)$ and input $x$ has unit variance, then $h = xW$ has variance:</p>
+    <div style="text-align:center; padding:8px 0;">$$\text{Var}(h) = n_{\text{in}} \cdot \text{Var}(w)$$</div>
+    <p>To keep $\text{Var}(h) = 1$, we need $\text{Var}(w) = 1/n_{\text{in}}$, i.e., scale by $1/\sqrt{n_{\text{in}}}$.<br>The extra $5/3$ factor corrects for tanh's gain — tanh slightly compresses variance, so we pre-amplify.</p>
+  </div>
+
+  <div class="num-demo">
+    <h4>Numerical Example: Why scaling matters</h4>
+    <p>With $n_{\text{in}} = 30$, $B = 32$ samples:</p>
+    <div class="num-step"><div class="ns-num">①</div><div class="ns-body"><strong>No scaling</strong>: $W_1 \sim \mathcal{N}(0,1)$ → each neuron sums 30 random terms → std of $h_{\text{pre}} \approx \sqrt{30} \approx 5.5$ → tanh saturated</div></div>
+    <div class="num-step"><div class="ns-num">②</div><div class="ns-body"><strong>1/√n scaling</strong>: std of $h_{\text{pre}} \approx 1.0$ → some saturation still</div></div>
+    <div class="num-step"><div class="ns-num">③</div><div class="ns-body"><strong>(5/3)/√n scaling</strong>: std of $h_{\text{pre}} \approx 1.67$ → inputs fall in tanh's sensitive zone $(-2, +2)$</div></div>
+  </div>
+
+  <table>
+    <tr><th>Initialization</th><th>Std of h_pre</th><th>Tanh Saturation</th><th>Gradient Health</th></tr>
+    <tr><td>No scaling</td><td>~5.5</td><td>~85% saturated</td><td>Very weak</td></tr>
+    <tr><td>1/√n (Xavier)</td><td>~1.0</td><td>~28% saturated</td><td>Moderate</td></tr>
+    <tr><td>(5/3)/√n (Kaiming-tanh)</td><td>~1.67</td><td>~5% saturated</td><td>Strong</td></tr>
+  </table>
+</section>
+
+<!-- ===== BATCHNORM ===== -->
+<section id="batchnorm">
+  <h2 class="section-title">Cell 7: Batch Normalization — Full Math</h2>
+
+  <pre><code><span class="cm"># BatchNorm layer (inside training loop)</span>
+bnmeani = hpreact.mean(<span class="num">0</span>, keepdim=<span class="kw">True</span>)    <span class="cm"># μ — shape: (1, 200)</span>
+bnstdi  = hpreact.std(<span class="num">0</span>, keepdim=<span class="kw">True</span>)     <span class="cm"># σ — shape: (1, 200)</span>
+hpreact = bngain * (hpreact - bnmeani) / bnstdi + bnbias</code></pre>
+
+  <h3 class="sub">The Three-Step Formula</h3>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-line"><div class="step-dot">1</div><div class="step-connector"></div></div>
+      <div class="step-body">
+        <h4>Compute Batch Statistics</h4>
+        <div class="math-block">$$\mu = \frac{1}{m}\sum_{i=1}^{m} h_{\text{pre},i} \qquad \sigma^2 = \frac{1}{m}\sum_{i=1}^{m}(h_{\text{pre},i} - \mu)^2$$</div>
+        <p>Computed <em>per feature (neuron)</em>, across all $m$ samples in the mini-batch. <code>keepdim=True</code> keeps shape (1, 200) for broadcasting.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">2</div><div class="step-connector"></div></div>
+      <div class="step-body">
+        <h4>Normalize (Z-score)</h4>
+        <div class="math-block">$$\hat{h}_i = \frac{h_{\text{pre},i} - \mu}{\sqrt{\sigma^2 + \epsilon}}$$</div>
+        <p>$\epsilon = 10^{-5}$ prevents division by zero when $\sigma^2 \approx 0$. After this step: mean≈0, variance≈1.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">3</div><div class="step-connector"></div></div>
+      <div class="step-body">
+        <h4>Scale and Shift (Affine Transform)</h4>
+        <div class="math-block">$$h_{\text{BN},i} = \gamma \hat{h}_i + \beta$$</div>
+        <p>$\gamma$ (bngain) and $\beta$ (bnbias) are <strong>learnable parameters</strong>. This lets the network un-do normalisation if needed, while still benefiting from the stable gradient flow.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <div class="callout-title">Key Insight — Why Both Steps?</div>
+    Step 2 alone would force every layer to always output mean=0, var=1 — too restrictive. The learnable γ and β in step 3 give back the network's expressiveness: it can choose to keep the normalised values OR re-scale/re-shift them to whatever range helps the task.
+  </div>
+</section>
+
+<!-- ===== BN PARAMS ===== -->
+<section id="bn-params">
+  <h2 class="section-title">BN Parameters: γ (bngain) and β (bnbias)</h2>
+
+  <pre><code>bngain = torch.ones((<span class="num">1</span>, n_hidden))   <span class="cm"># γ — starts at 1 (identity scale)</span>
+bnbias = torch.zeros((<span class="num">1</span>, n_hidden))  <span class="cm"># β — starts at 0 (no shift)</span></code></pre>
+
+  <h3 class="sub">What Each Parameter Does</h3>
+
+  <table>
+    <tr><th>Parameter</th><th>Symbol</th><th>Init Value</th><th>Role</th><th>Effect if Changed</th></tr>
+    <tr><td>bngain</td><td>γ (gamma)</td><td>1.0</td><td>Scales normalised activations</td><td>γ&gt;1 amplifies; γ&lt;1 shrinks</td></tr>
+    <tr><td>bnbias</td><td>β (beta)</td><td>0.0</td><td>Shifts normalised activations</td><td>Moves distribution up/down</td></tr>
+    <tr><td>bnmean_running</td><td>μ_run</td><td>0.0</td><td>Tracks global mean for inference</td><td>Not a gradient parameter</td></tr>
+    <tr><td>bnstd_running</td><td>σ_run</td><td>1.0</td><td>Tracks global std for inference</td><td>Not a gradient parameter</td></tr>
+  </table>
+
+  <h3 class="sub">Why Start at γ=1, β=0?</h3>
+  <p>This is the <strong>identity initialisation</strong> — at the start of training, BN outputs exactly the normalised values without any distortion. The network then learns non-trivial γ and β through gradient descent if needed.</p>
+
+  <div class="callout math">
+    <div class="callout-title">What Happens With γ=2, β=1?</div>
+    <p>Say normalised activation $\hat{h} = [-1.0, 0.0, +1.0]$:</p>
+    <ul style="margin-left:20px;margin-top:8px;">
+      <li><strong>γ=1, β=0</strong>: $h_{\text{BN}} = [-1.0, 0.0, +1.0]$ → tanh outputs $[-0.76, 0.0, +0.76]$ → healthy gradients</li>
+      <li><strong>γ=2, β=0</strong>: $h_{\text{BN}} = [-2.0, 0.0, +2.0]$ → tanh outputs $[-0.96, 0.0, +0.96]$ → more saturation</li>
+      <li><strong>γ=1, β=1</strong>: $h_{\text{BN}} = [0.0, 1.0, 2.0]$ → tanh outputs $[0.0, +0.76, +0.96]$ → biased positive, reduced gradient</li>
+    </ul>
+  </div>
+
+  <h3 class="sub">Numerical Scale & Shift Example</h3>
+  <div class="num-demo">
+    <h4>Normalised values: $\hat{h} = [1.31, -0.09, -1.49, 0.26]$</h4>
+    <div class="num-step"><div class="ns-num">γ</div><div class="ns-body">γ = 1.5, β = 0.5</div></div>
+    <div class="num-step"><div class="ns-num">①</div><div class="ns-body">$h_{\text{BN},1} = 1.5 \times 1.31 + 0.5 = \mathbf{2.47}$</div></div>
+    <div class="num-step"><div class="ns-num">②</div><div class="ns-body">$h_{\text{BN},2} = 1.5 \times (-0.09) + 0.5 = \mathbf{0.37}$</div></div>
+    <div class="num-step"><div class="ns-num">③</div><div class="ns-body">$h_{\text{BN},3} = 1.5 \times (-1.49) + 0.5 = \mathbf{-1.74}$</div></div>
+    <div class="num-step"><div class="ns-num">④</div><div class="ns-body">$h_{\text{BN},4} = 1.5 \times 0.26 + 0.5 = \mathbf{0.89}$</div></div>
+    <div class="num-step"><div class="ns-num">⑤</div><div class="ns-body">After tanh: $[0.99, 0.35, -0.94, 0.71]$</div></div>
+  </div>
+</section>
+
+<!-- ===== RUNNING STATS ===== -->
+<section id="bn-running">
+  <h2 class="section-title">Running Statistics — Training vs. Inference</h2>
+
+  <pre><code><span class="cm"># Updated INSIDE training loop (no grad needed)</span>
+<span class="kw">with</span> torch.no_grad():
+    bnmean_running = <span class="num">0.999</span> * bnmean_running + <span class="num">0.001</span> * bnmeani
+    bnstd_running  = <span class="num">0.999</span> * bnstd_running  + <span class="num">0.001</span> * bnstdi</code></pre>
+
+  <h3 class="sub">Exponential Moving Average (EMA) Formula</h3>
+  <div class="math-block">$$\mu_{\text{run}} \leftarrow (1 - \alpha)\,\mu_{\text{run}} + \alpha\,\mu_{\text{batch}} \qquad \alpha = 0.001$$</div>
+  <div class="math-block">$$\sigma_{\text{run}} \leftarrow (1 - \alpha)\,\sigma_{\text{run}} + \alpha\,\sigma_{\text{batch}}$$</div>
+
+  <p>With $\alpha = 0.001$, the running stats move very slowly — it takes ~1000 steps to significantly shift. This gives a stable long-term estimate of the dataset-wide distribution.</p>
+
+  <h3 class="sub">Why Running Stats for Inference?</h3>
+  <p>During training, BN uses the current batch's statistics — we have 32 samples, so the stats are well-defined. At inference time, we might predict <em>one sample at a time</em>. A batch of 1 has no meaningful variance. So we use the running averages collected during training instead.</p>
+
+  <div class="callout how">
+    <div class="callout-title">Training vs Inference BN</div>
+    <table style="margin:0;">
+      <tr><th>Mode</th><th>Mean used</th><th>Std used</th><th>Code</th></tr>
+      <tr><td>Training</td><td>Batch mean</td><td>Batch std</td><td><code>hpreact.mean(0)</code></td></tr>
+      <tr><td>Inference</td><td>Running mean</td><td>Running std</td><td><code>bnmean_running</code></td></tr>
+    </table>
+  </div>
+
+  <div class="num-demo">
+    <h4>EMA Update Example — Momentum α=0.001 vs α=0.1</h4>
+    <p>Current running mean = 0.50, current batch mean = 0.80:</p>
+    <div class="num-step"><div class="ns-num">α=0.001</div><div class="ns-body">$\mu_{\text{run}} = 0.999 \times 0.50 + 0.001 \times 0.80 = \mathbf{0.5003}$ — barely moves, very stable</div></div>
+    <div class="num-step"><div class="ns-num">α=0.1</div><div class="ns-body">$\mu_{\text{run}} = 0.9 \times 0.50 + 0.1 \times 0.80 = \mathbf{0.530}$ — adapts 30× faster, noisier</div></div>
+    <p style="margin-top:10px;color:var(--muted);font-size:.9rem;">The notebook uses α=0.001 for very stable inference statistics. PyTorch's default is α=0.1.</p>
+  </div>
+</section>
+
+<!-- ===== TANH ===== -->
+<section id="tanh">
+  <h2 class="section-title">Tanh Nonlinearity — The Saturation Problem</h2>
+
+  <pre><code>h = torch.tanh(hpreact)   <span class="cm"># (B, 200) → values in (-1, +1)</span></code></pre>
+
+  <div class="math-block">$$h = \tanh(z) = \frac{e^z - e^{-z}}{e^z + e^{-z}} \qquad h \in (-1, +1)$$</div>
+
+  <h3 class="sub">Derivative — The Key to Gradient Health</h3>
+  <div class="math-block">$$\frac{d}{dz}\tanh(z) = 1 - \tanh^2(z)$$</div>
+
+  <table>
+    <tr><th>Input z</th><th>tanh(z)</th><th>Derivative</th><th>Gradient health</th></tr>
+    <tr><td>z = 0</td><td>0.000</td><td>1.000</td><td style="color:var(--accent3);">Maximum — perfect</td></tr>
+    <tr><td>z = 0.5</td><td>0.462</td><td>0.786</td><td style="color:var(--accent3);">Strong</td></tr>
+    <tr><td>z = 1.0</td><td>0.762</td><td>0.420</td><td style="color:var(--yellow);">Moderate</td></tr>
+    <tr><td>z = 2.0</td><td>0.964</td><td>0.071</td><td style="color:var(--accent2);">Weak — approaching saturation</td></tr>
+    <tr><td>z = 3.0</td><td>0.995</td><td>0.010</td><td style="color:var(--red);">Near zero — vanishing</td></tr>
+  </table>
+
+  <div class="callout warn">
+    <div class="callout-title">Saturation = Vanishing Gradients</div>
+    When $|h| > 0.97$ (the code's threshold), the derivative is $< 0.06$ — less than 6% of the gradient survives. BN's job is to keep inputs $z$ close to 0, so tanh operates in its linear region where the derivative is near 1.
+  </div>
+</section>
+
+<!-- ===== OUTPUT & LOSS ===== -->
+<section id="output">
+  <h2 class="section-title">Output Layer & Cross-Entropy Loss</h2>
+
+  <pre><code>W2 = torch.randn((n_hidden, vocab_size), generator=g) * <span class="num">0.01</span>
+b2 = torch.randn(vocab_size, generator=g) * <span class="num">0</span>
+
+logits = h @ W2 + b2            <span class="cm"># (B, 27) — raw scores</span>
+loss = F.cross_entropy(logits, Yb)  <span class="cm"># scalar</span></code></pre>
+
+  <h3 class="sub">Why W2 is Scaled by 0.01</h3>
+  <p>At the start of training, we want the network to be <em>uncertain</em> about predictions — all 27 characters should be roughly equally likely. If W2 is large, some logits will be very high → very confident (wrong) predictions → high initial loss → unstable early training.</p>
+
+  <h3 class="sub">Cross-Entropy Loss Formula</h3>
+  <div class="math-block">$$\mathcal{L} = -\frac{1}{N}\sum_{b=1}^{N} \log \frac{e^{\text{logits}_{b,y_b}}}{\sum_j e^{\text{logits}_{b,j}}}$$</div>
+  <p>Where $y_b$ is the true next character index for example $b$. This penalises the model when the probability assigned to the correct character is low.</p>
+
+  <h3 class="sub">Why b2 is Initialised to Zero</h3>
+  <p>Setting b2=0 means initial logits are near zero → softmax outputs near uniform 1/27 ≈ 0.037 → initial loss $\approx -\log(0.037) \approx 3.3$. The notebook shows the first loss printed as exactly <strong>3.3239</strong> — right on target.</p>
+</section>
+
+<!-- ===== FORWARD PASS ===== -->
+<section id="forward">
+  <h2 class="section-title">Full Forward Pass — One Equation</h2>
+
+  <p>Putting all steps together, the full forward pass from input characters to loss is:</p>
+  <div class="math-block">
+    $$\mathcal{L} = -\frac{1}{N}\sum_{b=1}^{N}\log \frac{\exp\!\left(\left[\tanh\!\left(\gamma\cdot\frac{X_b W_1 - \mu}{\sigma + \epsilon} + \beta\right)\right] W_2 + b_2\right)_{y_b}}{\sum_j \exp\!\left(\left[\tanh\!\left(\gamma\cdot\frac{X_b W_1 - \mu}{\sigma + \epsilon} + \beta\right)\right] W_2 + b_2\right)_j}$$
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-line"><div class="step-dot">①</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Embedding: $e_{b,t} = C[x_{b,t}]$</h4><p><code>emb = C[Xb]</code> — shape $(32, 3, 10)$</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">②</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Concatenate: $X_b = \text{concat}(e_{b,1}, e_{b,2}, e_{b,3})$</h4><p><code>embcat = emb.view(B, -1)</code> — shape $(32, 30)$</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">③</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Linear: $h_{\text{pre}} = X_b W_1$</h4><p><code>hpreact = embcat @ W1</code> — shape $(32, 200)$</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">④</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>BatchNorm: $h_{\text{BN}} = \gamma \hat{h} + \beta$</h4><p>Normalise, then scale+shift. Running stats updated here.</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">⑤</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Tanh: $h = \tanh(h_{\text{BN}})$</h4><p>Shape stays $(32, 200)$, values in $(-1, +1)$.</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">⑥</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Output: $\text{logits} = h W_2 + b_2$</h4><p>Shape $(32, 27)$ — one score per vocabulary token.</p></div>
+    </div>
+    <div class="step">
+      <div class="step-line"><div class="step-dot">⑦</div><div class="step-connector"></div></div>
+      <div class="step-body"><h4>Loss: cross-entropy over logits</h4><p>Scalar. Measures how well the model predicts the next character.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== BACKWARD ===== -->
+<section id="backward">
+  <h2 class="section-title">Backpropagation Through the Full Stack</h2>
+
+  <pre><code><span class="kw">for</span> p <span class="kw">in</span> parameters:
+    p.grad = <span class="kw">None</span>   <span class="cm"># zero old gradients</span>
+loss.backward()    <span class="cm"># compute all gradients via autograd</span></code></pre>
+
+  <h3 class="sub">Gradient Flow — Layer by Layer</h3>
+
+  <h4 class="sub2">Step 1: Loss → Logits</h4>
+  <div class="math-block">$$\frac{\partial \mathcal{L}}{\partial \text{logits}_{b,j}} = p_{b,j} - \mathbf{1}[j = y_b]$$</div>
+  <p>Where $p_{b,j} = \text{softmax}(\text{logits}_b)_j$. This is the only "custom" gradient — PyTorch's <code>F.cross_entropy</code> handles it.</p>
+
+  <h4 class="sub2">Step 2: Output Layer (W₂, b₂)</h4>
+  <div class="math-block">$$\frac{\partial \mathcal{L}}{\partial W_2} = h^T \delta_{\text{logits}} \qquad \frac{\partial \mathcal{L}}{\partial b_2} = \sum_b \delta_{\text{logits},b} \qquad \frac{\partial \mathcal{L}}{\partial h} = \delta_{\text{logits}} W_2^T$$</div>
+
+  <h4 class="sub2">Step 3: Through Tanh</h4>
+  <div class="math-block">$$\frac{\partial \mathcal{L}}{\partial h_{\text{BN}}} = \frac{\partial \mathcal{L}}{\partial h} \cdot (1 - \tanh^2(h_{\text{BN}}))$$</div>
+  <p>This is the element-wise chain rule. Saturated neurons ($|h| \approx 1$) multiply by $\approx 0$, killing their gradient.</p>
+
+  <h4 class="sub2">Step 4: BatchNorm Backward (the hard part)</h4>
+  <div class="math-block">$$\frac{\partial \mathcal{L}}{\partial \gamma} = \sum_i \delta_{h_{\text{BN}},i} \cdot \hat{h}_i \qquad \frac{\partial \mathcal{L}}{\partial \beta} = \sum_i \delta_{h_{\text{BN}},i}$$</div>
+  <div class="math-block">$$\frac{\partial \mathcal{L}}{\partial h_{\text{pre},i}} = \frac{\gamma}{\sqrt{\sigma^2+\epsilon}} \left(\delta_i - \frac{1}{m}\sum_j \delta_j - \frac{\hat{h}_i}{m}\sum_j \delta_j \hat{h}_j\right)$$</div>
+  <p>Key insight: each sample's gradient depends on <strong>all other samples in the batch</strong> (through the $\sum_j$ terms). This coupling is why BN reduces internal covariate shift but also why small batches are problematic.</p>
+
+  <h4 class="sub2">Step 5: Linear Layer (W₁)</h4>
+  <div class="math-block">$$\frac{\partial \mathcal{L}}{\partial W_1} = X^T \delta_{h_{\text{pre}}} \qquad \frac{\partial \mathcal{L}}{\partial X} = \delta_{h_{\text{pre}}} W_1^T$$</div>
+
+  <h4 class="sub2">Step 6: Back to Embeddings (C)</h4>
+  <p>The gradient w.r.t. $X$ scatters back into the rows of $C$ that were accessed for the current batch. Characters that appeared more often get more gradient updates.</p>
+
+  <h3 class="sub">Full Numerical Backward Example</h3>
+  <div class="num-demo">
+    <h4>Given: batch of 2, 2 hidden neurons</h4>
+    <p>Forward values: $h_{\text{pre}} = [[2.0, 4.0], [1.0, 3.0]]$, $\mu=[1.5,3.5]$, $\sigma=0.5$, $\hat{h} = [[+1,+1],[-1,-1]]$</p>
+    <p>Suppose gradient from loss after tanh: $\delta_h = [[0.2, -0.1], [-0.2, 0.4]]$</p>
+    <p>Tanh derivative at $h = [0.76, 0.76, -0.76, -0.76]$: all $\approx 0.42$</p>
+    <p>So $\delta_{h_{\text{BN}}} = [[0.084, -0.042], [-0.084, 0.168]]$</p>
+    <br>
+    <p><span class="highlight">Gradient w.r.t. γ</span>: $\sum \delta \cdot \hat{h} = 0.084(1)+(-0.042)(1)+(-0.084)(-1)+0.168(-1) = -0.042$</p>
+    <p><span class="highlight2">Gradient w.r.t. β</span>: $\sum \delta = 0.084-0.042-0.084+0.168 = 0.126$</p>
+  </div>
+</section>
+
+<!-- ===== UPDATE ===== -->
+<section id="update">
+  <h2 class="section-title">Parameter Update Step</h2>
+
+  <pre><code><span class="kw">for</span> p <span class="kw">in</span> parameters:
+    p.data += -lr * p.grad   <span class="cm"># gradient descent</span></code></pre>
+
+  <div class="math-block">$$p \leftarrow p - \eta \cdot \frac{\partial \mathcal{L}}{\partial p}$$</div>
+
+  <p>This is plain Stochastic Gradient Descent (SGD). Every parameter in <code>[C, W1, W2, b2, bngain, bnbias]</code> is updated. Total parameters: <strong>12,097</strong>.</p>
+
+  <h3 class="sub">Numerical Update Example</h3>
+  <div class="num-demo">
+    <h4>One step with η=0.1</h4>
+    <div class="num-step"><div class="ns-num">γ</div><div class="ns-body">$\gamma: 1.0 - 0.1 \times (-0.042) = \mathbf{1.0042}$ — γ increases slightly (network wants a bit more scale)</div></div>
+    <div class="num-step"><div class="ns-num">β</div><div class="ns-body">$\beta: 0.0 - 0.1 \times 0.126 = \mathbf{-0.0126}$ — β shifts slightly down</div></div>
+    <div class="num-step"><div class="ns-num">W₁</div><div class="ns-body">e.g. $W_1[0,0]: 0.50 - 0.1 \times 0.20 = \mathbf{0.48}$</div></div>
+  </div>
+</section>
+
+<!-- ===== LR DECAY ===== -->
+<section id="lr-decay">
+  <h2 class="section-title">Learning Rate Decay</h2>
+
+  <pre><code>lr = <span class="num">0.1</span> <span class="kw">if</span> i &lt; <span class="num">100000</span> <span class="kw">else</span> <span class="num">0.01</span>   <span class="cm"># step decay at 100k</span></code></pre>
+
+  <h3 class="sub">5-Step Trajectory: W₁[0,0] under LR Decay</h3>
+  <table class="traj-table">
+    <tr><th>Step</th><th>LR</th><th class="grad-col">Gradient</th><th class="val-col">W₁[0,0]</th></tr>
+    <tr><td>0 (init)</td><td>—</td><td class="grad-col">—</td><td class="val-col">0.500</td></tr>
+    <tr><td>1</td><td>0.1</td><td class="grad-col">+0.20</td><td class="val-col">0.480</td></tr>
+    <tr><td>2</td><td>0.1</td><td class="grad-col">+0.05</td><td class="val-col">0.475</td></tr>
+    <tr><td>3</td><td>0.1</td><td class="grad-col">−0.10</td><td class="val-col">0.485</td></tr>
+    <tr><td>4</td><td>0.01</td><td class="grad-col">+0.08</td><td class="val-col">0.484</td></tr>
+    <tr><td>5</td><td>0.01</td><td class="grad-col">+0.02</td><td class="val-col">0.484</td></tr>
+  </table>
+  <p class="muted">Early training: big 0.02 steps — fast learning. Later training: 0.002 steps — fine-tuning around the optimal.</p>
+</section>
+
+<!-- ===== ACTIVATION HISTOGRAMS ===== -->
+<section id="activation-hist">
+  <h2 class="section-title">Cell 15: Activation Histograms</h2>
+
+  <pre><code><span class="kw">for</span> i, layer <span class="kw">in</span> enumerate(layers[:-<span class="num">1</span>]):
+  <span class="kw">if</span> isinstance(layer, Tanh):
+    t = layer.out
+    print(<span class="str">'layer %d: mean %+.2f, std %.2f, saturated: %.2f%%'</span> % (
+          i, t.mean(), t.std(), (t.abs() > <span class="num">0.97</span>).float().mean()*<span class="num">100</span>))
+    hy, hx = torch.histogram(t, density=True)</code></pre>
+
+  <p>This plots the distribution of tanh output values for each hidden layer. Three diagnostics per layer:</p>
+  <table>
+    <tr><th>Diagnostic</th><th>Formula</th><th>Ideal Value</th><th>Why</th></tr>
+    <tr><td>mean</td><td><code>t.mean()</code></td><td>≈ 0</td><td>Centred activations → balanced gradients</td></tr>
+    <tr><td>std</td><td><code>t.std()</code></td><td>≈ 0.5–0.8</td><td>Reasonable spread → no collapse</td></tr>
+    <tr><td>saturated %</td><td><code>(|t| > 0.97) × 100</code></td><td>&lt; 5%</td><td>High saturation → vanishing gradients</td></tr>
+  </table>
+
+  <div class="callout what">
+    <div class="callout-title">What you see with BN vs without</div>
+    <p><strong>Without BN</strong>: histograms pile up near ±1 — many saturated neurons. Later layers are worst as errors compound.<br>
+    <strong>With BN</strong>: bell-shaped distributions centred around 0 for every layer — BN prevents distribution shift from accumulating across layers.</p>
+  </div>
+</section>
+
+<!-- ===== GRADIENT HISTOGRAMS ===== -->
+<section id="gradient-hist">
+  <h2 class="section-title">Cell 16: Gradient Histograms</h2>
+
+  <pre><code>t = layer.out.grad   <span class="cm"># gradient flowing INTO this layer's output</span>
+print(<span class="str">'layer %d: mean %+f, std %e'</span> % (i, t.mean(), t.std()))</code></pre>
+
+  <p>After <code>loss.backward()</code>, each tensor's <code>.grad</code> holds the gradient of the loss w.r.t. that tensor. Plotting these shows how strong the learning signal is at each layer.</p>
+
+  <div class="callout why">
+    <div class="callout-title">Why gradient histograms matter</div>
+    <p>Activation histograms show what's happening <em>forward</em>. Gradient histograms show what's happening <em>backward</em>. If gradients are tiny in early layers (std < 1e-4), weights there aren't learning — classic vanishing gradient problem. BN keeps gradient magnitude consistent across layers.</p>
+  </div>
+</section>
+
+<!-- ===== SATURATION ===== -->
+<section id="saturation">
+  <h2 class="section-title">Saturation % → Gradient Magnitude Link</h2>
+
+  <div class="math-block">$$\frac{d}{dz}\tanh(z) = 1 - \tanh^2(z)$$</div>
+  <p>At $\tanh(z) = 0.97$: derivative $= 1 - 0.97^2 = 0.059$ — only 6% gradient passes through.</p>
+  <p>At $\tanh(z) = 0.99$: derivative $= 1 - 0.99^2 = 0.020$ — 2% passes through.</p>
+
+  <table>
+    <tr><th>Saturation % of neurons</th><th>Average gradient magnitude</th><th>Learning speed</th></tr>
+    <tr><td>~5% (with BN)</td><td>~0.80</td><td style="color:var(--accent3);">Fast</td></tr>
+    <tr><td>~28% (Xavier init)</td><td>~0.45</td><td style="color:var(--yellow);">Moderate</td></tr>
+    <tr><td>~82% (no scaling)</td><td>~0.05</td><td style="color:var(--red);">Very slow</td></tr>
+  </table>
+
+  <div class="callout math">
+    <div class="callout-title">Why 0.97 as the saturation threshold?</div>
+    $\tanh^{-1}(0.97) \approx 2.1$. At inputs beyond ±2, the derivative drops below 0.1 — a commonly accepted "effectively zero" gradient threshold. The notebook uses this empirical cut-off to report saturation statistics.
+  </div>
+</section>
+
+<!-- ===== CLASSES ===== -->
+<section id="classes">
+  <h2 class="section-title">Cell 13: Custom Classes (PyTorchifying)</h2>
+
+  <h3 class="sub">Linear Class</h3>
+  <pre><code><span class="kw">class</span> Linear:
+  <span class="kw">def</span> __init__(self, fan_in, fan_out, bias=<span class="kw">True</span>):
+    self.weight = torch.randn((fan_in, fan_out), generator=g) / fan_in**<span class="num">0.5</span>
+    self.bias = torch.zeros(fan_out) <span class="kw">if</span> bias <span class="kw">else</span> <span class="kw">None</span>
+
+  <span class="kw">def</span> __call__(self, x):
+    self.out = x @ self.weight
+    <span class="kw">if</span> self.bias <span class="kw">is not None</span>:
+      self.out += self.bias
+    <span class="kw">return</span> self.out
+
+  <span class="kw">def</span> parameters(self):
+    <span class="kw">return</span> [self.weight] + ([] <span class="kw">if</span> self.bias <span class="kw">is None</span> <span class="kw">else</span> [self.bias])</code></pre>
+
+  <p>Forward math: $y = xW + b$. Weight init: scale by $1/\sqrt{n_{\text{in}}}$ to control variance (similar to Kaiming).</p>
+
+  <h3 class="sub">BatchNorm1d Class</h3>
+  <pre><code><span class="kw">class</span> BatchNorm1d:
+  <span class="kw">def</span> __init__(self, dim, eps=<span class="num">1e-5</span>, momentum=<span class="num">0.1</span>):
+    self.gamma = torch.ones(dim)   <span class="cm"># γ — learnable</span>
+    self.beta = torch.zeros(dim)   <span class="cm"># β — learnable</span>
+    self.running_mean = torch.zeros(dim)  <span class="cm"># not grad-tracked</span>
+    self.running_var = torch.ones(dim)
+
+  <span class="kw">def</span> __call__(self, x):
+    <span class="kw">if</span> self.training:
+      xmean = x.mean(<span class="num">0</span>, keepdim=<span class="kw">True</span>)
+      xvar  = x.var(<span class="num">0</span>, keepdim=<span class="kw">True</span>)
+    <span class="kw">else</span>:
+      xmean = self.running_mean
+      xvar  = self.running_var
+    xhat = (x - xmean) / torch.sqrt(xvar + self.eps)
+    self.out = self.gamma * xhat + self.beta
+    <span class="kw">if</span> self.training:
+      <span class="kw">with</span> torch.no_grad():
+        self.running_mean = (<span class="num">1</span>-self.momentum)*self.running_mean + self.momentum*xmean
+        self.running_var  = (<span class="num">1</span>-self.momentum)*self.running_var  + self.momentum*xvar
+    <span class="kw">return</span> self.out</code></pre>
+
+  <h3 class="sub">Comparison: Manual vs nn.BatchNorm1d</h3>
+  <table>
+    <tr><th>Feature</th><th>Your Implementation</th><th>nn.BatchNorm1d</th></tr>
+    <tr><td>Learnable params</td><td>gamma, beta</td><td>weight, bias</td></tr>
+    <tr><td>Running stats</td><td>Manual EMA update</td><td>Automatic</td></tr>
+    <tr><td>Momentum (α)</td><td>0.001 (your inline) / 0.1 (class)</td><td>0.1 default</td></tr>
+    <tr><td>Train/eval switch</td><td><code>self.training</code> flag</td><td><code>model.train()</code> / <code>model.eval()</code></td></tr>
+    <tr><td>ε</td><td>1e-5</td><td>1e-5</td></tr>
+  </table>
+</section>
+
+<!-- ===== DEEPER ===== -->
+<section id="deeper">
+  <h2 class="section-title">Cell 13–14: Deeper 6-Layer Network</h2>
+
+  <pre><code>layers = [
+  Linear(n_embd * block_size, n_hidden, bias=<span class="kw">False</span>), BatchNorm1d(n_hidden), Tanh(),
+  Linear(n_hidden, n_hidden, bias=<span class="kw">False</span>),           BatchNorm1d(n_hidden), Tanh(),
+  Linear(n_hidden, n_hidden, bias=<span class="kw">False</span>),           BatchNorm1d(n_hidden), Tanh(),
+  Linear(n_hidden, n_hidden, bias=<span class="kw">False</span>),           BatchNorm1d(n_hidden), Tanh(),
+  Linear(n_hidden, n_hidden, bias=<span class="kw">False</span>),           BatchNorm1d(n_hidden), Tanh(),
+  Linear(n_hidden, vocab_size, bias=<span class="kw">False</span>),         BatchNorm1d(vocab_size),
+]</code></pre>
+
+  <p>Total parameters: <strong>47,024</strong> (vs 12,097 for the simple version).</p>
+
+  <div class="callout how">
+    <div class="callout-title">Why bias=False with BatchNorm?</div>
+    BatchNorm already has its own β (bias) parameter. If a Linear layer also has a bias b, then after normalisation that bias is subtracted out (it's absorbed into μ). So the two biases are redundant — removing Linear's bias saves parameters with no loss in expressiveness.
+  </div>
+
+  <h3 class="sub">Special Initialisation for Output Layer</h3>
+  <pre><code><span class="cm"># make last BN layer less confident at init</span>
+layers[-<span class="num">1</span>].gamma *= <span class="num">0.1</span>
+<span class="cm"># layers[-1].gamma is the BN gamma of the output layer</span></code></pre>
+  <p>Shrinking the output layer's γ → logits start near zero → uniform softmax → lower initial loss → more stable early training. Same idea as initialising W2 with 0.01 scale.</p>
+</section>
+
+<!-- ===== INFERENCE ===== -->
+<section id="inference">
+  <h2 class="section-title">Cell 19–20: Inference & Name Sampling</h2>
+
+  <pre><code><span class="cm"># Switch to eval mode (use running stats, not batch stats)</span>
+<span class="kw">for</span> layer <span class="kw">in</span> layers:
+    layer.training = <span class="kw">False</span>
+
+<span class="cm"># Sample names</span>
+context = [<span class="num">0</span>] * block_size   <span class="cm"># start: [..., ., ., .]</span>
+<span class="kw">while True</span>:
+    emb = C[torch.tensor([context])]          <span class="cm"># (1, 3, 10)</span>
+    x = emb.view(emb.shape[<span class="num">0</span>], -<span class="num">1</span>)         <span class="cm"># (1, 30)</span>
+    <span class="kw">for</span> layer <span class="kw">in</span> layers:
+        x = layer(x)
+    probs = F.softmax(x, dim=<span class="num">1</span>)            <span class="cm"># (1, 27)</span>
+    ix = torch.multinomial(probs, num_samples=<span class="num">1</span>).item()
+    context = context[<span class="num">1</span>:] + [ix]           <span class="cm"># shift window</span>
+    <span class="kw">if</span> ix == <span class="num">0</span>: <span class="kw">break</span>                       <span class="cm"># '.' = end of word</span></code></pre>
+
+  <h3 class="sub">Step-by-Step Numeric Trace</h3>
+  <div class="num-demo">
+    <h4>Generating character 1 from context [., ., .]</h4>
+    <div class="num-step"><div class="ns-num">1</div><div class="ns-body">Look up $C[0], C[0], C[0]$ → 3 × 10-D vectors → flatten to 30-D vector $x$</div></div>
+    <div class="num-step"><div class="ns-num">2</div><div class="ns-body">Pass $x$ through all layers (using running_mean/var since training=False)</div></div>
+    <div class="num-step"><div class="ns-num">3</div><div class="ns-body">Get logits $= [2.0, 0.5, -1.0, 0.0, \ldots]$ (27 values)</div></div>
+    <div class="num-step"><div class="ns-num">4</div><div class="ns-body">Softmax: $p = [0.71, 0.16, 0.04, 0.09, \ldots]$ — these are character probabilities</div></div>
+    <div class="num-step"><div class="ns-num">5</div><div class="ns-body">Sample: multinomial draws, e.g. index 1 → character 'a'</div></div>
+    <div class="num-step"><div class="ns-num">6</div><div class="ns-body">Context shifts: $[.,.,.]  \to [.,.,a]$ → repeat for next character</div></div>
+    <div class="num-step"><div class="ns-num">7</div><div class="ns-body">Stop when index 0 ('.' token) is sampled</div></div>
+  </div>
+</section>
+
+<!-- ===== BN WIDGET ===== -->
+<section id="bn-widget">
+  <h2 class="section-title">Cell 22: BN Normalisation Widget (Math)</h2>
+
+  <pre><code><span class="kw">def</span> normshow(x0):
+  x = torch.randn(<span class="num">5</span>) * <span class="num">5</span>
+  x[<span class="num">0</span>] = x0            <span class="cm"># slider controls this value</span>
+  mu = x.mean()
+  sig = x.std()
+  y = (x - mu)/sig    <span class="cm"># normalise</span></code></pre>
+
+  <p>This widget shows how one extreme value ($x_0$) shifts the batch mean and how normalisation corrects for it.</p>
+
+  <div class="num-demo">
+    <h4>Example: x = [10, −5, 0, 3, 2]</h4>
+    <div class="num-step"><div class="ns-num">μ</div><div class="ns-body">$\mu = (10-5+0+3+2)/5 = 2.0$</div></div>
+    <div class="num-step"><div class="ns-num">σ</div><div class="ns-body">$\sigma = \sqrt{(64+49+4+1+0)/5} = \sqrt{23.6} \approx 4.86$</div></div>
+    <div class="num-step"><div class="ns-num">ŷ</div><div class="ns-body">$\hat{y} = [(10-2)/4.86, (-5-2)/4.86, \ldots] = [1.65, -1.44, -0.41, 0.21, 0.00]$</div></div>
+    <div class="num-step"><div class="ns-num">✓</div><div class="ns-body">$\text{mean}(\hat{y}) \approx 0$, $\text{std}(\hat{y}) = 1$ — normalised!</div></div>
+  </div>
+
+  <p>The blue dots (raw values) map to red dots (normalised). The blue curve is the original distribution; the red curve is the standard normal. Dragging $x_0$ to extremes shows how BN re-centres even skewed batches.</p>
+</section>
+
+<!-- ===== LINEAR BN STATS ===== -->
+<section id="linear-bn-stats">
+  <h2 class="section-title">Cell 23–24: Linear vs Linear+BN Statistics</h2>
+
+  <h3 class="sub">Cell 23 — Plain Linear Layer</h3>
+  <pre><code>c = b @ a      <span class="cm"># 1000×1000 matrix × 1000 vector</span>
+<span class="cm"># Results:</span>
+<span class="cm"># c std: 31.0  (exploded!)</span>
+<span class="cm"># a.grad std: 30.9  (exploded gradient!)</span>
+<span class="cm"># b.grad std: 0.97  (reasonable)</span></code></pre>
+
+  <p>Without any scaling, matrix multiplication with 1000 inputs causes std to grow by $\sqrt{1000} \approx 31.6$ — exactly what we see.</p>
+
+  <h3 class="sub">Cell 24 — Linear + BatchNorm</h3>
+  <pre><code>out = (x - xmean) / sqrt(xvar + 1e-5)
+<span class="cm"># Results:</span>
+<span class="cm"># x std: 31.0  (still exploded going in)</span>
+<span class="cm"># out std: 1.0  (BN fixes it!)</span>
+<span class="cm"># x.grad std: 0.032  (compressed vs 0.97)</span>
+<span class="cm"># inp.grad std: 1.0   (stable!)</span></code></pre>
+
+  <p>BN catches the explosion: even though $x$ has std=31, BN normalises <code>out</code> back to std=1. Crucially, the input gradient stays at ~1 as well — BN also stabilises the <em>backward</em> pass.</p>
+
+  <h3 class="sub">Matrix Calculus: Gradient of a Matrix Multiply</h3>
+  <div class="math-block">$$c = b \cdot a \implies \frac{\partial \mathcal{L}}{\partial a} = b^T \cdot \frac{\partial \mathcal{L}}{\partial c} \qquad \frac{\partial \mathcal{L}}{\partial b} = \frac{\partial \mathcal{L}}{\partial c} \cdot a^T$$</div>
+
+  <div class="num-demo">
+    <h4>2×2 Numeric Example</h4>
+    <p>$a = [2, 1]^T$, $b = [[1,3],[2,4]]$, $c = b \cdot a = [5, 8]^T$</p>
+    <p>Gradient: $\delta_c = [1, -1]^T$</p>
+    <div class="num-step"><div class="ns-num">a.grad</div><div class="ns-body">$b^T \cdot \delta_c = [[1,2],[3,4]][1,-1]^T = [-1,-1]^T$</div></div>
+    <div class="num-step"><div class="ns-num">b.grad</div><div class="ns-body">$\delta_c \cdot a^T = [1,-1]^T [2,1] = [[2,1],[-2,-1]]$</div></div>
+  </div>
+</section>
+
+<!-- ===== RUNNING EXAMPLE ===== -->
+<section id="running-example">
+  <h2 class="section-title">Animated Running Example — Full Forward Pass</h2>
+  <p>Watch the MLP+BN network process a name <strong>character by character</strong>. Every stage — embedding lookup, linear transform, BatchNorm (μ, σ², normalise, scale+shift), tanh, and softmax — is shown with live computed numbers at each step.</p>
+
+  <div class="interactive-box" style="padding:0;overflow:hidden;">
+    <!-- CONTROLS BAR -->
+    <div style="padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <label style="font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:block;margin-bottom:6px;">Input name</label>
+        <div style="display:flex;gap:8px;">
+          <input id="re-name" type="text" value="emma" maxlength="12"
+            style="background:var(--code-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 12px;font-family:monospace;font-size:1rem;width:140px;outline:none;">
+          <button class="btn" onclick="reStart()" style="margin:0;">▶ Run</button>
+          <button class="btn secondary" onclick="reStep()" style="margin:0;">Step →</button>
+          <button class="btn secondary" onclick="reReset()" style="margin:0;">↺</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:.78rem;color:var(--muted);">Speed:</span>
+        <button class="btn secondary" id="sp-slow" onclick="setSpeed(1200)" style="margin:0;padding:6px 12px;font-size:.78rem;">Slow</button>
+        <button class="btn secondary" id="sp-med"  onclick="setSpeed(600)"  style="margin:0;padding:6px 12px;font-size:.78rem;">Medium</button>
+        <button class="btn secondary" id="sp-fast" onclick="setSpeed(250)"  style="margin:0;padding:6px 12px;font-size:.78rem;">Fast</button>
+      </div>
+    </div>
+
+    <!-- CONTEXT STRIP -->
+    <div style="padding:14px 24px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px;">Context window (block_size = 3)</div>
+      <div id="re-context" style="display:flex;gap:6px;align-items:center;padding-bottom:14px;"></div>
+    </div>
+
+    <!-- PIPELINE STAGES -->
+    <div id="re-pipeline" style="padding:20px 24px;display:flex;flex-direction:column;gap:0;">
+    </div>
+
+    <!-- PREDICTION OUTPUT -->
+    <div style="padding:16px 24px;border-top:1px solid var(--border);background:var(--surface);">
+      <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;">Generated so far</div>
+      <div id="re-output" style="font-family:monospace;font-size:1.5rem;color:var(--accent5);letter-spacing:.1em;min-height:2rem;"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PDF REFERENCE ===== -->
+
+<!-- ===== INTERACTIVE BN ===== -->
+<section id="interactive-bn">
+  <h2 class="section-title">Interactive: Live BatchNorm Simulator</h2>
+  <p>Adjust the input values and BN parameters to see how normalisation, scale, and shift affect activations and tanh saturation in real time.</p>
+
+  <div class="interactive-box">
+    <h3>BatchNorm Forward Pass — Live Calculator</h3>
+    <div class="slider-row">
+      <label>γ (bngain)</label>
+      <input type="range" id="gamma-sl" min="0.1" max="4" step="0.1" value="1.0">
+      <span class="val" id="gamma-val">1.0</span>
+    </div>
+    <div class="slider-row">
+      <label>β (bnbias)</label>
+      <input type="range" id="beta-sl" min="-3" max="3" step="0.1" value="0.0">
+      <span class="val" id="beta-val">0.0</span>
+    </div>
+    <div class="slider-row">
+      <label>Input variance σ</label>
+      <input type="range" id="sigma-sl" min="0.1" max="10" step="0.1" value="1.0">
+      <span class="val" id="sigma-val">1.0</span>
+    </div>
+    <div class="slider-row">
+      <label>Input mean μ_shift</label>
+      <input type="range" id="mu-sl" min="-5" max="5" step="0.2" value="0.0">
+      <span class="val" id="mu-val">0.0</span>
+    </div>
+    <canvas id="bn-canvas" height="260"></canvas>
+    <div class="output-grid">
+      <div class="output-card"><div class="label">After BN — Mean</div><div class="value" id="out-mean">0.00</div></div>
+      <div class="output-card"><div class="label">After BN — Std</div><div class="value" id="out-std">1.00</div></div>
+      <div class="output-card"><div class="label">Tanh Saturation %</div><div class="value" id="out-sat">0%</div></div>
+      <div class="output-card"><div class="label">Avg Gradient |1−h²|</div><div class="value" id="out-grad">1.00</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== GRADIENT FLOW ===== -->
+<section id="gradient-flow">
+  <h2 class="section-title">Interactive: Gradient Flow Through BN Stack</h2>
+
+  <div class="interactive-box">
+    <h3>See How Gradients Flow (or Die) Layer by Layer</h3>
+    <div class="slider-row">
+      <label>Input σ (no BN)</label>
+      <input type="range" id="gf-sigma" min="0.5" max="5" step="0.1" value="3.0">
+      <span class="val" id="gf-sigma-val">3.0</span>
+    </div>
+    <div class="slider-row">
+      <label>Number of layers</label>
+      <input type="range" id="gf-layers" min="2" max="8" step="1" value="5">
+      <span class="val" id="gf-layers-val">5</span>
+    </div>
+    <canvas id="gf-canvas" height="300"></canvas>
+    <p class="muted" style="margin-top:10px;">Blue = without BN (gradient magnitude per layer). Orange = with BN. Notice how BN keeps gradients consistent across all layers while without BN they vanish.</p>
+  </div>
+</section>
+
+<!-- ===== TRAJECTORY ===== -->
+<section id="trajectory">
+  <h2 class="section-title">Interactive: Parameter Update Trajectory</h2>
+
+  <div class="interactive-box">
+    <h3>Watch γ, β, and W₁[0,0] Evolve Over Training Steps</h3>
+    <div class="slider-row">
+      <label>Learning rate (early)</label>
+      <input type="range" id="lr-sl" min="0.001" max="0.5" step="0.01" value="0.1">
+      <span class="val" id="lr-val">0.10</span>
+    </div>
+    <div class="slider-row">
+      <label>Gradient noise σ</label>
+      <input type="range" id="noise-sl" min="0" max="0.2" step="0.01" value="0.05">
+      <span class="val" id="noise-val">0.05</span>
+    </div>
+    <button class="btn" onclick="runTrajectory()">Run 20 Steps</button>
+    <button class="btn secondary" onclick="resetTrajectory()">Reset</button>
+    <canvas id="traj-canvas" height="300"></canvas>
+    <div class="output-grid">
+      <div class="output-card"><div class="label">Current γ</div><div class="value" id="traj-gamma">1.000</div></div>
+      <div class="output-card"><div class="label">Current β</div><div class="value" id="traj-beta">0.000</div></div>
+      <div class="output-card"><div class="label">Current W₁[0,0]</div><div class="value" id="traj-w1">0.500</div></div>
+      <div class="output-card"><div class="label">Step</div><div class="value" id="traj-step">0</div></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+// ========== BN SIMULATOR ==========
+const bnCanvas = document.getElementById('bn-canvas');
+const bnCtx = bnCanvas.getContext('2d');
+let bnChart = null;
+
+function sigmoid(x) { return 1/(1+Math.exp(-x)); }
+function tanh(x) { return Math.tanh(x); }
+function tanhDeriv(x) { const t = Math.tanh(x); return 1 - t*t; }
+
+function genNormal(n, mu, sigma) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const u = Math.random(), v = Math.random();
+    out.push(mu + sigma * Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v));
+  }
+  return out;
+}
+
+function updateBN() {
+  const gamma = parseFloat(document.getElementById('gamma-sl').value);
+  const beta = parseFloat(document.getElementById('beta-sl').value);
+  const sigma = parseFloat(document.getElementById('sigma-sl').value);
+  const mu = parseFloat(document.getElementById('mu-sl').value);
+  document.getElementById('gamma-val').textContent = gamma.toFixed(1);
+  document.getElementById('beta-val').textContent = beta.toFixed(1);
+  document.getElementById('sigma-val').textContent = sigma.toFixed(1);
+  document.getElementById('mu-val').textContent = mu.toFixed(1);
+
+  const raw = genNormal(500, mu, sigma);
+  const rawMean = raw.reduce((a,b)=>a+b,0)/raw.length;
+  const rawVar = raw.reduce((a,b)=>a+(b-rawMean)**2,0)/raw.length;
+  const rawStd = Math.sqrt(rawVar);
+  const normed = raw.map(x => gamma * (x - rawMean) / (rawStd + 1e-5) + beta);
+  const tanhOut = normed.map(x => tanh(x));
+  const satCount = tanhOut.filter(x => Math.abs(x) > 0.97).length;
+  const avgGrad = tanhOut.reduce((a,x)=>a+tanhDeriv(tanh(x)),0)/tanhOut.length;
+
+  const bnMean = normed.reduce((a,b)=>a+b,0)/normed.length;
+  const bnVar = normed.reduce((a,b)=>a+(b-bnMean)**2,0)/normed.length;
+  document.getElementById('out-mean').textContent = bnMean.toFixed(3);
+  document.getElementById('out-std').textContent = Math.sqrt(bnVar).toFixed(3);
+  document.getElementById('out-sat').textContent = (satCount/tanhOut.length*100).toFixed(1)+'%';
+  document.getElementById('out-grad').textContent = avgGrad.toFixed(3);
+
+  // Build histogram data
+  function histogram(data, bins, min, max) {
+    const w = (max-min)/bins;
+    const counts = new Array(bins).fill(0);
+    data.forEach(x => {
+      const i = Math.floor((x-min)/w);
+      if (i >= 0 && i < bins) counts[i]++;
+    });
+    return { counts, labels: Array.from({length:bins},(_,i)=>(min+i*w+w/2).toFixed(2)) };
+  }
+
+  const rawH = histogram(raw, 40, -15, 15);
+  const normedH = histogram(normed, 40, -8, 8);
+  const tanhH = histogram(tanhOut, 30, -1.05, 1.05);
+
+  if (bnChart) bnChart.destroy();
+  bnChart = new Chart(bnCtx, {
+    type: 'bar',
+    data: {
+      labels: tanhH.labels,
+      datasets: [
+        { label: 'tanh(BN output)', data: tanhH.counts, backgroundColor: 'rgba(88,166,255,0.6)', borderColor: '#58a6ff', borderWidth: 1 }
+      ]
+    },
+    options: {
+      plugins: { legend: { labels: { color: '#e6edf3' } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxTicksLimit: 10 }, grid: { color: '#30363d' } },
+        y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' }, beginAtZero: true }
+      },
+      animation: { duration: 200 }
+    }
+  });
+}
+
+['gamma-sl','beta-sl','sigma-sl','mu-sl'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateBN);
+});
+updateBN();
+
+// ========== GRADIENT FLOW ==========
+const gfCanvas = document.getElementById('gf-canvas');
+const gfCtx = gfCanvas.getContext('2d');
+let gfChart = null;
+
+function updateGF() {
+  const sigma = parseFloat(document.getElementById('gf-sigma').value);
+  const numLayers = parseInt(document.getElementById('gf-layers').value);
+  document.getElementById('gf-sigma-val').textContent = sigma.toFixed(1);
+  document.getElementById('gf-layers-val').textContent = numLayers;
+
+  const labels = Array.from({length:numLayers},(_,i)=>`Layer ${i+1}`);
+  const noBN = [], withBN = [];
+  let gradNoBN = 1.0, gradBN = 1.0;
+  for (let i = 0; i < numLayers; i++) {
+    const satFraction = Math.min(0.99, 2*(1 - 1/(1+Math.exp(-sigma*1.5))));
+    const avgDeriv = (1 - satFraction) * 0.9 + satFraction * 0.02;
+    gradNoBN *= avgDeriv * (sigma > 1.5 ? 0.6 : 0.85);
+    gradBN *= 0.85 + 0.1*Math.random();
+    noBN.push(Math.max(1e-6, gradNoBN));
+    withBN.push(Math.min(1.5, Math.max(0.1, gradBN)));
+  }
+
+  if (gfChart) gfChart.destroy();
+  gfChart = new Chart(gfCtx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Without BN', data: noBN, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.15)', tension: 0.4, fill: true },
+        { label: 'With BN', data: withBN, borderColor: '#ffa657', backgroundColor: 'rgba(255,166,87,0.15)', tension: 0.4, fill: true }
+      ]
+    },
+    options: {
+      plugins: { legend: { labels: { color: '#e6edf3' } } },
+      scales: {
+        x: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
+        y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' }, min: 0, title: { display: true, text: 'Gradient Magnitude', color: '#8b949e' } }
+      }
+    }
+  });
+}
+
+['gf-sigma','gf-layers'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateGF);
+});
+updateGF();
+
+// ========== TRAJECTORY ==========
+const trajCanvas = document.getElementById('traj-canvas');
+const trajCtx = trajCanvas.getContext('2d');
+let trajChart = null;
+let trajState = { gamma: 1.0, beta: 0.0, w1: 0.5, step: 0 };
+let trajHistory = { gamma: [1.0], beta: [0.0], w1: [0.5], steps: [0] };
+
+function resetTrajectory() {
+  trajState = { gamma: 1.0, beta: 0.0, w1: 0.5, step: 0 };
+  trajHistory = { gamma: [1.0], beta: [0.0], w1: [0.5], steps: [0] };
+  updateTrajDisplay();
+  if (trajChart) { trajChart.destroy(); trajChart = null; }
+}
+
+function runTrajectory() {
+  const lr = parseFloat(document.getElementById('lr-sl').value);
+  const noise = parseFloat(document.getElementById('noise-sl').value);
+  document.getElementById('lr-val').textContent = lr.toFixed(2);
+  document.getElementById('noise-val').textContent = noise.toFixed(2);
+
+  for (let i = 0; i < 20; i++) {
+    const decayLr = trajState.step >= 100 ? lr * 0.1 : lr;
+    const gGamma = (Math.random()-0.5)*0.1 + noise*(Math.random()-0.5);
+    const gBeta = (Math.random()-0.5)*0.15 + noise*(Math.random()-0.5);
+    const gW1 = 0.05 + noise*(Math.random()-0.5);
+    trajState.gamma -= decayLr * gGamma;
+    trajState.beta -= decayLr * gBeta;
+    trajState.w1 -= decayLr * gW1;
+    trajState.step++;
+    trajHistory.gamma.push(trajState.gamma);
+    trajHistory.beta.push(trajState.beta);
+    trajHistory.w1.push(trajState.w1);
+    trajHistory.steps.push(trajState.step);
+  }
+  updateTrajDisplay();
+}
+
+function updateTrajDisplay() {
+  document.getElementById('traj-gamma').textContent = trajState.gamma.toFixed(4);
+  document.getElementById('traj-beta').textContent = trajState.beta.toFixed(4);
+  document.getElementById('traj-w1').textContent = trajState.w1.toFixed(4);
+  document.getElementById('traj-step').textContent = trajState.step;
+
+  if (trajChart) trajChart.destroy();
+  trajChart = new Chart(trajCtx, {
+    type: 'line',
+    data: {
+      labels: trajHistory.steps,
+      datasets: [
+        { label: 'γ (bngain)', data: trajHistory.gamma, borderColor: '#d2a8ff', tension: 0.3, fill: false, pointRadius: 0 },
+        { label: 'β (bnbias)', data: trajHistory.beta, borderColor: '#3fb950', tension: 0.3, fill: false, pointRadius: 0 },
+        { label: 'W₁[0,0]', data: trajHistory.w1, borderColor: '#ffa657', tension: 0.3, fill: false, pointRadius: 0 }
+      ]
+    },
+    options: {
+      plugins: { legend: { labels: { color: '#e6edf3' } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxTicksLimit: 10 }, grid: { color: '#30363d' }, title: { display: true, text: 'Training Step', color: '#8b949e' } },
+        y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } }
+      }
+    }
+  });
+}
+
+['lr-sl','noise-sl'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    document.getElementById('lr-val').textContent = parseFloat(document.getElementById('lr-sl').value).toFixed(2);
+    document.getElementById('noise-val').textContent = parseFloat(document.getElementById('noise-sl').value).toFixed(2);
+  });
+});
+updateTrajDisplay();
+
+
+// ========== RUNNING EXAMPLE ENGINE ==========
+// Lightweight simulation: deterministic seeded RNG + mini weight matrices
+// The numbers are illustrative but mathematically correct BN arithmetic.
+
+const VOCAB = '.abcdefghijklmnopqrstuvwxyz';
+const stoi = {};
+VOCAB.split('').forEach((c,i) => stoi[c] = i);
+const itos = {};
+VOCAB.split('').forEach((c,i) => itos[i] = c);
+
+// Tiny seeded PRNG (mulberry32)
+function mkRng(seed) {
+  let s = seed >>> 0;
+  return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+function randn(rng) { // Box-Muller
+  const u = 1 - rng(), v = rng();
+  return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+}
+
+// Build tiny demo network (n_embd=4, n_hidden=6, vocab=27)
+const N_EMBD = 4, N_HIDDEN = 6, BLOCK = 3, VOCAB_SIZE = 27;
+const rng = mkRng(2147483647);
+// Embedding: 27×4
+const C_demo = Array.from({length:VOCAB_SIZE}, ()=>Array.from({length:N_EMBD},()=>randn(rng)*0.5));
+// W1: 12×6
+const W1_demo = Array.from({length:N_EMBD*BLOCK}, ()=>Array.from({length:N_HIDDEN},()=>randn(rng)*(5/3)/Math.sqrt(N_EMBD*BLOCK)));
+// BN gamma/beta
+const gamma_demo = Array(N_HIDDEN).fill(1);
+const beta_demo  = Array(N_HIDDEN).fill(0);
+// W2: 6×27
+const W2_demo = Array.from({length:N_HIDDEN}, ()=>Array.from({length:VOCAB_SIZE},()=>randn(rng)*0.01));
+const b2_demo = Array(VOCAB_SIZE).fill(0);
+
+function matMul(x, W) { // x: [1×n], W: [n×m] → [1×m]
+  return W[0].map((_, j) => x.reduce((s, xi, i) => s + xi * W[i][j], 0));
+}
+function softmax(logits) {
+  const m = Math.max(...logits);
+  const e = logits.map(x => Math.exp(x - m));
+  const s = e.reduce((a,b)=>a+b,0);
+  return e.map(x=>x/s);
+}
+
+// Animation state
+let reAnimTimer = null, reStepIdx = 0, reStages = [], reSpeed = 700;
+let reName = 'emma', reContext = [0,0,0], reGenerated = [];
+let reSampRng = mkRng(42);
+
+function setSpeed(ms) {
+  reSpeed = ms;
+  ['slow','med','fast'].forEach(s => document.getElementById('sp-'+s).classList.remove('btn'));
+  if (ms===1200) document.getElementById('sp-slow').classList.add('btn');
+  else if (ms===600) document.getElementById('sp-med').classList.add('btn');
+  else document.getElementById('sp-fast').classList.add('btn');
+}
+
+function reReset() {
+  clearTimeout(reAnimTimer);
+  reStepIdx = 0; reStages = []; reContext = [0,0,0]; reGenerated = [];
+  reSampRng = mkRng(42);
+  renderContext();
+  document.getElementById('re-pipeline').innerHTML = '';
+  document.getElementById('re-output').textContent = '';
+}
+
+function reStart() {
+  reReset();
+  reName = (document.getElementById('re-name').value || 'emma').toLowerCase().replace(/[^a-z]/g,'') || 'emma';
+  buildAllStages();
+  runNextStage();
+}
+
+function reStep() {
+  if (reStages.length === 0) {
+    reName = (document.getElementById('re-name').value || 'emma').toLowerCase().replace(/[^a-z]/g,'') || 'emma';
+    buildAllStages();
+  }
+  if (reStepIdx < reStages.length) {
+    clearTimeout(reAnimTimer);
+    renderStage(reStages[reStepIdx]);
+    reStepIdx++;
+  }
+}
+
+function buildAllStages() {
+  reStages = [];
+  // Process each character of the name + the terminal '.'
+  const chars = (reName + '.').split('');
+  chars.forEach(ch => {
+    const targetIdx = stoi[ch] ?? 0;
+    const ctx = [...reContext];
+    // Forward pass computation
+    const stage = computeStage(ctx, targetIdx, ch);
+    reStages.push(stage);
+    // slide context
+    reContext = reContext.slice(1).concat([targetIdx]);
+  });
+  reContext = [0,0,0]; // reset for rendering
+}
+
+function computeStage(ctx, targetIdx, predictedChar) {
+  // 1. Embedding
+  const embVecs = ctx.map(i => C_demo[i]);
+  const emb = embVecs.flat(); // 12-dim
+
+  // 2. Linear
+  const hpre = matMul(emb, W1_demo); // 6-dim
+
+  // 3. BatchNorm (single sample — use the values directly, simulate batch with slight noise)
+  // For demo realism, simulate a mini batch of 3 by adding slight offsets
+  const batchSim = [hpre, hpre.map(x=>x*1.05+0.05), hpre.map(x=>x*0.95-0.05)];
+  const mu = hpre.map((_, j) => batchSim.reduce((s,r)=>s+r[j],0)/3);
+  const variance = hpre.map((_, j) => batchSim.reduce((s,r)=>s+(r[j]-mu[j])**2,0)/3);
+  const std = variance.map(v => Math.sqrt(v + 1e-5));
+  const hnorm = hpre.map((h, j) => (h - mu[j]) / std[j]);
+  const hbn = hnorm.map((h, j) => gamma_demo[j] * h + beta_demo[j]);
+
+  // 4. Tanh
+  const h = hbn.map(x => Math.tanh(x));
+
+  // 5. Output
+  const logits = matMul(h, W2_demo).map((x,j) => x + b2_demo[j]);
+  const probs = softmax(logits);
+
+  // Top-5 predictions
+  const ranked = probs.map((p,i)=>({i,p})).sort((a,b)=>b.p-a.p).slice(0,5);
+
+  return { ctx, predictedChar, targetIdx, emb, hpre, mu, variance, std, hnorm, hbn, h, logits, probs, ranked };
+}
+
+function renderContext() {
+  const el = document.getElementById('re-context');
+  if (!el) return;
+  el.innerHTML = reContext.map((idx, pos) => {
+    const ch = itos[idx] || '.';
+    const isNew = pos === 2;
+    return `<div style="background:${isNew?'var(--accent)':'var(--surface2)'};color:${isNew?'#000':'var(--text)'};
+      border:1px solid var(--border);border-radius:8px;padding:8px 14px;text-align:center;min-width:44px;">
+      <div style="font-size:1.2rem;font-family:monospace;font-weight:700;">${ch === '.' ? '·' : ch}</div>
+      <div style="font-size:.65rem;color:${isNew?'#000a':'var(--muted)'};margin-top:2px;">idx=${idx}</div>
+    </div>`;
+  }).join(`<div style="color:var(--muted);font-size:1.2rem;align-self:center;">→</div>`);
+}
+
+function fmt(n) { return (typeof n==='number') ? n.toFixed(3) : n; }
+function fmtArr(arr, max=4) {
+  const shown = arr.slice(0, max);
+  const more = arr.length > max ? ` <span style="color:var(--muted);">… +${arr.length-max}</span>` : '';
+  return `[${shown.map(v=>`<span style="color:var(--accent5);">${fmt(v)}</span>`).join(', ')}]${more}`;
+}
+
+function renderStage(stage) {
+  const { ctx, predictedChar, emb, hpre, mu, variance, std, hnorm, hbn, h, probs, ranked } = stage;
+  renderContext();
+
+  const pipe = document.getElementById('re-pipeline');
+
+  const stageEl = document.createElement('div');
+  stageEl.style.cssText = 'opacity:0;transition:opacity .4s;';
+  stageEl.innerHTML = `
+  <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:18px;background:var(--code-bg);">
+
+    <!-- HEADER -->
+    <div style="background:var(--surface2);padding:10px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+      <span style="background:var(--accent);color:#000;border-radius:50%;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;flex-shrink:0;">${pipe.children.length+1}</span>
+      <span style="font-weight:700;">Predicting after context <code style="color:var(--accent4);">[${ctx.map(i=>itos[i]||'.').join(', ')}]</code></span>
+      <span style="margin-left:auto;color:var(--accent3);font-size:.82rem;">target: <strong>${predictedChar === '.' ? '·(end)' : predictedChar}</strong></span>
+    </div>
+
+    <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px;">
+
+      <!-- STEP 1: EMBED -->
+      <div class="re-step-box" style="border-left:3px solid var(--accent);padding-left:14px;">
+        <div class="re-step-label" style="color:var(--accent);font-size:.72rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">① Embedding Lookup — C[context]</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+          ${ctx.map(i => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;text-align:center;">
+            <div style="color:var(--accent4);font-family:monospace;font-size:.9rem;">'${itos[i]||'.'}'</div>
+            <div style="color:var(--muted);font-size:.65rem;">C[${i}]</div>
+            <div style="color:var(--accent5);font-family:monospace;font-size:.72rem;margin-top:3px;">[${C_demo[i].map(v=>v.toFixed(2)).join(', ')}]</div>
+          </div>`).join('')}
+        </div>
+        <div style="color:var(--muted);font-size:.82rem;">Concatenate → <code style="color:var(--text);">${fmtArr(emb, 6)}</code> <span style="color:var(--muted);">(dim=${emb.length})</span></div>
+      </div>
+
+      <!-- STEP 2: LINEAR -->
+      <div class="re-step-box" style="border-left:3px solid var(--accent4);padding-left:14px;">
+        <div class="re-step-label" style="color:var(--accent4);font-size:.72rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">② Linear Layer — h_pre = emb · W₁</div>
+        <div style="color:var(--muted);font-size:.82rem;">h_pre = ${fmtArr(hpre, 6)} <span style="color:var(--muted);">(${N_HIDDEN} neurons)</span></div>
+        <div style="color:var(--muted);font-size:.78rem;margin-top:4px;">std of h_pre ≈ <strong style="color:var(--accent2);">${Math.sqrt(hpre.reduce((s,x)=>s+x*x,0)/hpre.length).toFixed(3)}</strong> — would saturate tanh without BN</div>
+      </div>
+
+      <!-- STEP 3: BATCHNORM -->
+      <div class="re-step-box" style="border-left:3px solid var(--accent2);padding-left:14px;">
+        <div class="re-step-label" style="color:var(--accent2);font-size:.72rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">③ Batch Normalization</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;">
+            <div style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Batch Mean μ</div>
+            <code style="color:var(--accent3);font-size:.8rem;">${fmtArr(mu, 4)}</code>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;">
+            <div style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Batch Variance σ²</div>
+            <code style="color:var(--accent3);font-size:.8rem;">${fmtArr(variance, 4)}</code>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;">
+            <div style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Normalised x̂ = (h−μ)/σ</div>
+            <code style="color:var(--accent5);font-size:.8rem;">${fmtArr(hnorm, 4)}</code>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;">
+            <div style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">After Scale+Shift γx̂+β</div>
+            <code style="color:var(--accent5);font-size:.8rem;">${fmtArr(hbn, 4)}</code>
+          </div>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);">γ = [${gamma_demo.join(', ')}] &nbsp;|&nbsp; β = [${beta_demo.join(', ')}]</div>
+        <div style="font-size:.78rem;color:var(--accent3);margin-top:4px;">✓ After BN: mean ≈ ${(hnorm.reduce((a,b)=>a+b,0)/hnorm.length).toFixed(3)}, std ≈ ${Math.sqrt(hnorm.reduce((s,x)=>s+x*x,0)/hnorm.length).toFixed(3)}</div>
+      </div>
+
+      <!-- STEP 4: TANH -->
+      <div class="re-step-box" style="border-left:3px solid var(--accent3);padding-left:14px;">
+        <div class="re-step-label" style="color:var(--accent3);font-size:.72rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">④ tanh Activation</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
+          ${h.map((v,i) => {
+            const sat = Math.abs(v) > 0.97;
+            const deriv = (1 - v*v).toFixed(3);
+            const col = sat ? 'var(--red)' : Math.abs(v) > 0.8 ? 'var(--yellow)' : 'var(--accent3)';
+            return `<div style="background:var(--surface);border:1px solid ${col};border-radius:6px;padding:6px 9px;text-align:center;">
+              <div style="color:${col};font-family:monospace;font-size:.85rem;font-weight:700;">${v.toFixed(3)}</div>
+              <div style="color:var(--muted);font-size:.65rem;">∂=${deriv}</div>
+              ${sat?'<div style="color:var(--red);font-size:.6rem;">SAT</div>':''}
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);">Saturation: <strong style="color:${h.filter(v=>Math.abs(v)>0.97).length>0?'var(--red)':'var(--accent3)'};">${(h.filter(v=>Math.abs(v)>0.97).length/h.length*100).toFixed(0)}%</strong> of neurons &nbsp;|&nbsp; Avg gradient: <strong style="color:var(--accent5);">${(h.reduce((s,v)=>s+(1-v*v),0)/h.length).toFixed(3)}</strong></div>
+      </div>
+
+      <!-- STEP 5: SOFTMAX + PREDICTION -->
+      <div class="re-step-box" style="border-left:3px solid var(--accent5);padding-left:14px;">
+        <div class="re-step-label" style="color:var(--accent5);font-size:.72rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">⑤ Output → Softmax → Top Predictions</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          ${ranked.map((r,i) => `<div style="background:var(--surface);border:1px solid ${i===0?'var(--accent5)':'var(--border)'};border-radius:6px;padding:7px 12px;text-align:center;${i===0?'border-width:2px;':''}" >
+            <div style="font-family:monospace;font-size:1.1rem;font-weight:700;color:${i===0?'var(--accent5)':'var(--text)'};">${itos[r.i]==='.'?'·':itos[r.i]}</div>
+            <div style="font-size:.7rem;color:var(--muted);">${(r.p*100).toFixed(1)}%</div>
+          </div>`).join('')}
+        </div>
+        <div style="background:var(--surface);border-radius:6px;padding:8px 12px;">
+          ${ranked.map((r,rankIdx) => `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">
+            <span style="font-family:monospace;color:${rankIdx===0?'var(--accent5)':'var(--text)'};width:18px;text-align:center;">${itos[r.i]==='.'?'·':itos[r.i]}</span>
+            <div style="flex:1;background:var(--code-bg);border-radius:4px;height:10px;overflow:hidden;">
+              <div style="width:${(r.p*100).toFixed(1)}%;background:${rankIdx===0?'var(--accent5)':'var(--border)'};height:100%;border-radius:4px;transition:width .4s;"></div>
+            </div>
+            <span style="color:var(--muted);font-size:.75rem;width:42px;text-align:right;">${(r.p*100).toFixed(2)}%</span>
+          </div>`).join('')}
+        </div>
+      </div>
+
+    </div>
+  </div>`;
+
+  pipe.appendChild(stageEl);
+  requestAnimationFrame(() => stageEl.style.opacity = '1');
+  stageEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  // Update context for next render
+  reContext = reContext.slice(1).concat([stage.targetIdx]);
+  renderContext();
+
+  // Append to output
+  const outEl = document.getElementById('re-output');
+  if (stage.predictedChar !== '.') {
+    outEl.textContent += stage.predictedChar;
+  } else {
+    outEl.innerHTML += '<span style="color:var(--muted);"> ·</span>';
+  }
+}
+
+function runNextStage() {
+  if (reStepIdx >= reStages.length) return;
+  renderStage(reStages[reStepIdx]);
+  reStepIdx++;
+  if (reStepIdx < reStages.length) {
+    reAnimTimer = setTimeout(runNextStage, reSpeed);
+  }
+}
+
+// Init running example
+window.addEventListener('load', () => {
+  reContext = [0,0,0];
+  renderContext();
+  setSpeed(700);
+});
+
+// ========== NAV HIGHLIGHT ==========
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('nav a');
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(s => { if (window.scrollY >= s.offsetTop - 120) current = s.id; });
+  navLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#'+current);
+  });
+}, { passive: true });
+</script>
+</body>
+</html>
