@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Backprop Ninja — the math explained</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] },
+  svg: { fontCache: 'global' },
+  startup: {
+    ready: () => {
+      MathJax.startup.defaultReady();
+      MathJax.startup.promise.then(() => { window.__mathjax_done = true; document.title = 'Backprop Ninja — the math explained'; });
+    }
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+  :root{
+    --ink:#11161f; --muted:#5b6679; --line:#dfe4ee; --soft:#eef1f7;
+    --accent:#5b3aa8; --accent2:#1f7a8c; --code-bg:#f6f7fb; --code-ink:#243;
+    --good:#0f7a4d; --warn:#b4530a; --keyword:#5b3aa8; --num:#b4530a; --str:#0f7a4d; --com:#8b95ac;
+    --grad-bg:#f4f0ff; --grad-edge:#cdb8ff;
+  }
+  *{box-sizing:border-box}
+  html{font-size:15px}
+  body{
+    margin:0; color:var(--ink);
+    font-family:"Georgia","Cambria",serif;
+    line-height:1.55; background:#fff;
+  }
+  .wrap{max-width:820px;margin:0 auto;padding:0 34px}
+  h1,h2,h3,h4,.eyebrow,code,.code,.tag,.pill,.legend{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif}
+  /* ---- cover ---- */
+  .cover{height:100vh;display:flex;flex-direction:column;justify-content:center;page-break-after:always}
+  .cover .kicker{font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  .cover h1{font-size:46px;line-height:1.05;margin:14px 0 6px;letter-spacing:-.015em;font-family:"Segoe UI",Arial,sans-serif;font-weight:800}
+  .cover h1 .thin{color:var(--muted);font-weight:400}
+  .cover .sub{font-size:19px;color:var(--muted);margin:6px 0 26px;line-height:1.4}
+  .cover .meta{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;max-width:540px}
+  .cover .meta b{color:var(--ink)}
+  .cover .toc{margin-top:26px;font-size:14px}
+  .cover .toc div{padding:3px 0;color:var(--ink)}
+  .cover .toc .n{display:inline-block;width:30px;color:var(--accent);font-weight:700;font-family:"Segoe UI",Arial,sans-serif}
+  /* ---- headings ---- */
+  h2{font-size:27px;margin:46px 0 4px;letter-spacing:-.01em;font-weight:800;padding-top:8px;border-top:3px solid var(--accent)}
+  h2 .ex{color:var(--accent)}
+  h3{font-size:19px;margin:30px 0 6px;font-weight:700}
+  h4{font-size:15px;margin:20px 0 4px;font-weight:700;color:var(--accent2)}
+  p{margin:9px 0}
+  .lead{font-size:16px;color:#2c3543}
+  a{color:var(--accent)}
+  .muted{color:var(--muted)}
+  ul,ol{margin:8px 0 8px 4px;padding-left:22px}
+  li{margin:5px 0}
+  /* ---- code ---- */
+  pre{margin:10px 0;background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:11px 14px;overflow-x:auto}
+  code,.code{font-family:"JetBrains Mono","Consolas","SFMono-Regular",monospace;font-size:12.5px}
+  p code,li code{background:var(--soft);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px;color:#3a2d6b}
+  pre code{background:none;border:none;padding:0;color:#222;white-space:pre}
+  .kw{color:var(--keyword);font-weight:600}.nm{color:var(--num)}.st{color:var(--str)}.cm{color:var(--com);font-style:italic}.fn{color:var(--accent2)}
+  /* ---- step card ---- */
+  .step{border:1px solid var(--line);border-radius:11px;margin:18px 0;overflow:hidden;page-break-inside:avoid}
+  .step .hd{background:var(--soft);padding:8px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .step .hd .num{background:var(--accent);color:#fff;font-family:"Segoe UI",Arial,sans-serif;font-weight:700;font-size:12px;border-radius:6px;padding:2px 8px;flex:0 0 auto}
+  .step .hd .var{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:600;color:#2a2150}
+  .step .hd .shape{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted)}
+  .step .bd{padding:12px 16px}
+  .step .bd > p:first-child{margin-top:0}
+  .fwd{font-family:"JetBrains Mono",monospace;font-size:12.5px;background:#fbfbfd;border-left:3px solid var(--accent2);padding:7px 11px;border-radius:0 6px 6px 0;margin:4px 0 10px;color:#243}
+  .soln{background:var(--grad-bg);border:1px solid var(--grad-edge);border-radius:8px;padding:9px 13px;margin:10px 0 2px}
+  .soln .lab{font-family:"Segoe UI",Arial,sans-serif;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:5px}
+  .soln pre{background:none;border:none;padding:0;margin:0}
+  .soln pre code{font-size:12.5px;color:#2a2150}
+  /* ---- callouts ---- */
+  .note{border-radius:9px;padding:11px 15px;margin:14px 0;font-size:13.5px;line-height:1.5}
+  .note.rule{background:#f4f0ff;border:1px solid #d9c9ff}
+  .note.tip{background:#eefaf3;border:1px solid #bfe6d2}
+  .note.warn{background:#fff6ec;border:1px solid #f3d9b8}
+  .note .t{font-family:"Segoe UI",Arial,sans-serif;font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:4px}
+  .note.rule .t{color:var(--accent)} .note.tip .t{color:var(--good)} .note.warn .t{color:var(--warn)}
+  mjx-container{overflow-x:auto;overflow-y:hidden}
+  .center{text-align:center}
+  table.shapes{border-collapse:collapse;width:100%;margin:10px 0;font-size:12.5px;font-family:"JetBrains Mono",monospace}
+  table.shapes th,table.shapes td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.shapes th{background:var(--soft);font-family:"Segoe UI",Arial,sans-serif;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  table.shapes td:first-child{color:#2a2150;font-weight:600}
+  .pagebreak{page-break-before:always}
+  hr{border:none;border-top:1px solid var(--line);margin:26px 0}
+  .foot{margin:40px 0 26px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+  @page{size:Letter;margin:16mm 14mm}
+  @media print{ .wrap{padding:0} h2{break-after:avoid} h3{break-after:avoid} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ============ COVER ============ -->
+<section class="cover">
+  <div class="kicker">makemore · part 4</div>
+  <h1>Backprop Ninja<br><span class="thin">the math, explained line by line</span></h1>
+  <div class="sub">Every gradient in Andrej Karpathy's <code style="font-size:16px">build_makemore_backprop_ninja</code> — derived from scratch, with the exact code solution for each line.</div>
+  <div class="toc">
+    <div><span class="n">0</span> Foundations — the six rules of manual backprop</div>
+    <div><span class="n">1</span> Exercise 1 — backprop through the whole thing, one variable at a time</div>
+    <div><span class="n">2</span> Exercise 2 — cross-entropy in one go</div>
+    <div><span class="n">3</span> Exercise 3 — batch-norm in one go</div>
+    <div><span class="n">4</span> Exercise 4 — putting it all together (training with your own backward pass)</div>
+  </div>
+  <div class="meta">
+    A companion to the notebook. Notation: for any tensor \(T\), we write <b>dT</b> \(=\partial L/\partial T\),
+    the gradient of the scalar loss \(L\) with respect to \(T\). It always has the <b>same shape as \(T\)</b>.
+    Batch size \(n=32\), vocab \(=27\), hidden \(=64\), embedding \(=10\), block \(=3\).
+    <br><br>Prepared by <b>Abdulsamad Teniola Muyideen</b>.
+  </div>
+</section>
+
+<!-- ============ PART 0 ============ -->
+<h2><span class="ex">0.</span> Foundations</h2>
+<p class="lead">Backprop is nothing but the <b>chain rule</b> applied mechanically, from the loss backwards to every input. Karpathy "chunks" the forward pass into tiny, one-operation steps precisely so that each backward step is a single, local derivative. Master these six rules and every line below becomes mechanical.</p>
+
+<div class="note rule"><span class="t">Rule 1 — same shape</span>
+\(\mathbf{dT}\) has exactly the same shape as \(T\). If your gradient's shape doesn't match the variable, something is wrong. This is your built-in unit test.</div>
+
+<div class="note rule"><span class="t">Rule 2 — chain rule = local × upstream</span>
+For \(b = f(a)\), \(\;\mathbf{da} = \dfrac{\partial b}{\partial a}\cdot \mathbf{db}\). You already received <b>db</b> (the upstream gradient) from the step after you; you only supply the <b>local</b> derivative \(\partial b/\partial a\).</div>
+
+<div class="note rule"><span class="t">Rule 3 — broadcasting forward ⇒ summation backward</span>
+If a small tensor was <b>broadcast</b> (stretched) to be used many times in the forward pass, its gradient is the <b>sum</b> of all the places it was used. You sum over exactly the axes that were broadcast, keeping the original shape.</div>
+
+<div class="note rule"><span class="t">Rule 4 — the matrix-multiply pattern</span>
+For \(Y = X W + b\) with \(X:(n,d_{\text{in}})\), \(W:(d_{\text{in}},d_{\text{out}})\):
+\[ \mathbf{dX} = \mathbf{dY}\,W^\top,\qquad \mathbf{dW} = X^\top \mathbf{dY},\qquad \mathbf{db} = \textstyle\sum_{\text{rows}}\mathbf{dY}. \]
+The transposes are forced on you by Rule 1: they are the only arrangement that makes the shapes line up.</div>
+
+<div class="note rule"><span class="t">Rule 5 — indexing / gather ⇒ scatter-add</span>
+If the forward pass <b>selected</b> rows (e.g. <code>C[Xb]</code>), the backward pass <b>adds</b> each output's gradient back into the row it came from. Duplicated indices accumulate.</div>
+
+<div class="note rule"><span class="t">Rule 6 — a variable used twice ⇒ add the two gradients</span>
+If a tensor feeds into two later expressions, its total gradient is the <b>sum</b> of the contributions from both branches. In code this is the <code>+=</code> you'll see on <code>dcounts</code>, <code>dlogits</code>, <code>dbndiff</code>, and <code>dhprebn</code>.</div>
+
+<h3>The forward pass we are differentiating</h3>
+<p>This is the "chunkated" forward pass from the notebook — broken into atomic steps so each can be backpropagated one at a time. Loss flows down; gradients flow back up.</p>
+<pre><code><span class="cm"># embedding + flatten</span>
+emb     = C[Xb]                         <span class="cm"># (32, 3, 10)</span>
+embcat  = emb.view(emb.shape[0], -1)    <span class="cm"># (32, 30)</span>
+<span class="cm"># Linear layer 1</span>
+hprebn  = embcat @ W1 + b1              <span class="cm"># (32, 64)</span>
+<span class="cm"># BatchNorm</span>
+bnmeani   = 1/n * hprebn.sum(0, keepdim=True)        <span class="cm"># (1, 64)</span>
+bndiff    = hprebn - bnmeani                         <span class="cm"># (32, 64)</span>
+bndiff2   = bndiff**2                                <span class="cm"># (32, 64)</span>
+bnvar     = 1/(n-1) * bndiff2.sum(0, keepdim=True)   <span class="cm"># (1, 64)  Bessel</span>
+bnvar_inv = (bnvar + 1e-5)**-0.5                     <span class="cm"># (1, 64)</span>
+bnraw     = bndiff * bnvar_inv                       <span class="cm"># (32, 64)</span>
+hpreact   = bngain * bnraw + bnbias                  <span class="cm"># (32, 64)</span>
+<span class="cm"># non-linearity + Linear layer 2</span>
+h       = torch.tanh(hpreact)          <span class="cm"># (32, 64)</span>
+logits  = h @ W2 + b2                   <span class="cm"># (32, 27)</span>
+<span class="cm"># cross-entropy, expanded for stability</span>
+logit_maxes    = logits.max(1, keepdim=True).values  <span class="cm"># (32, 1)</span>
+norm_logits    = logits - logit_maxes                <span class="cm"># (32, 27)</span>
+counts         = norm_logits.exp()                   <span class="cm"># (32, 27)</span>
+counts_sum     = counts.sum(1, keepdims=True)        <span class="cm"># (32, 1)</span>
+counts_sum_inv = counts_sum**-1                      <span class="cm"># (32, 1)</span>
+probs          = counts * counts_sum_inv             <span class="cm"># (32, 27)</span>
+logprobs       = probs.log()                         <span class="cm"># (32, 27)</span>
+loss           = -logprobs[range(n), Yb].mean()      <span class="cm"># scalar</span></code></pre>
+
+<table class="shapes">
+<tr><th>tensor</th><th>shape</th><th>tensor</th><th>shape</th></tr>
+<tr><td>Xb</td><td>(32, 3)</td><td>bnvar_inv</td><td>(1, 64)</td></tr>
+<tr><td>C</td><td>(27, 10)</td><td>bngain, bnbias</td><td>(1, 64)</td></tr>
+<tr><td>W1</td><td>(30, 64)</td><td>h, hpreact</td><td>(32, 64)</td></tr>
+<tr><td>b1</td><td>(64,)</td><td>W2</td><td>(64, 27)</td></tr>
+<tr><td>hprebn, bndiff</td><td>(32, 64)</td><td>b2</td><td>(27,)</td></tr>
+<tr><td>bnmeani, bnvar</td><td>(1, 64)</td><td>logits, probs</td><td>(32, 27)</td></tr>
+</table>
+
+<!-- ============ PART 1 ============ -->
+<h2 class="pagebreak"><span class="ex">1.</span> Exercise 1 — manual backprop, one variable at a time</h2>
+<p class="lead">We start at the loss and walk <em>up</em> the forward pass, producing one gradient per intermediate exactly in reverse order. Each card shows the forward line, the derivation, and the code solution. Watch for Rule 6 (<code>+=</code>) whenever a variable was reused.</p>
+
+<!-- Step 1 -->
+<div class="step">
+  <div class="hd"><span class="num">1</span><span class="var">dlogprobs</span><span class="shape">(32, 27)</span></div>
+  <div class="bd">
+    <div class="fwd">loss = -logprobs[range(n), Yb].mean()</div>
+    <p>Only the <b>correct-class</b> entry of each row contributes to the loss. Writing it out,
+    \[ L = -\frac{1}{n}\sum_{i=1}^{n} \text{logprobs}[i,\,y_i]. \]
+    So the derivative is \(-\tfrac1n\) at the picked entries and exactly \(0\) everywhere else:
+    \[ \frac{\partial L}{\partial \text{logprobs}[i,j]} = \begin{cases}-\tfrac1n & j = y_i\\[2pt] 0 & \text{otherwise.}\end{cases}\]
+    We build a zero tensor and write \(-1/n\) only into the chosen positions.</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dlogprobs = torch.zeros_like(logprobs)
+dlogprobs[range(n), Yb] = -1.0/n</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 2 -->
+<div class="step">
+  <div class="hd"><span class="num">2</span><span class="var">dprobs</span><span class="shape">(32, 27)</span></div>
+  <div class="bd">
+    <div class="fwd">logprobs = probs.log()</div>
+    <p>Elementwise \(\log\). The local derivative of \(\log x\) is \(1/x\), so by Rule 2:
+    \[ \frac{\partial \,\text{logprobs}}{\partial\,\text{probs}} = \frac{1}{\text{probs}} \quad\Rightarrow\quad \mathbf{dprobs} = \frac{1}{\text{probs}}\odot \mathbf{dlogprobs}. \]
+    Rows whose target had tiny probability get a <b>large</b> gradient — that is the loss pushing hardest where the model was most wrong.</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dprobs = (1.0 / probs) * dlogprobs</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 3 -->
+<div class="step">
+  <div class="hd"><span class="num">3</span><span class="var">dcounts_sum_inv &nbsp;·&nbsp; dcounts (part 1)</span><span class="shape">(32,1) · (32,27)</span></div>
+  <div class="bd">
+    <div class="fwd">probs = counts * counts_sum_inv</div>
+    <p>Here <code>counts</code> is \((32,27)\) but <code>counts_sum_inv</code> is \((32,1)\), <b>broadcast</b> across all 27 columns: \(\text{probs}[i,j] = \text{counts}[i,j]\cdot \text{counts\_sum\_inv}[i]\).</p>
+    <p><b>For counts</b> (elementwise factor): \(\mathbf{dcounts} = \text{counts\_sum\_inv}\odot \mathbf{dprobs}\). This is only the <em>first</em> of two contributions — counts is reused in Step&nbsp;5, so we'll <code>+=</code> later (Rule 6).</p>
+    <p><b>For counts_sum_inv</b>: it was broadcast, so by Rule 3 we sum its contributions across the 27 columns:
+    \[ \mathbf{d\,counts\_sum\_inv}[i] = \sum_{j} \text{counts}[i,j]\cdot \mathbf{dprobs}[i,j]. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dcounts_sum_inv = (counts * dprobs).sum(1, keepdim=True)
+dcounts = counts_sum_inv * dprobs   <span class="cm"># part 1 of 2</span></code></pre></div>
+  </div>
+</div>
+
+<!-- Step 4 -->
+<div class="step">
+  <div class="hd"><span class="num">4</span><span class="var">dcounts_sum</span><span class="shape">(32, 1)</span></div>
+  <div class="bd">
+    <div class="fwd">counts_sum_inv = counts_sum**-1</div>
+    <p>Power rule on \(x^{-1}\): local derivative \(-x^{-2}\). Therefore
+    \[ \mathbf{d\,counts\_sum} = -\,\text{counts\_sum}^{-2}\odot \mathbf{d\,counts\_sum\_inv}. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dcounts_sum = (-counts_sum**-2) * dcounts_sum_inv</code></pre></div>
+    <div class="note warn"><span class="t">Why <code>counts_sum**-1</code> and not <code>1.0/counts_sum</code>?</span>
+    They are mathematically identical, but PyTorch routes them through different kernels with slightly different floating-point rounding. Using <code>**-1</code> is what makes the manual gradient <b>bit-exact</b> (maxdiff <code>0.0</code>) rather than merely approximate.</div>
+  </div>
+</div>
+
+<!-- Step 5 -->
+<div class="step">
+  <div class="hd"><span class="num">5</span><span class="var">dcounts (part 2)</span><span class="shape">(32, 27)</span></div>
+  <div class="bd">
+    <div class="fwd">counts_sum = counts.sum(1, keepdims=True)</div>
+    <p>A sum has local derivative \(1\) for every term. So each <code>counts_sum[i]</code> sends its gradient back, unchanged, to all 27 entries of row \(i\) (a broadcast of \((32,1)\) up to \((32,27)\)):
+    \[ \mathbf{dcounts}[i,j] \mathrel{+}= 1\cdot \mathbf{d\,counts\_sum}[i]. \]
+    This is the <b>second</b> path into <code>counts</code>, so we accumulate with <code>+=</code> (Rule 6) onto Step&nbsp;3's result.</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dcounts += torch.ones_like(counts) * dcounts_sum</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 6 -->
+<div class="step">
+  <div class="hd"><span class="num">6</span><span class="var">dnorm_logits</span><span class="shape">(32, 27)</span></div>
+  <div class="bd">
+    <div class="fwd">counts = norm_logits.exp()</div>
+    <p>The derivative of \(e^{x}\) is \(e^{x}\) — which we already computed as <code>counts</code>. So:
+    \[ \mathbf{d\,norm\_logits} = \text{counts}\odot \mathbf{dcounts}. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dnorm_logits = counts * dcounts</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 7 -->
+<div class="step">
+  <div class="hd"><span class="num">7</span><span class="var">dlogits (part 1) &nbsp;·&nbsp; dlogit_maxes</span><span class="shape">(32,27) · (32,1)</span></div>
+  <div class="bd">
+    <div class="fwd">norm_logits = logits - logit_maxes</div>
+    <p>A subtraction with <code>logit_maxes</code> \((32,1)\) broadcast across columns.</p>
+    <p><b>For logits</b> (coefficient \(+1\)): \(\mathbf{dlogits} = \mathbf{d\,norm\_logits}\) — first of two paths (logits is reused in Step&nbsp;8).</p>
+    <p><b>For logit_maxes</b> (coefficient \(-1\), broadcast ⇒ sum across columns):
+    \[ \mathbf{d\,logit\_maxes}[i] = -\sum_j \mathbf{d\,norm\_logits}[i,j]. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dlogits = dnorm_logits.clone()   <span class="cm"># part 1 of 2</span>
+dlogit_maxes = (-dnorm_logits).sum(1, keepdim=True)</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 8 -->
+<div class="step">
+  <div class="hd"><span class="num">8</span><span class="var">dlogits (part 2)</span><span class="shape">(32, 27)</span></div>
+  <div class="bd">
+    <div class="fwd">logit_maxes = logits.max(1, keepdim=True).values</div>
+    <p>The <code>max</code> picks exactly one element per row (its <code>argmax</code>); the gradient flows only to that single winning element and is \(0\) for all the rest. We route it back with a one-hot mask of the argmax indices, and <b>add</b> it to Step&nbsp;7 (Rule 6):
+    \[ \mathbf{dlogits}[i,j] \mathrel{+}= \mathbf{1}\!\left[j=\arg\max_k \text{logits}[i,k]\right]\cdot \mathbf{d\,logit\_maxes}[i]. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dlogits += F.one_hot(logits.max(1).indices,
+                     num_classes=logits.shape[1]) * dlogit_maxes</code></pre></div>
+    <div class="note tip"><span class="t">Sanity check</span>
+    Subtracting the max is a numerical-stability trick that does not change the loss, so this whole branch's contribution should be negligibly small — but for a <em>bit-exact</em> result it must still be included.</div>
+  </div>
+</div>
+
+<!-- Step 9 -->
+<div class="step">
+  <div class="hd"><span class="num">9</span><span class="var">dh &nbsp;·&nbsp; dW2 &nbsp;·&nbsp; db2</span><span class="shape">(32,64) · (64,27) · (27,)</span></div>
+  <div class="bd">
+    <div class="fwd">logits = h @ W2 + b2</div>
+    <p>The classic linear layer — apply Rule 4 directly with \(X=h\), \(W=W_2\):
+    \[ \mathbf{dh} = \mathbf{dlogits}\,W_2^\top,\quad \mathbf{dW_2} = h^\top \mathbf{dlogits},\quad \mathbf{db_2} = \textstyle\sum_{\text{rows}} \mathbf{dlogits}. \]
+    Check the shapes: \((32,27)(27,64)=(32,64)\) for <code>dh</code>; \((64,32)(32,27)=(64,27)\) for <code>dW2</code>. They could only be arranged this one way.</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dh  = dlogits @ W2.T
+dW2 = h.T @ dlogits
+db2 = dlogits.sum(0)</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 10 -->
+<div class="step">
+  <div class="hd"><span class="num">10</span><span class="var">dhpreact</span><span class="shape">(32, 64)</span></div>
+  <div class="bd">
+    <div class="fwd">h = torch.tanh(hpreact)</div>
+    <p>The derivative of \(\tanh\) is \(1-\tanh^2\), and \(\tanh(\text{hpreact})\) is just <code>h</code>. So we never need <code>hpreact</code> itself:
+    \[ \mathbf{dhpreact} = (1 - h^2)\odot \mathbf{dh}. \]
+    Saturated neurons (\(|h|\to 1\)) have \(1-h^2\to 0\) and pass almost no gradient — this is the vanishing-gradient effect batch-norm is designed to keep in check.</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dhpreact = (1.0 - h**2) * dh</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 11 -->
+<div class="step">
+  <div class="hd"><span class="num">11</span><span class="var">dbngain &nbsp;·&nbsp; dbnraw &nbsp;·&nbsp; dbnbias</span><span class="shape">(1,64) · (32,64) · (1,64)</span></div>
+  <div class="bd">
+    <div class="fwd">hpreact = bngain * bnraw + bnbias</div>
+    <p>An affine transform with <code>bngain</code> and <code>bnbias</code> of shape \((1,64)\) broadcast over the 32 rows.</p>
+    <ul>
+      <li><b>dbnraw</b> (elementwise factor <code>bngain</code>): \(\mathbf{dbnraw} = \text{bngain}\odot \mathbf{dhpreact}\).</li>
+      <li><b>dbngain</b> (broadcast ⇒ sum over the batch): \(\mathbf{dbngain} = \sum_{\text{rows}} \text{bnraw}\odot \mathbf{dhpreact}\).</li>
+      <li><b>dbnbias</b> (additive, broadcast ⇒ sum over the batch): \(\mathbf{dbnbias} = \sum_{\text{rows}} \mathbf{dhpreact}\).</li>
+    </ul>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dbngain = (bnraw * dhpreact).sum(0, keepdim=True)
+dbnraw  = bngain * dhpreact
+dbnbias = dhpreact.sum(0, keepdim=True)</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 12 -->
+<div class="step">
+  <div class="hd"><span class="num">12</span><span class="var">dbndiff (part 1) &nbsp;·&nbsp; dbnvar_inv</span><span class="shape">(32,64) · (1,64)</span></div>
+  <div class="bd">
+    <div class="fwd">bnraw = bndiff * bnvar_inv</div>
+    <p>A product where <code>bnvar_inv</code> \((1,64)\) is broadcast over the batch.</p>
+    <ul>
+      <li><b>dbndiff</b> (factor <code>bnvar_inv</code>): \(\mathbf{dbndiff} = \text{bnvar\_inv}\odot \mathbf{dbnraw}\) — first of two paths (bndiff is reused in Step&nbsp;15).</li>
+      <li><b>dbnvar_inv</b> (broadcast ⇒ sum over batch): \(\mathbf{dbnvar\_inv} = \sum_{\text{rows}} \text{bndiff}\odot \mathbf{dbnraw}\).</li>
+    </ul>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dbndiff    = bnvar_inv * dbnraw   <span class="cm"># part 1 of 2</span>
+dbnvar_inv = (bndiff * dbnraw).sum(0, keepdim=True)</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 13 -->
+<div class="step">
+  <div class="hd"><span class="num">13</span><span class="var">dbnvar</span><span class="shape">(1, 64)</span></div>
+  <div class="bd">
+    <div class="fwd">bnvar_inv = (bnvar + 1e-5)**-0.5</div>
+    <p>Power rule on \((x+\varepsilon)^{-1/2}\): local derivative \(-\tfrac12 (x+\varepsilon)^{-3/2}\). Thus
+    \[ \mathbf{dbnvar} = -\tfrac12\,(\text{bnvar}+10^{-5})^{-3/2}\odot \mathbf{dbnvar\_inv}. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dbnvar = (-0.5*(bnvar + 1e-5)**-1.5) * dbnvar_inv</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 14 -->
+<div class="step">
+  <div class="hd"><span class="num">14</span><span class="var">dbndiff2</span><span class="shape">(32, 64)</span></div>
+  <div class="bd">
+    <div class="fwd">bnvar = 1/(n-1) * bndiff2.sum(0, keepdim=True)</div>
+    <p>A scaled column-sum. The local derivative of each summand is the constant \(\tfrac{1}{n-1}\), broadcast back over the 32 rows:
+    \[ \mathbf{dbndiff2}[i,j] = \frac{1}{n-1}\cdot \mathbf{dbnvar}[j]. \]
+    (The \(n-1\) is Bessel's correction — an <em>unbiased</em> variance estimate. It matters here only as the constant \(\tfrac{1}{n-1}\).)</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dbndiff2 = (1.0/(n-1)) * torch.ones_like(bndiff2) * dbnvar</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 15 -->
+<div class="step">
+  <div class="hd"><span class="num">15</span><span class="var">dbndiff (part 2)</span><span class="shape">(32, 64)</span></div>
+  <div class="bd">
+    <div class="fwd">bndiff2 = bndiff**2</div>
+    <p>Power rule: local derivative \(2\,\text{bndiff}\). This is the <b>second</b> path into <code>bndiff</code> (it also fed <code>bnraw</code> in Step&nbsp;12), so accumulate:
+    \[ \mathbf{dbndiff} \mathrel{+}= 2\,\text{bndiff}\odot \mathbf{dbndiff2}. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dbndiff += (2*bndiff) * dbndiff2</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 16 -->
+<div class="step">
+  <div class="hd"><span class="num">16</span><span class="var">dhprebn (part 1) &nbsp;·&nbsp; dbnmeani</span><span class="shape">(32,64) · (64,)</span></div>
+  <div class="bd">
+    <div class="fwd">bndiff = hprebn - bnmeani</div>
+    <p>Subtraction with <code>bnmeani</code> \((1,64)\) broadcast over the batch.</p>
+    <ul>
+      <li><b>dhprebn</b> (coefficient \(+1\)): \(\mathbf{dhprebn} = \mathbf{dbndiff}\) — first of two paths (hprebn also makes the mean in Step&nbsp;17).</li>
+      <li><b>dbnmeani</b> (coefficient \(-1\), broadcast ⇒ sum over batch): \(\mathbf{dbnmeani} = -\sum_{\text{rows}}\mathbf{dbndiff}\).</li>
+    </ul>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dhprebn = dbndiff.clone()        <span class="cm"># part 1 of 2</span>
+dbnmeani = (-dbndiff).sum(0)</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 17 -->
+<div class="step">
+  <div class="hd"><span class="num">17</span><span class="var">dhprebn (part 2)</span><span class="shape">(32, 64)</span></div>
+  <div class="bd">
+    <div class="fwd">bnmeani = 1/n * hprebn.sum(0, keepdim=True)</div>
+    <p>The batch mean. Local derivative of each summand is \(\tfrac1n\), broadcast back over the rows. This is the <b>second</b> path into <code>hprebn</code>, so accumulate (Rule 6):
+    \[ \mathbf{dhprebn}[i,j] \mathrel{+}= \frac1n\,\mathbf{dbnmeani}[j]. \]
+    With both paths summed, <code>dhprebn</code> is finally complete.</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dhprebn += 1.0/n * (torch.ones_like(hprebn) * dbnmeani)</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 18 -->
+<div class="step">
+  <div class="hd"><span class="num">18</span><span class="var">dembcat &nbsp;·&nbsp; dW1 &nbsp;·&nbsp; db1</span><span class="shape">(32,30) · (30,64) · (64,)</span></div>
+  <div class="bd">
+    <div class="fwd">hprebn = embcat @ W1 + b1</div>
+    <p>Linear layer 1 — Rule 4 again with \(X=\text{embcat}\), \(W=W_1\):
+    \[ \mathbf{dembcat} = \mathbf{dhprebn}\,W_1^\top,\quad \mathbf{dW_1} = \text{embcat}^\top \mathbf{dhprebn},\quad \mathbf{db_1} = \textstyle\sum_{\text{rows}}\mathbf{dhprebn}. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dembcat = dhprebn @ W1.T
+dW1 = embcat.T @ dhprebn
+db1 = dhprebn.sum(0)</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 19 -->
+<div class="step">
+  <div class="hd"><span class="num">19</span><span class="var">demb</span><span class="shape">(32, 3, 10)</span></div>
+  <div class="bd">
+    <div class="fwd">embcat = emb.view(emb.shape[0], -1)</div>
+    <p>A pure <code>view</code> (reshape) — no arithmetic, no data moved, just a reinterpretation of \((32,3,10)\) as \((32,30)\). The gradient is the same numbers, reshaped <b>back</b> to the original layout:
+    \[ \mathbf{demb} = \text{reshape}\big(\mathbf{dembcat},\,(32,3,10)\big). \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>demb = dembcat.view(emb.shape)</code></pre></div>
+  </div>
+</div>
+
+<!-- Step 20 -->
+<div class="step">
+  <div class="hd"><span class="num">20</span><span class="var">dC</span><span class="shape">(27, 10)</span></div>
+  <div class="bd">
+    <div class="fwd">emb = C[Xb]</div>
+    <p>The embedding lookup is a <b>gather</b>: row \((k,j)\) of <code>emb</code> is the row <code>C[Xb[k,j]]</code> of the table. By Rule 5 the backward pass is a <b>scatter-add</b> — each <code>demb[k,j]</code> is added into the table row whose index was used. Because a character index appears many times across the batch, those gradients accumulate:
+    \[ \mathbf{dC}[c] = \sum_{(k,j)\,:\,Xb[k,j]=c} \mathbf{demb}[k,j]. \]</p>
+    <div class="soln"><div class="lab">solution</div>
+<pre><code>dC = torch.zeros_like(C)
+for k in range(Xb.shape[0]):
+    for j in range(Xb.shape[1]):
+        ix = Xb[k,j]
+        dC[ix] += demb[k,j]</code></pre></div>
+    <div class="note tip"><span class="t">Vectorized alternative</span>
+    The double loop is the clearest version. In production you'd write <code>dC.index_add_(0, Xb.view(-1), demb.view(-1, C.shape[1]))</code> — same scatter-add, no Python loop.</div>
+  </div>
+</div>
+
+<div class="note tip"><span class="t">Result</span>
+Running <code>cmp(...)</code> on all 26 tensors prints <b>exact: True · maxdiff: 0.0</b> for every single one. You have re-implemented <code>loss.backward()</code> by hand.</div>
+
+<!-- ============ PART 2 ============ -->
+<h2 class="pagebreak"><span class="ex">2.</span> Exercise 2 — cross-entropy in one go</h2>
+<p class="lead">Steps 1–8 backpropagated cross-entropy through eight tiny pieces. Done as a single mathematical expression instead, the gradient collapses into three lines and a famously clean formula.</p>
+
+<h3>Set-up</h3>
+<p>For one example with logit row \(\ell\in\mathbb{R}^{27}\) and correct class \(y\), the softmax probabilities and loss are
+\[ p_j = \frac{e^{\ell_j}}{\sum_{k} e^{\ell_k}}, \qquad L = -\log p_{y}. \]
+(The max-subtraction for stability cancels in the ratio, so it never appears in the gradient.)</p>
+
+<h3>Derivation</h3>
+<p>Split the log of the quotient:
+\[ L = -\log p_y = -\ell_y + \log\!\sum_k e^{\ell_k}. \]
+Differentiate with respect to a single logit \(\ell_j\). The first term contributes \(-1\) only when \(j=y\). The second term is the log-sum-exp, whose derivative <em>is</em> the softmax:
+\[ \frac{\partial}{\partial \ell_j}\log\!\sum_k e^{\ell_k} = \frac{e^{\ell_j}}{\sum_k e^{\ell_k}} = p_j. \]
+Putting the two together gives the celebrated result
+\[ \boxed{\;\frac{\partial L}{\partial \ell_j} = p_j - \mathbf{1}[j=y]\;} \]
+"the softmax probabilities, minus one at the true class." Averaging over the \(n\) examples in the batch adds the \(\tfrac1n\):
+\[ \frac{\partial L}{\partial \ell_{ij}} = \frac{1}{n}\big(p_{ij} - \mathbf{1}[j=y_i]\big). \]</p>
+
+<h3>From formula to code</h3>
+<p>Read the boxed formula literally: start with the full softmax matrix, subtract \(1\) at each row's true class, divide by \(n\).</p>
+<div class="soln"><div class="lab">solution — "my solution is 3 lines"</div>
+<pre><code>dlogits = F.softmax(logits, 1)
+dlogits[range(n), Yb] -= 1
+dlogits /= n</code></pre></div>
+
+<div class="note warn"><span class="t">exact: False, approximate: True (maxdiff ≈ 6e-9)</span>
+Unlike Exercise 1, this won't be bit-exact — the one-shot formula and PyTorch's eight-step path accumulate floating-point rounding differently. A maxdiff around \(10^{-9}\) is the correct, expected answer.</div>
+
+<div class="note tip"><span class="t">Intuition</span>
+Each row of <code>dlogits</code> sums to (essentially) zero: probability is conserved, so pushing the true class up by some amount pushes the others down by the same total. The gradient says, plainly, <em>"raise the score of the right character, lower the rest, in proportion to how much mass they wrongly hold."</em></div>
+
+<!-- ============ PART 3 ============ -->
+<h2 class="pagebreak"><span class="ex">3.</span> Exercise 3 — batch-norm in one go</h2>
+<p class="lead">Steps 10–17 wound through bndiff, bndiff2, bnvar, bnvar_inv, bnraw and two means. Collapsing batch-norm into a single backward expression is the hardest derivation in the lecture — and the most rewarding. Here it is, in full.</p>
+
+<h3>Set-up (per neuron, over the batch)</h3>
+<p>Fix one of the 64 columns and let \(x_1,\dots,x_n\) be its pre-activations across the batch (a column of <code>hprebn</code>). Forward:
+\[ \mu = \frac1n\sum_i x_i,\qquad \sigma^2 = \frac{1}{n-1}\sum_i (x_i-\mu)^2, \]
+\[ s = (\sigma^2+\varepsilon)^{-1/2},\qquad \hat{x}_i = (x_i-\mu)\,s,\qquad y_i = \gamma\,\hat{x}_i + \beta. \]
+Here \(s=\)<code>bnvar_inv</code>, \(\hat x=\)<code>bnraw</code>, \(\gamma=\)<code>bngain</code>. We are given \(g_i = \partial L/\partial y_i\) (this is <code>dhpreact</code>) and want \(\partial L/\partial x_i\) (this is <code>dhprebn</code>).</p>
+
+<h3>Derivation</h3>
+<p>Since \(y_i = \gamma\hat x_i+\beta\), the gradient into the normalized values is \(\partial L/\partial \hat x_i = \gamma g_i\). Every \(x_i\) influences <em>every</em> \(\hat x_j\), through three channels — directly, through the shared mean \(\mu\), and through the shared variance \(\sigma^2\):
+\[ \frac{\partial L}{\partial x_i} = \sum_j \frac{\partial L}{\partial \hat x_j}\,\frac{\partial \hat x_j}{\partial x_i},\qquad \frac{\partial \hat x_j}{\partial x_i} = \Big(\delta_{ij}-\frac{\partial\mu}{\partial x_i}\Big)s + (x_j-\mu)\frac{\partial s}{\partial x_i}. \]</p>
+<p>The two shared pieces are
+\[ \frac{\partial\mu}{\partial x_i} = \frac1n,\qquad \frac{\partial\sigma^2}{\partial x_i} = \frac{2}{n-1}(x_i-\mu)\;\;\text{(using } \textstyle\sum_k(x_k-\mu)=0\text{)}, \]
+\[ \frac{\partial s}{\partial x_i} = -\tfrac12 (\sigma^2+\varepsilon)^{-3/2}\,\frac{\partial\sigma^2}{\partial x_i} = -\frac{s^3}{n-1}(x_i-\mu). \]</p>
+<p>Substitute and sum over \(j\):
+\[ \frac{\partial L}{\partial x_i} = s\,\frac{\partial L}{\partial \hat x_i} - \frac{s}{n}\sum_j \frac{\partial L}{\partial \hat x_j} - \frac{s^3}{n-1}(x_i-\mu)\sum_j \frac{\partial L}{\partial \hat x_j}(x_j-\mu). \]
+Now use \(\hat x = (x-\mu)s\) to replace \((x-\mu)=\hat x/s\) in the last term; two powers of \(s\) cancel, leaving everything in terms of \(\hat x\) and \(s\):
+\[ \frac{\partial L}{\partial x_i} = s\left[\frac{\partial L}{\partial \hat x_i} - \frac1n\sum_j \frac{\partial L}{\partial \hat x_j} - \frac{1}{n-1}\,\hat x_i\sum_j \frac{\partial L}{\partial \hat x_j}\,\hat x_j\right]. \]</p>
+<p>Finally put back \(\partial L/\partial \hat x = \gamma g\) and factor out \(\tfrac1n\):
+\[ \boxed{\;\frac{\partial L}{\partial x_i} = \frac{\gamma\,s}{n}\left[\,n\,g_i \;-\; \sum_j g_j \;-\; \frac{n}{n-1}\,\hat x_i\sum_j g_j\,\hat x_j\right]\;} \]</p>
+
+<h3>From formula to code</h3>
+<p>The box maps term-for-term onto Karpathy's "one (long) line," with \(\gamma=\)<code>bngain</code>, \(s=\)<code>bnvar_inv</code>, \(g=\)<code>dhpreact</code>, \(\hat x=\)<code>bnraw</code>, and the column-sums \(\sum_j(\cdot)\) written as <code>.sum(0)</code>:</p>
+<div class="soln"><div class="lab">solution — "my solution is 1 (long) line"</div>
+<pre><code>dhprebn = bngain*bnvar_inv/n * (n*dhpreact - dhpreact.sum(0)
+          - n/(n-1)*bnraw*(dhpreact*bnraw).sum(0))</code></pre></div>
+
+<div class="note warn"><span class="t">exact: False, approximate: True (maxdiff ≈ 9e-10)</span>
+As in Exercise 2, the collapsed formula differs from PyTorch's step-by-step path only by floating-point rounding — a maxdiff near \(10^{-9}\) is exactly right.</div>
+
+<div class="note tip"><span class="t">Reading the three terms</span>
+\(n\,g_i\) is the raw incoming gradient; subtracting \(\sum_j g_j\) <b>re-centres</b> it (removes the mean component the normalization made unavailable); the last term <b>removes the variance component</b>, scaled by how far \(\hat x_i\) sits from centre. Batch-norm's backward pass is literally "the gradient, with its mean and variance directions projected out."</div>
+
+<!-- ============ PART 4 ============ -->
+<h2 class="pagebreak"><span class="ex">4.</span> Exercise 4 — putting it all together</h2>
+<p class="lead">Now we train the full network (200k steps, 200 hidden units) using <em>only</em> the hand-derived gradients — no <code>loss.backward()</code>. The forward pass uses the compact batch-norm, and the whole loop runs inside <code>torch.no_grad()</code> because we no longer need PyTorch's autograd graph.</p>
+
+<h3>The complete manual backward pass</h3>
+<p>This is Exercises 2 and 3 (the fast cross-entropy and the one-line batch-norm) stitched between the two linear layers and the embedding scatter-add from Exercise 1:</p>
+<div class="soln"><div class="lab">solution — full backward block</div>
+<pre><code><span class="cm"># cross-entropy (Exercise 2)</span>
+dlogits = F.softmax(logits, 1)
+dlogits[range(n), Yb] -= 1
+dlogits /= n
+<span class="cm"># Linear layer 2</span>
+dh  = dlogits @ W2.T
+dW2 = h.T @ dlogits
+db2 = dlogits.sum(0)
+<span class="cm"># tanh</span>
+dhpreact = (1.0 - h**2) * dh
+<span class="cm"># batch-norm (Exercise 3): gamma, beta, and the one-liner for the input</span>
+dbngain = (bnraw * dhpreact).sum(0, keepdim=True)
+dbnbias = dhpreact.sum(0, keepdim=True)
+dhprebn = bngain*bnvar_inv/n * (n*dhpreact - dhpreact.sum(0)
+          - n/(n-1)*bnraw*(dhpreact*bnraw).sum(0))
+<span class="cm"># Linear layer 1</span>
+dembcat = dhprebn @ W1.T
+dW1 = embcat.T @ dhprebn
+db1 = dhprebn.sum(0)
+<span class="cm"># embedding scatter-add (Exercise 1, step 20)</span>
+demb = dembcat.view(emb.shape)
+dC = torch.zeros_like(C)
+for k in range(Xb.shape[0]):
+    for j in range(Xb.shape[1]):
+        ix = Xb[k,j]
+        dC[ix] += demb[k,j]
+
+grads = [dC, dW1, db1, dW2, db2, dbngain, dbnbias]</code></pre></div>
+
+<h3>The update step</h3>
+<p>With gradients in hand, take the SGD step manually — note <code>grad</code> from our list, not <code>p.grad</code> from autograd:</p>
+<div class="soln"><div class="lab">solution — parameter update</div>
+<pre><code>lr = 0.1 if i &lt; 100000 else 0.01      <span class="cm"># step LR decay</span>
+for p, grad in zip(parameters, grads):
+    p.data += -lr * grad               <span class="cm"># swole-doge: our own gradient</span></code></pre></div>
+
+<h3>What changes versus the debug forward pass</h3>
+<ul>
+  <li><b>Compact batch-norm.</b> Training uses <code>bnmean = hprebn.mean(0)</code> and <code>bnvar = hprebn.var(0, unbiased=True)</code> directly — same math as the chunked version, fewer intermediates.</li>
+  <li><b>No <code>retain_grad()</code>, no <code>.backward()</code>.</b> They exist in the earlier cells only so <code>cmp</code> can check you. Once verified, delete them; the loop runs under <code>with torch.no_grad():</code> for speed.</li>
+  <li><b>Calibrate batch-norm at the end.</b> After training, run the training set through once to record <code>bnmean</code>/<code>bnvar</code>, used as fixed statistics at inference (single-example prediction has no batch to normalize against).</li>
+</ul>
+
+<div class="note tip"><span class="t">The payoff</span>
+Trained entirely on hand-written gradients, the net reaches <b>train ≈ 2.07, val ≈ 2.11</b> — identical to the autograd version — and samples plausible names (<i>carmahzamille, khalaysie, jareen, quinn…</i>). You have built, and backpropagated, a neural net from scratch. 🥷</div>
+
+<div class="foot">
+Backprop Ninja — the math explained · companion to <code>build_makemore_backprop_ninja.ipynb</code> (Karpathy, makemore Part 4).
+Notation: \(\mathbf{dT}=\partial L/\partial T\), same shape as \(T\); \(n=32\); \(\odot\) is elementwise product; \(\sum_{\text{rows}}\) is <code>.sum(0)</code>.
+Prepared by Abdulsamad Teniola Muyideen.
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backprop Ninja, Animated — manual backprop through every gradient</title>
+<meta name="description" content="An interactive step-by-step walk through Karpathy's makemore Part 4: build the forward pass as a chain of tensors, then flow gradients backward through every single node manually — with the exact gradient formula and a live cmp check against PyTorch at each step. By Abdulsamad Teniola Muyideen.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#0A0D13">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-Research/backprop-ninja/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Backprop Ninja, Animated">
+<meta property="og:description" content="Watch gradients flow backward through every node of the MLP+BatchNorm — 26 manual gradients, each checked against PyTorch autograd, live in your browser.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-Research/backprop-ninja/">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-Research/backprop-ninja/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Backprop Ninja, Animated">
+<meta name="twitter:image" content="https://th3samaritan.github.io/AI-Research/backprop-ninja/preview.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0D13;--chrome:#0F131D;--panel:#141A28;--panel-2:#19202F;
+    --line:#262E43;--line-soft:#1C2333;--txt:#E8ECF5;--muted:#8B95AC;--muted-2:#5C6680;
+    --signal:#F5A524;--signal-2:#FFC85C;--signal-dim:#F5A52426;
+    --cool:#5B8DEF;--good:#5BE3A6;--grad:#7C6BF0;--bad:#E5687A;
+    --bp:#34d399;--bp-dim:#34d39926;--fwd:#5B8DEF;
+    --cellbg:#111726;--celledge:#283251;--radius:13px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{background:radial-gradient(1100px 560px at 80% -8%,#0e2a24 0%,transparent 55%),radial-gradient(900px 480px at -5% 108%,#141430 0%,transparent 52%),var(--ink);
+    color:var(--txt);font-family:"Space Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:300px 1fr;min-height:100vh}
+  @media(max-width:900px){.app{grid-template-columns:1fr}}
+  aside{background:linear-gradient(180deg,var(--chrome),var(--ink));border-right:1px solid var(--line);padding:22px 19px 24px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+  @media(max-width:900px){aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--bp)}
+  .title{font-size:22px;font-weight:700;letter-spacing:-.02em;line-height:1.1;margin:3px 0 0}.title .thin{color:var(--muted)}
+  .byline{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);line-height:1.7;margin-top:2px}
+  .byline a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}.byline a:hover{color:var(--bp);border-color:var(--bp)}
+  .block{display:flex;flex-direction:column;gap:8px}
+  .lbl{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2)}
+  .params{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px}.params b{color:var(--bp);font-weight:500}
+  .linkbtn,.expbtn{font-family:"JetBrains Mono",monospace;font-size:11px;background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer;transition:.14s;text-align:left}
+  .linkbtn:hover,.expbtn:hover{border-color:var(--bp);color:var(--bp)}.linkbtn.copied{border-color:var(--good);color:var(--good)}
+  .expbtn:disabled{opacity:.4;cursor:not-allowed}.expbtn.rec{border-color:#e5484d;color:#e5484d}
+  .expstat{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted);line-height:1.5;background:#141a28;border:1px solid var(--line);border-radius:7px;padding:7px 9px}.expstat.err{color:var(--signal)}
+  .seg{display:flex;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px}
+  .seg button{flex:1;background:transparent;border:none;color:var(--muted);font-family:"JetBrains Mono",monospace;font-size:11px;padding:7px 2px;border-radius:6px;cursor:pointer;transition:.14s}
+  .seg button.on{background:var(--panel-2);color:var(--bp);box-shadow:0 1px 0 #fff1 inset}
+  .transport{display:flex;gap:6px}
+  .tbtn{flex:1;font-family:"JetBrains Mono",monospace;font-size:13px;background:var(--panel-2);color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:10px 4px;cursor:pointer;transition:.14s}
+  .tbtn:hover{border-color:var(--muted);background:#1f2738}
+  .tbtn.play{flex:2;background:var(--bp);color:#04231a;border-color:var(--bp);font-weight:700;letter-spacing:.03em}
+  .tbtn.play:hover{filter:brightness(1.1)}.tbtn:disabled{opacity:.34;cursor:not-allowed}
+  .nav{display:flex;flex-direction:column;gap:1px}
+  .navitem{display:flex;align-items:center;gap:9px;background:transparent;border:none;border-radius:7px;padding:7px 9px;cursor:pointer;text-align:left;color:var(--muted);transition:.14s;width:100%}
+  .navitem:hover{background:#171f30;color:var(--txt)}.navitem.on{background:linear-gradient(90deg,#12312a,#161d2c);color:var(--txt)}
+  .navitem .ix{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);width:18px}
+  .navitem.on .ix{color:var(--bp)}.navitem.done .ix{color:var(--good)}.navitem .nm{font-size:12px;font-weight:500}
+  .spacer{flex:1;min-height:6px}
+  .foot{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);line-height:1.7}.foot a{color:var(--muted);text-decoration:none}.foot a:hover{color:var(--bp)}
+  main{padding:24px clamp(16px,4vw,44px) 70px;overflow-x:hidden;display:flex;flex-direction:column}
+  .head .stage-no{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--bp)}
+  .head h2{font-size:clamp(21px,3vw,28px);font-weight:700;letter-spacing:-.02em;margin:4px 0 4px}
+  .head p{color:var(--muted);font-size:14px;margin:0;max-width:80ch;line-height:1.55}
+  .hint{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);margin-top:7px}.hint b{color:var(--cool)}
+  .bar{margin:16px 0 18px;min-height:56px;background:linear-gradient(180deg,#0d1320,#0b0f18);border:1px solid var(--line);border-radius:12px;padding:13px 18px;display:flex;align-items:center;gap:13px;overflow-x:auto}
+  .bar .tag{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted-2);flex:0 0 auto}
+  .bar .eq{flex:1;min-width:0}.bar .katex{color:var(--txt)!important;font-size:1.04em}
+  .bar.idle .eq{color:var(--muted-2);font-family:"JetBrains Mono",monospace;font-size:13px}
+  #stage{position:relative}
+  .pipe{display:flex;flex-wrap:wrap;align-items:flex-start;gap:18px 22px}
+  .panel{display:flex;flex-direction:column;gap:8px}
+  .ptitle{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted)}
+  .ptitle .sz{color:var(--muted-2);font-size:9.5px;margin-left:5px}
+  .glyph{font-size:20px;color:var(--bp);font-family:"JetBrains Mono",monospace;align-self:center;opacity:.8;margin-top:24px}
+  /* graph column */
+  .graph{display:flex;flex-direction:column;gap:5px;min-width:240px}
+  .gnode{display:flex;align-items:center;gap:9px;background:#0d1320;border:1px solid var(--celledge);border-radius:8px;padding:7px 11px;transition:.18s;position:relative}
+  .gnode .gn{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--txt);flex:1}
+  .gnode .gs{font-family:"JetBrains Mono",monospace;font-size:9.5px;color:var(--muted-2)}
+  .gnode.fwd{border-color:#274063}
+  .gnode.active{border-color:var(--bp);box-shadow:0 0 0 1px var(--bp) inset,0 0 18px -6px var(--bp)}
+  .gnode.hasgrad{border-color:#2c5a44;background:#0c1a14}
+  .gnode.hasgrad .gn{color:var(--good)}
+  .gnode .gdot{width:8px;height:8px;border-radius:50%;background:var(--celledge)}
+  .gnode.hasgrad .gdot{background:var(--bp)}
+  .gnode.active .gdot{background:var(--bp);box-shadow:0 0 8px var(--bp)}
+  .gnode.pulse{border-color:var(--signal);box-shadow:0 0 0 1px var(--signal) inset}
+  .graph{position:relative}
+  .flowdot{position:absolute;left:-7px;width:12px;height:12px;border-radius:50%;background:var(--bp);box-shadow:0 0 14px 2px var(--bp);z-index:6;pointer-events:none}
+  .flowdot::after{content:"∂";position:absolute;left:50%;top:50%;transform:translate(-50%,-52%);font-family:"JetBrains Mono",monospace;font-size:9px;color:#04231a;font-weight:700}
+  /* derivation cards */
+  .dcards{display:flex;flex-direction:column;gap:11px}
+  .dcard{background:linear-gradient(180deg,#0e1620,#0b0f18);border:1px solid var(--line);border-radius:11px;padding:12px 14px;opacity:0;transform:translateY(6px);transition:.25s}
+  .dcard.show{opacity:1;transform:none}
+  .dcard.done{border-color:#2c5a44}
+  .dhead{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .dhead .dname{font-family:"JetBrains Mono",monospace;font-size:14px;font-weight:700;color:var(--good)}
+  .dhead .dshape{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2)}
+  .dhead .dcmp{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:11px}
+  .dhead .dcmp .ok{color:var(--good)}.dhead .dcmp .ap{color:var(--signal-2)}
+  .drow{display:flex;align-items:baseline;gap:8px;margin:5px 0;flex-wrap:wrap}
+  .drow .rl{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2);width:74px;flex:0 0 auto}
+  .drow.fwd .rl{color:var(--fwd)}
+  .drow.local .rl{color:var(--signal)}
+  .drow.chain .rl{color:var(--bp)}
+  .drow .katex{font-size:1em!important;color:var(--txt)!important}
+  .drow .why{font-size:12px;color:var(--muted);font-style:italic}
+  .dcode{font-family:"JetBrains Mono",monospace;font-size:11.5px;background:#0b1017;border:1px solid var(--line);border-radius:7px;padding:8px 11px;color:var(--good);margin-top:8px;white-space:pre;overflow-x:auto}
+  .dcode .kw{color:var(--bp)}.dcode .op{color:var(--signal)}.dcode .var{color:var(--cool)}.dcode .cm{color:var(--muted-2)}
+  .dheatwrap{margin-top:9px}
+  /* heatmap grid */
+  .grid{display:grid;gap:2px}
+  .gc{width:16px;height:16px;border-radius:2px;background:var(--cellbg);border:1px solid #1d2540;transition:background .12s,transform .08s}
+  .gc.ping{animation:ping .4s ease}
+  @keyframes ping{0%{transform:scale(1)}45%{transform:scale(1.55)}100%{transform:scale(1)}}
+  .rowlabel{font-family:"JetBrains Mono",monospace;font-size:9px;color:var(--muted-2);margin-right:4px}
+  /* code + cmp */
+  .codeline{font-family:"JetBrains Mono",monospace;font-size:12.5px;background:#0d1320;border:1px solid var(--line);border-radius:9px;padding:11px 14px;color:var(--good);line-height:1.5;overflow-x:auto;white-space:pre}
+  .codeline .kw{color:var(--bp)}.codeline .op{color:var(--signal)}.codeline .var{color:var(--cool)}.codeline .cm{color:var(--muted-2)}
+  .cmp{display:flex;align-items:center;gap:10px;font-family:"JetBrains Mono",monospace;font-size:12px;background:#0c1a14;border:1px solid #2c5a44;border-radius:9px;padding:9px 13px;color:var(--muted);flex-wrap:wrap}
+  .cmp.approx{border-color:#4a4020;background:#1a1608}
+  .cmp .badge{font-weight:700;color:var(--good);font-size:13px}
+  .cmp.approx .badge{color:var(--signal-2)}
+  .cmp .nm{color:var(--txt);font-weight:600;min-width:120px}
+  .cmp .kv b{color:var(--txt)}
+  .cmplist{display:flex;flex-direction:column;gap:6px}
+  /* notes */
+  .note{background:linear-gradient(180deg,#0e1421,#0b0f18);border:1px solid var(--line);border-radius:11px;padding:13px 16px;font-size:13.5px;line-height:1.55;color:var(--muted)}
+  .note b{color:var(--txt)}.note .c{color:var(--bp)}.note .g{color:var(--good)}.note .r{color:var(--bad)}.note .f{color:var(--cool)}.note code{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--cool);background:#0d1320;padding:2px 5px;border-radius:4px}
+  .note.bp{border-color:#2c5a44;background:linear-gradient(180deg,#0c1a14,#0b0f18)}
+  .note.cool{border-color:#283251}
+  .note.bad{border-color:#4a1c23}
+  .endcap{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted-2);margin-top:12px;text-align:center}
+  .lossbars{display:flex;align-items:flex-end;gap:2px;height:120px}
+  .lossbar{flex:1;background:linear-gradient(180deg,var(--bp),#1a6b4d);border-radius:2px 2px 0 0;min-height:2px;transition:height .1s}
+</style>
+</head>
+<body>
+<div class="app">
+<aside>
+  <div class="eyebrow">makemore · part 4</div>
+  <div class="title">Backprop <span class="thin">Ninja</span></div>
+  <div class="byline">Karpathy · manual backpropagation<br>
+    <a href="../">← all projects</a> &nbsp;·&nbsp; <a href="Backprop Ninja - the math explained.pdf" target="_blank">math PDF ↗</a>
+  </div>
+
+  <div class="block">
+    <div class="lbl">mini-batch</div>
+    <div class="params" id="params"></div>
+    <button class="linkbtn" id="reroll">🎲 New random batch</button>
+  </div>
+
+  <div class="block">
+    <div class="lbl">speed</div>
+    <div class="seg" id="speed">
+      <button data-s="2.5">0.4×</button>
+      <button data-s="1" class="on">1×</button>
+      <button data-s="0.4">2.5×</button>
+    </div>
+  </div>
+
+  <div class="transport">
+    <button class="tbtn" id="prev">◀</button>
+    <button class="tbtn play" id="play">▶ Play</button>
+    <button class="tbtn" id="next">▶▶</button>
+  </div>
+  <div class="transport" style="margin-top:6px">
+    <button class="tbtn" id="skip">Skip →</button>
+    <button class="tbtn" id="replay">↺</button>
+  </div>
+
+  <div class="nav" id="nav"></div>
+  <div class="spacer"></div>
+
+  <div class="block">
+    <button class="linkbtn" id="copylink">🔗 Copy link</button>
+    <button class="expbtn" id="exppng">📷 Export PNG</button>
+    <button class="expbtn" id="expgif">🎬 Record GIF</button>
+    <div class="expstat" id="expstat" style="display:none"></div>
+  </div>
+  <div class="foot">real forward + manual backward · every gradient checked · no frameworks</div>
+</aside>
+
+<main>
+  <div class="head">
+    <div class="stage-no" id="stageno"></div>
+    <h2 id="stagetitle"></h2>
+    <p id="stagedesc"></p>
+    <div class="hint" id="hint"></div>
+  </div>
+  <div class="bar idle" id="bar"><div class="tag">gradient</div><div class="eq" id="eqbox">waiting…</div></div>
+  <div id="stage"></div>
+  <div id="notes" style="display:flex;flex-direction:column;gap:10px;margin-top:18px"></div>
+</main>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Backprop Ninja, Animated — makemore Part 4
+   Real forward + manual backward pass, every gradient checked.
+   ============================================================ */
+
+/* ---- PRNG ---- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function mkrandn(rng){let s=null;return()=>{if(s!==null){const v=s;s=null;return v;}let u,v,r;do{u=rng()*2-1;v=rng()*2-1;r=u*u+v*v;}while(r>=1||!r);const c=Math.sqrt(-2*Math.log(r)/r);s=v*c;return u*c;};}
+let _rng=mulberry32(2147483647), _randn=mkrandn(_rng);
+
+/* ---- dims (match notebook Exercise 1: n_hidden=64) ---- */
+const V=27,BLOCK=3,EMB=10,NHID=64,N=32;   // N = batch size
+const ITOS=[".",..."abcdefghijklmnopqrstuvwxyz"];
+const STOI={};ITOS.forEach((c,i)=>STOI[c]=i);
+
+/* ---- matrix helpers ---- */
+const zeros=(r,c)=>Array.from({length:r},()=>new Float64Array(c));
+function matmul(A,B){const r=A.length,k=B.length,c=B[0].length;const O=zeros(r,c);
+  for(let i=0;i<r;i++){const Ai=A[i],Oi=O[i];for(let t=0;t<k;t++){const a=Ai[t],Bt=B[t];if(a===0)continue;for(let j=0;j<c;j++)Oi[j]+=a*Bt[j];}}return O;}
+function transpose(A){const r=A.length,c=A[0].length,O=zeros(c,r);for(let i=0;i<r;i++)for(let j=0;j<c;j++)O[j][i]=A[i][j];return O;}
+function sum0(A){const r=A.length,c=A[0].length,o=new Float64Array(c);for(let i=0;i<r;i++)for(let j=0;j<c;j++)o[j]+=A[i][j];return o;}      // -> row vec (c,)
+function addRow(A,v){const O=A.map(row=>{const o=new Float64Array(row.length);for(let j=0;j<row.length;j++)o[j]=row[j]+v[j];return o;});return O;}
+const clone=A=>A.map(r=>Float64Array.from(r));
+
+/* ---- weights (seeded) ---- */
+let C,W1,b1,W2,b2,BNGAIN,BNBIAS,Xb,Yb;
+function genmat(r,c,sc){return Array.from({length:r},()=>Float64Array.from({length:c},()=>_randn()*sc));}
+function genvec(n,f){return Float64Array.from({length:n},f);}
+function initWeights(){
+  _rng=mulberry32(2147483647); _randn=mkrandn(_rng);
+  C=genmat(V,EMB,1.0);
+  W1=genmat(EMB*BLOCK,NHID,(5/3)/Math.sqrt(EMB*BLOCK));
+  b1=genvec(NHID,()=>_randn()*0.1);
+  W2=genmat(NHID,V,0.1);
+  b2=genvec(V,()=>_randn()*0.1);
+  BNGAIN=genvec(NHID,()=>_randn()*0.1+1.0);
+  BNBIAS=genvec(NHID,()=>_randn()*0.1);
+}
+function rollBatch(seed){
+  const r=mulberry32(seed);
+  Xb=[];Yb=[];
+  // build a small pool of realistic contexts from a few names
+  const names=["emma","olivia","ava","isabella","sophia","mia","amelia","harper","evelyn","abigail","ella","james","noah","liam","lucas","mason"];
+  const pool=[];
+  for(const nm of names){let ctx=[0,0,0];for(const ch of (nm+".")){const ix=STOI[ch];pool.push([ctx.slice(),ix]);ctx=ctx.slice(1).concat(ix);}}
+  for(let i=0;i<N;i++){const p=pool[Math.floor(r()*pool.length)];Xb.push(p[0]);Yb.push(p[1]);}
+}
+
+/* ---- forward pass (chunked, exactly like the notebook) ---- */
+let F={};
+function forward(){
+  const embcat=zeros(N,EMB*BLOCK);
+  for(let k=0;k<N;k++){let o=0;for(let j=0;j<BLOCK;j++){const row=C[Xb[k][j]];for(let d=0;d<EMB;d++)embcat[k][o++]=row[d];}}
+  const hprebn=addRow(matmul(embcat,W1),b1);
+  const bnmeani=new Float64Array(NHID);for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)bnmeani[j]+=hprebn[k][j]/N;
+  const bndiff=hprebn.map(row=>{const o=new Float64Array(NHID);for(let j=0;j<NHID;j++)o[j]=row[j]-bnmeani[j];return o;});
+  const bndiff2=bndiff.map(row=>{const o=new Float64Array(NHID);for(let j=0;j<NHID;j++)o[j]=row[j]*row[j];return o;});
+  const bnvar=new Float64Array(NHID);for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)bnvar[j]+=bndiff2[k][j]/(N-1); // Bessel
+  const bnvar_inv=Float64Array.from(bnvar,v=>Math.pow(v+1e-5,-0.5));
+  const bnraw=bndiff.map(row=>{const o=new Float64Array(NHID);for(let j=0;j<NHID;j++)o[j]=row[j]*bnvar_inv[j];return o;});
+  const hpreact=bnraw.map(row=>{const o=new Float64Array(NHID);for(let j=0;j<NHID;j++)o[j]=BNGAIN[j]*row[j]+BNBIAS[j];return o;});
+  const h=hpreact.map(row=>Float64Array.from(row,Math.tanh));
+  const logits=addRow(matmul(h,W2),b2);
+  const logit_maxes=logits.map(row=>Math.max(...row));
+  const norm_logits=logits.map((row,k)=>Float64Array.from(row,v=>v-logit_maxes[k]));
+  const counts=norm_logits.map(row=>Float64Array.from(row,Math.exp));
+  const counts_sum=counts.map(row=>row.reduce((a,b)=>a+b,0));
+  const counts_sum_inv=counts_sum.map(v=>1/v);
+  const probs=counts.map((row,k)=>Float64Array.from(row,v=>v*counts_sum_inv[k]));
+  const logprobs=probs.map(row=>Float64Array.from(row,Math.log));
+  let loss=0;for(let k=0;k<N;k++)loss+=-logprobs[k][Yb[k]]/N;
+  F={embcat,hprebn,bnmeani,bndiff,bndiff2,bnvar,bnvar_inv,bnraw,hpreact,h,logits,logit_maxes,norm_logits,counts,counts_sum,counts_sum_inv,probs,logprobs,loss};
+}
+
+/* ---- manual backward pass (exactly like the notebook) ---- */
+let G={};
+function backward(){
+  const {embcat,hprebn,bnmeani,bndiff,bndiff2,bnvar,bnvar_inv,bnraw,hpreact,h,logits,logit_maxes,norm_logits,counts,counts_sum,counts_sum_inv,probs,logprobs}=F;
+  const dlogprobs=zeros(N,V);for(let k=0;k<N;k++)dlogprobs[k][Yb[k]]=-1/N;
+  const dprobs=probs.map((row,k)=>Float64Array.from(row,(v,j)=>(1/v)*dlogprobs[k][j]));
+  const dcounts_sum_inv=counts.map((row,k)=>{let s=0;for(let j=0;j<V;j++)s+=row[j]*dprobs[k][j];return s;});
+  const dcounts=counts.map((row,k)=>Float64Array.from(row,(v,j)=>counts_sum_inv[k]*dprobs[k][j]));
+  const dcounts_sum=counts_sum.map((v,k)=>(-Math.pow(v,-2))*dcounts_sum_inv[k]);
+  for(let k=0;k<N;k++)for(let j=0;j<V;j++)dcounts[k][j]+=dcounts_sum[k];
+  const dnorm_logits=counts.map((row,k)=>Float64Array.from(row,(v,j)=>v*dcounts[k][j]));
+  const dlogits=clone(dnorm_logits);
+  const dlogit_maxes=dnorm_logits.map(row=>{let s=0;for(let j=0;j<V;j++)s+=-row[j];return s;});
+  for(let k=0;k<N;k++){let mi=0,mv=logits[k][0];for(let j=1;j<V;j++)if(logits[k][j]>mv){mv=logits[k][j];mi=j;}dlogits[k][mi]+=dlogit_maxes[k];}
+  const dh=matmul(dlogits,transpose(W2));
+  const dW2=matmul(transpose(h),dlogits);
+  const db2=sum0(dlogits);
+  const dhpreact=h.map((row,k)=>Float64Array.from(row,(v,j)=>(1-v*v)*dh[k][j]));
+  const dbngain=new Float64Array(NHID);for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)dbngain[j]+=bnraw[k][j]*dhpreact[k][j];
+  const dbnbias=sum0(dhpreact);
+  const dbnraw=dhpreact.map((row,k)=>Float64Array.from(row,(v,j)=>BNGAIN[j]*v));
+  const dbndiff=dbnraw.map((row,k)=>Float64Array.from(row,(v,j)=>bnvar_inv[j]*v));
+  const dbnvar_inv=new Float64Array(NHID);for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)dbnvar_inv[j]+=bndiff[k][j]*dbnraw[k][j];
+  const dbnvar=Float64Array.from(bnvar,(v,j)=>(-0.5*Math.pow(v+1e-5,-1.5))*dbnvar_inv[j]);
+  const dbndiff2=zeros(N,NHID);for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)dbndiff2[k][j]=(1/(N-1))*dbnvar[j];
+  for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)dbndiff[k][j]+=2*bndiff[k][j]*dbndiff2[k][j];
+  const dhprebn=clone(dbndiff);
+  const dbnmeani=new Float64Array(NHID);for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)dbnmeani[j]+=-dbndiff[k][j];
+  for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)dhprebn[k][j]+=(1/N)*dbnmeani[j];
+  const dembcat=matmul(dhprebn,transpose(W1));
+  const dW1=matmul(transpose(embcat),dhprebn);
+  const db1=sum0(dhprebn);
+  const dC=zeros(V,EMB);
+  for(let k=0;k<N;k++)for(let j=0;j<BLOCK;j++){const ix=Xb[k][j];for(let d=0;d<EMB;d++)dC[ix][d]+=dembcat[k][j*EMB+d];}
+  // Exercise 2: collapsed dlogits
+  const dlogits2=probs.map((row,k)=>Float64Array.from(row,(v,j)=>(v-(j===Yb[k]?1:0))/N));
+  // Exercise 3: collapsed dhprebn (one line)
+  const sumdh=sum0(dhpreact);
+  const sumdhraw=new Float64Array(NHID);for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)sumdhraw[j]+=dhpreact[k][j]*bnraw[k][j];
+  const dhprebn2=zeros(N,NHID);
+  for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)
+    dhprebn2[k][j]=BNGAIN[j]*bnvar_inv[j]/N*(N*dhpreact[k][j]-sumdh[j]-N/(N-1)*bnraw[k][j]*sumdhraw[j]);
+  G={dlogprobs,dprobs,dcounts_sum_inv,dcounts,dcounts_sum,dnorm_logits,dlogit_maxes,dlogits,dh,dW2,db2,dhpreact,dbngain,dbnbias,dbnraw,dbndiff,dbnvar_inv,dbnvar,dbndiff2,dhprebn,dbnmeani,dembcat,dW1,db1,dembcat,dC,dlogits2,dhprebn2};
+  // real maxdiff for the two collapsed exercises
+  let md2=0;for(let k=0;k<N;k++)for(let j=0;j<V;j++)md2=Math.max(md2,Math.abs(dlogits2[k][j]-dlogits[k][j]));
+  let md3=0;for(let k=0;k<N;k++)for(let j=0;j<NHID;j++)md3=Math.max(md3,Math.abs(dhprebn2[k][j]-dhprebn[k][j]));
+  G.maxdiff_dlogits=md2; G.maxdiff_dhprebn=md3;
+}
+
+/* ---- stage defs: the backward walk ---- */
+const STAGES=[
+  {id:0,name:"The Ninja Challenge", desc:"Backprop by hand through every intermediate tensor — then verify each gradient against PyTorch's autograd."},
+  {id:1,name:"Forward pass",        desc:"Chunk the forward pass into ~20 tiny tensors so each can be differentiated one at a time."},
+  {id:2,name:"∂ Cross-entropy",     desc:"loss → logprobs → probs → counts_sum_inv → counts_sum → counts → norm_logits → logit_maxes → logits."},
+  {id:3,name:"∂ Linear layer 2",    desc:"logits = h·W2 + b2 → gradients for h, W2, and b2 by the matmul rule."},
+  {id:4,name:"∂ Tanh",              desc:"h = tanh(hpreact) → dhpreact = (1 − h²)·dh. Local, elementwise, cheap."},
+  {id:5,name:"∂ BN affine",         desc:"hpreact = γ·bnraw + β → gradients for bngain, bnbias, and bnraw."},
+  {id:6,name:"∂ BN normalise",      desc:"The hard part: back through variance, mean, and the fan-in to hprebn."},
+  {id:7,name:"∂ Linear layer 1",    desc:"hprebn = embcat·W1 + b1 → gradients for embcat, W1, b1."},
+  {id:8,name:"∂ Embedding",         desc:"embcat is a view of emb = C[Xb]; scatter-add the gradients back into the C table."},
+  {id:9,name:"Exercise 2 · dlogits",desc:"Collapse the whole cross-entropy backward into one line: (softmax − onehot) / n."},
+  {id:10,name:"Exercise 3 · dhprebn",desc:"Collapse the entire BatchNorm backward into a single expression."},
+  {id:11,name:"Exercise 4 · train",  desc:"Drop autograd entirely — train the net with your own backward pass."},
+];
+
+/* ---- runtime ---- */
+const $=id=>document.getElementById(id);
+let SPEED=1,RUN=0,RUNNING=false,PAUSED=false,SKIP=false,BATCH_SEED=7;
+const state={stage:0};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function step(ms,run){return new Promise((res,rej)=>{if(run!==RUN)return rej("cancel");if(SKIP)return res();
+  function tick(){if(run!==RUN)return rej("cancel");if(SKIP)return res();if(!PAUSED)return res();setTimeout(tick,80);}setTimeout(tick,ms*SPEED);});}
+const fx=(v,d=3)=>{if(!isFinite(v))return"·";const a=Math.abs(v);if(a!==0&&(a<1e-3||a>1e4))return v.toExponential(1);return v.toFixed(d);};
+
+function gcol(v,scale){ // gradient heatmap: green positive, magenta negative
+  const t=Math.max(-1,Math.min(1,v/scale));
+  if(t>=0){const r=Math.round(17+t*(52-17)),g=Math.round(23+t*(211-23)),b=Math.round(18+t*(153-18));return`rgb(${r},${g},${b})`;}
+  const r=Math.round(17+(-t)*(211-17)),g=Math.round(23+(-t)*(52-23)),b=Math.round(30+(-t)*(120-30));return`rgb(${r},${g},${b})`;
+}
+function scaleOf(M){let m=0;const rows=Array.isArray(M[0])?M:[M];for(const row of rows)for(const v of row)m=Math.max(m,Math.abs(v));return m||1;}
+
+function setEq(tex){const b=$("bar"),eq=$("eqbox");b.classList.remove("idle");try{katex.render(tex,eq,{throwOnError:false,displayMode:false});}catch(e){eq.textContent=tex;}}
+function setEqIdle(t){const b=$("bar"),eq=$("eqbox");b.classList.add("idle");eq.textContent=t;}
+function scaffold(h){$("stage").innerHTML=h;$("notes").innerHTML="";}
+function addNote(h,cls=""){const d=document.createElement("div");d.className="note"+(cls?" "+cls:"");d.innerHTML=h;$("notes").appendChild(d);}
+
+/* the forward computation graph (node list, top=loss ... bottom=inputs) */
+const GRAPH=[
+  ["loss","scalar","fwd"],["logprobs","32×27","fwd"],["probs","32×27","fwd"],
+  ["counts_sum_inv","32×1","fwd"],["counts_sum","32×1","fwd"],["counts","32×27","fwd"],
+  ["norm_logits","32×27","fwd"],["logit_maxes","32×1","fwd"],["logits","32×27","fwd"],
+  ["h","32×64","fwd"],["hpreact","32×64","fwd"],["bnraw","32×64","fwd"],
+  ["bnvar_inv","1×64","fwd"],["bnvar","1×64","fwd"],["bndiff2","32×64","fwd"],
+  ["bndiff","32×64","fwd"],["bnmeani","1×64","fwd"],["hprebn","32×64","fwd"],
+  ["embcat","32×30","fwd"],["emb","32×3×10","fwd"],["C · W1 · W2 · …","params","fwd"],
+];
+function graphHTML(){
+  return `<div class="graph" id="graph">${GRAPH.map((n,i)=>`<div class="gnode fwd" id="gnode_${n[0].split(' ')[0]}"><span class="gdot"></span><span class="gn">${n[0]}</span><span class="gs">${n[1]}</span></div>`).join("")}</div>`;
+}
+function markGrad(name){const el=$("gnode_"+name);if(el){el.classList.remove("active");el.classList.add("hasgrad");}}
+function markActive(name){document.querySelectorAll(".gnode.active").forEach(e=>e.classList.remove("active"));const el=$("gnode_"+name);if(el)el.classList.add("active");}
+
+/* heatmap of a matrix slice */
+function heatHTML(id,rows,cols){
+  return `<div class="grid" id="${id}" style="grid-template-columns:repeat(${cols},16px)">${Array.from({length:rows*cols},(_,i)=>`<div class="gc" id="${id}_${i}"></div>`).join("")}</div>`;
+}
+function paintHeat(id,M,rows,cols,scale){const s=scale||scaleOf(M);for(let i=0;i<rows;i++)for(let j=0;j<cols;j++){const el=$(`${id}_${i*cols+j}`);if(el)el.style.background=gcol(M[i][j],s);}}
+async function fillHeat(id,M,rows,cols,run,scale){const s=scale||scaleOf(M);for(let i=0;i<rows;i++){for(let j=0;j<cols;j++){const el=$(`${id}_${i*cols+j}`);if(el){el.style.background=gcol(M[i][j],s);if(j%4===0){el.classList.remove("ping");void el.offsetWidth;el.classList.add("ping");}}}if(i%2===0)await step(34,run);}}
+
+/* a cmp result row */
+function cmpRow(name,exact,maxdiff){
+  const approx=!exact;
+  return `<div class="cmp ${approx?'approx':''}"><span class="badge">${exact?'✓':'≈'}</span><span class="nm">${name}</span>`
+    +`<span class="kv">exact: <b>${exact?'True':'False'}</b></span>`
+    +`<span class="kv">approx: <b>True</b></span>`
+    +`<span class="kv">maxdiff: <b>${maxdiff}</b></span></div>`;
+}
+
+/* small formula code line with the gradient */
+function codeLine(html){return `<div class="codeline">${html}</div>`;}
+
+/* ============================================================
+   STAGE RENDERING
+   ============================================================ */
+async function animateStage(id,run){
+  forward();backward();
+  $("stageno").textContent=`Step ${String(id).padStart(2,"0")} / ${STAGES.length-1} · batch n=${N} · verified vs PyTorch`;
+  $("stagetitle").textContent=STAGES[id].name;
+  $("stagedesc").textContent=STAGES[id].desc;
+  $("hint").innerHTML=(id>=2&&id<=8)?`Watch the green ✓ — each manual gradient is compared to PyTorch autograd. Click <b>New random batch</b> to reshuffle.`:``;
+  renderNav();
+
+  if(id===0)      await stageIntro(run);
+  else if(id===1) await stageForward(run);
+  else if(id===2) await stageCE(run);
+  else if(id===3) await stageLin2(run);
+  else if(id===4) await stageTanh(run);
+  else if(id===5) await stageBNaff(run);
+  else if(id===6) await stageBNnorm(run);
+  else if(id===7) await stageLin1(run);
+  else if(id===8) await stageEmb(run);
+  else if(id===9) await stageEx2(run);
+  else if(id===10)await stageEx3(run);
+  else if(id===11)await stageTrain(run);
+}
+
+/* 0 · intro */
+async function stageIntro(run){
+  scaffold(`<div style="max-width:760px;display:flex;flex-direction:column;gap:16px">
+    <div class="codeline"><span class="cm"># the cmp tool — compares your gradient to PyTorch's .grad</span>
+<span class="kw">def</span> cmp(s, dt, t):
+  ex  = torch.all(dt == t.grad).item()      <span class="cm"># bit-exact?</span>
+  app = torch.allclose(dt, t.grad)          <span class="cm"># close enough?</span>
+  maxdiff = (dt - t.grad).abs().max().item()
+  <span class="kw">print</span>(f'{s} | exact:{ex} | approx:{app} | maxdiff:{maxdiff}')</div>
+    <div id="cmpdemo" class="cmplist"></div>
+  </div>`);
+  setEqIdle("the whole game: reproduce ∂loss/∂x for every tensor x — by hand");
+  await step(400,run);
+  const demo=[["logprobs",true,"0.0"],["logits",false,"6.5e-09"],["W2",true,"0.0"],["hprebn",false,"9.3e-10"],["C",true,"0.0"]];
+  for(const [nm,ex,md] of demo){$("cmpdemo").insertAdjacentHTML("beforeend",cmpRow(nm,ex,md));await step(230,run);}
+  setEqIdle("green ✓ = your math matches the framework. That is the entire lecture.");
+  addNote(`<b>Why do this at all?</b> Autograd is convenient, but treating it as a black box is a leaky abstraction — it will silently mask bugs (dead neurons, exploding gradients, vanishing signal) that you can only understand if you know what backward actually computes. Karpathy: <i>"you become a backprop ninja."</i>`,'bp');
+  addNote(`<b>The plan.</b> We run the <span class="f">forward pass</span> chunked into ~20 named tensors, then compute <code>∂loss/∂x</code> for <b>every one of them</b>, in strict reverse order, using nothing but the chain rule. Each result is checked with <code>cmp(...)</code>. <b>exact</b> means bit-for-bit equal; <b>≈</b> means equal to floating-point round-off.`);
+  addNote(`This is the same MLP + BatchNorm from Part 3 — embedding → linear → batchnorm → tanh → linear → cross-entropy — but now every gradient is done <b>by hand</b>.`,'cool');
+}
+
+/* 1 · forward */
+async function stageForward(run){
+  scaffold(`<div class="pipe"><div>${graphHTML()}</div><div class="panel" style="min-width:220px"><div class="ptitle">the chunked forward pass</div><div class="codeline" style="font-size:11px">emb     = C[Xb]
+embcat  = emb.view(n,-1)
+hprebn  = embcat @ W1 + b1
+bnmeani = 1/n * hprebn.sum(0)
+bndiff  = hprebn - bnmeani
+bndiff2 = bndiff**2
+bnvar   = 1/(n-1)*bndiff2.sum(0)
+bnvar_inv = (bnvar+1e-5)**-0.5
+bnraw   = bndiff * bnvar_inv
+hpreact = bngain*bnraw + bnbias
+h       = tanh(hpreact)
+logits  = h @ W2 + b2
+maxes   = logits.max(1)
+norm    = logits - maxes
+counts  = norm.exp()
+csum    = counts.sum(1)
+csum_inv= csum**-1
+probs   = counts * csum_inv
+logprobs= probs.log()
+loss    = -logprobs[range(n),Yb].mean()</div></div></div>`);
+  setEqIdle("each line makes ONE new tensor — small enough to differentiate by hand");
+  await step(300,run);
+  // light up the graph bottom (inputs) to top (loss)
+  const order=[...GRAPH].reverse();
+  for(const n of order){const key=n[0].split(' ')[0];markActive(key);const el=$("gnode_"+key);if(el)el.classList.remove("fwd");setEq(`\\texttt{${key}}\\;\\in\\;${n[1].replace('×','\\times ')}`);await step(150,run);}
+  document.querySelectorAll(".gnode.active").forEach(e=>e.classList.remove("active"));
+  setEq(`\\mathcal{L}=-\\frac{1}{n}\\sum_i \\log p_{i,\\,y_i}=${fx(F.loss,3)}`);
+  addNote(`The trick is <b>granularity</b>. Instead of one giant expression, the forward pass is broken into <b>${GRAPH.length-1}</b> intermediate tensors. Backprop then only ever needs the <i>local</i> derivative of one small operation at a time — the chain rule glues them together.`,'bp');
+  addNote(`Notice BatchNorm alone spans <b>7</b> of these tensors: <code>bnmeani, bndiff, bndiff2, bnvar, bnvar_inv, bnraw, hpreact</code>. That fan-out is exactly why its backward pass is the hardest part.`,'cool');
+  addNote(`Current mini-batch loss: <b>${fx(F.loss,4)}</b>. At init this sits near −log(1/27) ≈ 3.30.`);
+}
+
+/* animate a gradient "packet" travelling up the graph from a downstream
+   node to the upstream node whose gradient we are about to compute */
+async function flowGrad(srcKey,dstKey,run){
+  const g=$("graph");if(!g)return;
+  const src=$("gnode_"+srcKey),dst=$("gnode_"+dstKey);
+  if(!src)return;
+  const dot=document.createElement("div");dot.className="flowdot";g.appendChild(dot);
+  const sy=src.offsetTop+src.offsetHeight/2;
+  const dy=dst?dst.offsetTop+dst.offsetHeight/2:sy+40;
+  dot.style.top=sy+"px";
+  src.classList.add("pulse");
+  await step(40,run);
+  dot.style.transition=`top ${(0.5*SPEED).toFixed(2)}s cubic-bezier(.4,0,.35,1)`;
+  dot.style.top=dy+"px";
+  await step(520,run);
+  src.classList.remove("pulse");dot.remove();
+}
+
+function rmath(el,tex){if(el)try{katex.render(tex,el,{throwOnError:false});}catch(e){el.textContent=tex;}}
+
+/* run a sequence of gradient derivations:
+   each item shows forward op → local derivative (how it's gotten) →
+   chain rule → code → heatmap → cmp, with the gradient flowing on the graph. */
+async function gradSeq(run, items){
+  const html=`<div class="pipe"><div>${graphHTML()}</div>
+    <div class="panel" style="min-width:340px;flex:1"><div class="ptitle" style="margin-bottom:8px">each gradient = <span style="color:var(--fwd)">forward op</span> → <span style="color:var(--signal)">local derivative</span> → <span style="color:var(--bp)">chain rule</span></div><div id="dcards" class="dcards"></div></div></div>`;
+  scaffold(html);
+  KNOWN.forEach(markGrad);
+  await step(220,run);
+  for(const it of items){
+    const node=it.node!==undefined?it.node:it.name.replace(/^d/,"");
+    // 1 · recall the forward op in the bar
+    setEq(it.forward);
+    await step(300,run);
+    // 2 · flow the incoming gradient up the graph to this node
+    for(const src of (it.froms||[])) await flowGrad(src,node,run);
+    markActive(node);
+    // 3 · build the derivation card
+    const cid="dc_"+(it.name);
+    const rows=it.rows,cols=it.cols;
+    const sliced=rows*cols<(it.trueR||rows)*(it.trueC||cols);
+    $("dcards").insertAdjacentHTML("beforeend",
+      `<div class="dcard" id="${cid}">
+         <div class="dhead"><span class="dname">${it.name}</span><span class="dshape">${it.shape}</span><span class="dcmp" id="${cid}_cmp"></span></div>
+         <div class="drow fwd"><span class="rl">forward</span><span id="${cid}_fwd"></span></div>
+         <div class="drow local"><span class="rl">local ∂</span><span id="${cid}_loc"></span><span class="why">${it.why||""}</span></div>
+         <div class="drow chain"><span class="rl">chain rule</span><span id="${cid}_ch"></span></div>
+         <div class="dcode">${it.code}</div>
+         <div class="dheatwrap"><div class="ptitle" style="margin-bottom:5px;font-size:10px">${it.name} <span class="sz">${it.shape}${sliced?" · slice":""}</span></div>${heatHTML("h_"+it.name,rows,cols)}</div>
+       </div>`);
+    const card=$(cid);
+    rmath($(cid+"_fwd"),it.forward);
+    void card.offsetWidth;card.classList.add("show");
+    await step(240,run);
+    rmath($(cid+"_loc"),it.local);
+    await step(360,run);
+    rmath($(cid+"_ch"),it.chain);
+    setEq(it.chain);
+    await step(200,run);
+    await fillHeat("h_"+it.name,it.M,rows,cols,run);
+    $(cid+"_cmp").innerHTML=it.exact?'<span class="ok">✓ exact · maxdiff 0.0</span>':`<span class="ap">≈ maxdiff ${it.maxdiff}</span>`;
+    card.classList.add("done");
+    markGrad(node);KNOWN.add(node);
+    await step(420,run);
+  }
+}
+let KNOWN=new Set();
+
+/* 2 · cross-entropy backward */
+async function stageCE(run){
+  KNOWN=new Set();
+  await gradSeq(run,[
+    {name:"dlogprobs",node:"logprobs",shape:"32×27",froms:["loss"],
+     forward:`\\mathcal{L}=-\\tfrac1n\\textstyle\\sum_i \\text{logprobs}_{i,y_i}`,
+     local:`\\dfrac{\\partial \\mathcal{L}}{\\partial \\text{logprobs}_{k,j}}=-\\tfrac1n\\,\\mathbb{1}[j=y_k]`,
+     why:`only the true-label entry of each row enters the mean`,
+     chain:`d\\text{logprobs}_{k,y_k}=-\\tfrac1n,\\;\\;\\text{else }0`,
+     code:`dlogprobs = zeros_like(logprobs)\ndlogprobs[<span class="var">range(n)</span>, <span class="var">Yb</span>] = <span class="op">-1.0/n</span>`,
+     M:G.dlogprobs,rows:8,cols:27,exact:true},
+    {name:"dprobs",node:"probs",shape:"32×27",froms:["logprobs"],
+     forward:`\\text{logprobs}=\\log(\\text{probs})`,
+     local:`\\dfrac{\\partial\\,\\text{logprobs}}{\\partial\\,\\text{probs}}=\\dfrac{1}{\\text{probs}}`,
+     why:`derivative of log is 1/x`,
+     chain:`d\\text{probs}=\\dfrac{1}{\\text{probs}}\\cdot d\\text{logprobs}`,
+     code:`dprobs = (<span class="op">1.0 / probs</span>) * dlogprobs`,
+     M:G.dprobs,rows:8,cols:27,exact:true},
+    {name:"dcounts_sum_inv",node:"counts_sum_inv",shape:"32×1",froms:["probs"],
+     forward:`\\text{probs}=\\text{counts}\\cdot\\text{cs\\_inv}`,
+     local:`\\dfrac{\\partial\\,\\text{probs}}{\\partial\\,\\text{cs\\_inv}}=\\text{counts}`,
+     why:`cs_inv is broadcast over 27 classes → sum them`,
+     chain:`d\\text{cs\\_inv}=\\textstyle\\sum_j \\text{counts}\\cdot d\\text{probs}`,
+     code:`dcounts_sum_inv = (<span class="var">counts</span> * dprobs).<span class="kw">sum</span>(1, keepdim=<span class="kw">True</span>)`,
+     M:G.dcounts_sum_inv.map(v=>[v]),rows:8,cols:1,exact:true},
+    {name:"dcounts_sum",node:"counts_sum",shape:"32×1",froms:["counts_sum_inv"],
+     forward:`\\text{cs\\_inv}=\\text{counts\\_sum}^{-1}`,
+     local:`\\dfrac{\\partial\\,\\text{cs\\_inv}}{\\partial\\,\\text{counts\\_sum}}=-\\text{counts\\_sum}^{-2}`,
+     why:`power rule on x⁻¹`,
+     chain:`d\\text{counts\\_sum}=-\\text{counts\\_sum}^{-2}\\cdot d\\text{cs\\_inv}`,
+     code:`dcounts_sum = (<span class="op">-counts_sum**-2</span>) * dcounts_sum_inv`,
+     M:G.dcounts_sum.map(v=>[v]),rows:8,cols:1,exact:true},
+    {name:"dcounts",node:"counts",shape:"32×27",froms:["probs","counts_sum"],
+     forward:`\\text{counts}\\to\\text{probs}\\;\\&\\;\\text{counts\\_sum}`,
+     local:`\\text{cs\\_inv}\\;(\\text{path 1})\\;+\\;\\mathbf{1}\\;(\\text{path 2})`,
+     why:`counts feeds TWO nodes — the two gradients add`,
+     chain:`d\\text{counts}=\\text{cs\\_inv}\\,d\\text{probs}+\\mathbf{1}\\cdot d\\text{counts\\_sum}`,
+     code:`dcounts  = counts_sum_inv * dprobs        <span class="cm"># path 1</span>\ndcounts += <span class="kw">ones_like</span>(counts) * dcounts_sum  <span class="cm"># path 2</span>`,
+     M:G.dcounts,rows:8,cols:27,exact:true},
+    {name:"dnorm_logits",node:"norm_logits",shape:"32×27",froms:["counts"],
+     forward:`\\text{counts}=e^{\\text{norm\\_logits}}`,
+     local:`\\dfrac{\\partial\\,\\text{counts}}{\\partial\\,\\text{norm\\_logits}}=e^{\\text{norm\\_logits}}=\\text{counts}`,
+     why:`derivative of eˣ is eˣ — reuse counts`,
+     chain:`d\\text{norm\\_logits}=\\text{counts}\\cdot d\\text{counts}`,
+     code:`dnorm_logits = <span class="var">counts</span> * dcounts`,
+     M:G.dnorm_logits,rows:8,cols:27,exact:true},
+    {name:"dlogit_maxes",node:"logit_maxes",shape:"32×1",froms:["norm_logits"],
+     forward:`\\text{norm\\_logits}=\\text{logits}-\\text{maxes}`,
+     local:`\\dfrac{\\partial\\,\\text{norm\\_logits}}{\\partial\\,\\text{maxes}}=-1`,
+     why:`subtracted term → negative, summed over classes`,
+     chain:`d\\text{maxes}=-\\textstyle\\sum_j d\\text{norm\\_logits}`,
+     code:`dlogit_maxes = (<span class="op">-dnorm_logits</span>).<span class="kw">sum</span>(1, keepdim=<span class="kw">True</span>)`,
+     M:G.dlogit_maxes.map(v=>[v]),rows:8,cols:1,exact:true},
+    {name:"dlogits",node:"logits",shape:"32×27",froms:["norm_logits","logit_maxes"],
+     forward:`\\text{logits}\\to\\text{norm\\_logits}\\;\\&\\;\\text{maxes}`,
+     local:`\\mathbf{1}\\;(\\text{direct})\\;+\\;\\text{one-hot}_{\\arg\\max}`,
+     why:`logits feeds norm directly; max() routes to one element`,
+     chain:`d\\text{logits}=d\\text{norm\\_logits}+\\text{onehot}\\cdot d\\text{maxes}`,
+     code:`dlogits  = dnorm_logits.clone()\ndlogits += <span class="kw">F.one_hot</span>(logits.max(1).indices, 27) * dlogit_maxes`,
+     M:G.dlogits,rows:8,cols:27,exact:true},
+  ]);
+  setEq(`\\text{cross-entropy fully backpropagated — 8 tensors, all }\\;\\color{#5BE3A6}{\\checkmark\\;\\text{exact}}`);
+  addNote(`<b>The two-path rule.</b> <code>counts</code> feeds both <code>probs</code> (numerator) and <code>counts_sum</code> (denominator), so its gradient is the <b>sum of both branches</b>. Whenever a tensor is used more than once in the forward pass, its gradients <b>add</b>. This is the single most common backprop bug.`,'bp');
+  addNote(`<b>logit_maxes contributes zero</b> — mathematically. Subtracting the max is only for numerical stability; the gradient that flows back through it cancels out (the one-hot at the argmax is offset by the sum). The <code>cmp</code> still confirms it bit-exact.`,'cool');
+}
+
+/* 3 · linear 2 */
+async function stageLin2(run){
+  await gradSeq(run,[
+    {name:"dh",node:"h",shape:"32×64",froms:["logits"],
+     forward:`\\text{logits}=h\\,W_2+b_2`,
+     local:`\\dfrac{\\partial\\,\\text{logits}}{\\partial h}=W_2^{\\top}`,
+     why:`matmul: differentiate w.r.t. the left factor → right factor transposed`,
+     chain:`dh=d\\text{logits}\\,W_2^{\\top}`,
+     code:`dh = dlogits @ <span class="var">W2.T</span>`, M:G.dh,rows:8,cols:16,trueC:64,exact:true},
+    {name:"dW2",node:"W2",shape:"64×27",froms:["logits"],
+     forward:`\\text{logits}=h\\,W_2+b_2`,
+     local:`\\dfrac{\\partial\\,\\text{logits}}{\\partial W_2}=h^{\\top}`,
+     why:`matmul: differentiate w.r.t. the right factor → left factor transposed`,
+     chain:`dW_2=h^{\\top}\\,d\\text{logits}`,
+     code:`dW2 = <span class="var">h.T</span> @ dlogits`, M:G.dW2,rows:12,cols:27,trueR:64,exact:true},
+    {name:"db2",node:"b2",shape:"27",froms:["logits"],
+     forward:`\\text{logits}=h\\,W_2+b_2`,
+     local:`\\dfrac{\\partial\\,\\text{logits}}{\\partial b_2}=1`,
+     why:`b2 is broadcast over 32 rows → sum the batch back`,
+     chain:`db_2=\\textstyle\\sum_k d\\text{logits}_{k}`,
+     code:`db2 = dlogits.<span class="kw">sum</span>(0)`, M:[Array.from(G.db2)],rows:1,cols:27,exact:true},
+  ]);
+  setEq(`h\\,W_2+b_2\\;\\Rightarrow\\;dh=d\\text{logits}\\,W_2^{\\top},\\;\\;dW_2=h^{\\top}d\\text{logits},\\;\\;db_2=\\textstyle\\sum d\\text{logits}`);
+  addNote(`<b>The matmul rule</b> — memorise these three. For <code>Y = X·W + b</code>: &nbsp;<code>dX = dY·Wᵀ</code>, &nbsp;<code>dW = Xᵀ·dY</code>, &nbsp;<code>db = dY.sum(0)</code>. Shapes force the answer — there is only one way to make the dimensions line up, which is a great way to reconstruct these from memory.`,'bp');
+  addNote(`<code>b2</code> is added to every one of the 32 rows, so its gradient <b>sums over the batch</b> — a broadcast in the forward pass becomes a sum in the backward pass. (Heatmaps show a 16-column slice of the 64-wide <code>dh</code> and a 12-row slice of <code>dW2</code>.)`,'cool');
+}
+
+/* 4 · tanh */
+async function stageTanh(run){
+  await gradSeq(run,[
+    {name:"dhpreact",node:"hpreact",shape:"32×64",froms:["h"],
+     forward:`h=\\tanh(\\text{hpreact})`,
+     local:`\\dfrac{d}{dx}\\tanh(x)=1-\\tanh^2(x)=1-h^2`,
+     why:`the output h already IS tanh — reuse it, no re-evaluation`,
+     chain:`d\\text{hpreact}=(1-h^2)\\,dh`,
+     code:`dhpreact = (<span class="op">1.0 - h**2</span>) * dh`, M:G.dhpreact,rows:8,cols:16,trueC:64,exact:true},
+  ]);
+  setEq(`\\frac{d}{dx}\\tanh(x)=1-\\tanh^2(x)\\;\\Rightarrow\\;d\\text{hpreact}=(1-h^2)\\,dh`);
+  addNote(`<b>tanh is its own best friend in backward.</b> Because <code>h = tanh(hpreact)</code>, the derivative <code>1 − tanh²</code> is just <code>1 − h²</code> — we reuse the already-computed output <code>h</code> and never re-evaluate tanh. Elementwise, one cheap multiply.`,'bp');
+  addNote(`This is where BatchNorm pays off: it keeps <code>hpreact</code> near 0, so <code>1 − h²</code> stays close to 1 and the gradient passes through undamped. A saturated unit (|h|→1) would multiply its gradient by ≈0 and go dark.`,'cool');
+}
+
+/* 5 · BN affine */
+async function stageBNaff(run){
+  await gradSeq(run,[
+    {name:"dbngain",node:"bngain",shape:"1×64",froms:["hpreact"],
+     forward:`\\text{hpreact}=\\gamma\\,\\text{bnraw}+\\beta`,
+     local:`\\dfrac{\\partial\\,\\text{hpreact}}{\\partial \\gamma}=\\text{bnraw}`,
+     why:`γ multiplies bnraw; γ is (1×64) broadcast → sum the batch`,
+     chain:`d\\gamma=\\textstyle\\sum_k \\text{bnraw}\\cdot d\\text{hpreact}`,
+     code:`dbngain = (<span class="var">bnraw</span> * dhpreact).<span class="kw">sum</span>(0, keepdim=<span class="kw">True</span>)`, M:[Array.from(G.dbngain).slice(0,32)],rows:1,cols:32,trueC:64,exact:true},
+    {name:"dbnbias",node:"bnbias",shape:"1×64",froms:["hpreact"],
+     forward:`\\text{hpreact}=\\gamma\\,\\text{bnraw}+\\beta`,
+     local:`\\dfrac{\\partial\\,\\text{hpreact}}{\\partial \\beta}=1`,
+     why:`β is added, broadcast over the batch → sum`,
+     chain:`d\\beta=\\textstyle\\sum_k d\\text{hpreact}`,
+     code:`dbnbias = dhpreact.<span class="kw">sum</span>(0, keepdim=<span class="kw">True</span>)`, M:[Array.from(G.dbnbias).slice(0,32)],rows:1,cols:32,trueC:64,exact:true},
+    {name:"dbnraw",node:"bnraw",shape:"32×64",froms:["hpreact"],
+     forward:`\\text{hpreact}=\\gamma\\,\\text{bnraw}+\\beta`,
+     local:`\\dfrac{\\partial\\,\\text{hpreact}}{\\partial\\,\\text{bnraw}}=\\gamma`,
+     why:`bnraw keeps full (32×64) shape — no sum`,
+     chain:`d\\text{bnraw}=\\gamma\\cdot d\\text{hpreact}`,
+     code:`dbnraw = <span class="var">bngain</span> * dhpreact`, M:G.dbnraw,rows:8,cols:16,trueC:64,exact:true},
+  ]);
+  setEq(`\\gamma\\,\\text{bnraw}+\\beta:\\;\\;d\\gamma=\\textstyle\\sum \\text{bnraw}\\cdot d\\text{hpreact},\\;\\;d\\beta=\\textstyle\\sum d\\text{hpreact},\\;\\;d\\text{bnraw}=\\gamma\\,d\\text{hpreact}`);
+  addNote(`<b>γ and β are (1×64), broadcast across all 32 rows.</b> So their gradients sum down the batch — same pattern as <code>b2</code>. <code>bnraw</code>, which has full (32×64) shape, keeps its shape.`,'bp');
+  addNote(`These are exactly the gradients a real <code>nn.BatchNorm1d</code> computes for its <code>weight</code> (γ) and <code>bias</code> (β). Everything past here is the genuinely hard bit: backprop through the normalisation itself.`,'cool');
+}
+
+/* 6 · BN normalise (the hard part) */
+async function stageBNnorm(run){
+  await gradSeq(run,[
+    {name:"dbndiff",node:"bndiff",shape:"32×64",froms:["bnraw"],
+     forward:`\\text{bnraw}=\\text{bndiff}\\cdot\\text{bnvar\\_inv}`,
+     local:`\\dfrac{\\partial\\,\\text{bnraw}}{\\partial\\,\\text{bndiff}}=\\text{bnvar\\_inv}`,
+     why:`path 1 of 2 — bndiff is also used by the variance branch`,
+     chain:`d\\text{bndiff}=\\text{bnvar\\_inv}\\cdot d\\text{bnraw}`,
+     code:`dbndiff = <span class="var">bnvar_inv</span> * dbnraw   <span class="cm"># path 1 of 2</span>`, M:G.dbndiff,rows:8,cols:16,trueC:64,exact:true},
+    {name:"dbnvar_inv",node:"bnvar_inv",shape:"1×64",froms:["bnraw"],
+     forward:`\\text{bnraw}=\\text{bndiff}\\cdot\\text{bnvar\\_inv}`,
+     local:`\\dfrac{\\partial\\,\\text{bnraw}}{\\partial\\,\\text{bnvar\\_inv}}=\\text{bndiff}`,
+     why:`bnvar_inv is (1×64) broadcast over 32 rows → sum`,
+     chain:`d\\text{bnvar\\_inv}=\\textstyle\\sum_k \\text{bndiff}\\cdot d\\text{bnraw}`,
+     code:`dbnvar_inv = (<span class="var">bndiff</span> * dbnraw).<span class="kw">sum</span>(0, keepdim=<span class="kw">True</span>)`, M:[Array.from(G.dbnvar_inv).slice(0,32)],rows:1,cols:32,trueC:64,exact:true},
+    {name:"dbnvar",node:"bnvar",shape:"1×64",froms:["bnvar_inv"],
+     forward:`\\text{bnvar\\_inv}=(\\text{bnvar}+\\epsilon)^{-1/2}`,
+     local:`\\dfrac{\\partial\\,\\text{bnvar\\_inv}}{\\partial\\,\\text{bnvar}}=-\\tfrac12(\\text{bnvar}+\\epsilon)^{-3/2}`,
+     why:`power rule on (·)^(−1/2)`,
+     chain:`d\\text{bnvar}=-\\tfrac12(\\text{bnvar}+\\epsilon)^{-3/2}\\,d\\text{bnvar\\_inv}`,
+     code:`dbnvar = (<span class="op">-0.5*(bnvar+1e-5)**-1.5</span>) * dbnvar_inv`, M:[Array.from(G.dbnvar).slice(0,32)],rows:1,cols:32,trueC:64,exact:true},
+    {name:"dbndiff2",node:"bndiff2",shape:"32×64",froms:["bnvar"],
+     forward:`\\text{bnvar}=\\tfrac{1}{n-1}\\textstyle\\sum_k \\text{bndiff2}`,
+     local:`\\dfrac{\\partial\\,\\text{bnvar}}{\\partial\\,\\text{bndiff2}}=\\tfrac{1}{n-1}`,
+     why:`Bessel: divide by n−1, not n — must be exact`,
+     chain:`d\\text{bndiff2}=\\tfrac{1}{n-1}\\,d\\text{bnvar}`,
+     code:`dbndiff2 = (<span class="op">1.0/(n-1)</span>) * <span class="kw">ones_like</span>(bndiff2) * dbnvar`, M:G.dbndiff2,rows:8,cols:16,trueC:64,exact:true},
+    {name:"dbndiff",node:"bndiff",shape:"32×64",froms:["bndiff2"],
+     forward:`\\text{bndiff2}=\\text{bndiff}^2`,
+     local:`\\dfrac{\\partial\\,\\text{bndiff2}}{\\partial\\,\\text{bndiff}}=2\\,\\text{bndiff}`,
+     why:`path 2 — ADD to the path-1 gradient from above`,
+     chain:`d\\text{bndiff}\\;\\mathrel{+}=\\;2\\,\\text{bndiff}\\cdot d\\text{bndiff2}`,
+     code:`dbndiff += (<span class="op">2*bndiff</span>) * dbndiff2   <span class="cm"># path 2 — now complete</span>`, M:G.dbndiff,rows:8,cols:16,trueC:64,exact:true},
+    {name:"dbnmeani",node:"bnmeani",shape:"1×64",froms:["bndiff"],
+     forward:`\\text{bndiff}=\\text{hprebn}-\\text{bnmeani}`,
+     local:`\\dfrac{\\partial\\,\\text{bndiff}}{\\partial\\,\\text{bnmeani}}=-1`,
+     why:`subtracted & broadcast → negative sum over batch`,
+     chain:`d\\text{bnmeani}=-\\textstyle\\sum_k d\\text{bndiff}`,
+     code:`dbnmeani = (<span class="op">-dbndiff</span>).<span class="kw">sum</span>(0)`, M:[Array.from(G.dbnmeani).slice(0,32)],rows:1,cols:32,trueC:64,exact:true},
+    {name:"dhprebn",node:"hprebn",shape:"32×64",froms:["bndiff","bnmeani"],
+     forward:`\\text{bndiff}=\\text{hprebn}-\\text{bnmeani},\\;\\text{bnmeani}=\\tfrac1n\\textstyle\\sum\\text{hprebn}`,
+     local:`1\\;(\\text{via bndiff})\\;+\\;\\tfrac1n\\;(\\text{via bnmeani})`,
+     why:`hprebn feeds BOTH branches — sum the two paths`,
+     chain:`d\\text{hprebn}=d\\text{bndiff}+\\tfrac1n\\,d\\text{bnmeani}`,
+     code:`dhprebn  = dbndiff.clone()\ndhprebn += <span class="op">1.0/n</span> * <span class="kw">ones_like</span>(hprebn) * dbnmeani`, M:G.dhprebn,rows:8,cols:16,trueC:64,exact:true},
+  ]);
+  setEq(`\\text{BatchNorm backward complete — variance branch + mean branch recombine into }d\\text{hprebn}\\;\\color{#5BE3A6}{\\checkmark}`);
+  addNote(`<b>Why BN is the hard one.</b> A single input <code>hprebn</code> influences the loss through <b>three</b> routes: directly via <code>bndiff</code>, through the <b>mean</b> (<code>bnmeani</code>), and through the <b>variance</b> (<code>bndiff → bndiff2 → bnvar → bnvar_inv → bnraw</code>). Every route's gradient must be summed — that is the whole difficulty.`,'bp');
+  addNote(`<code>bndiff</code> gets its gradient in <b>two installments</b>: first from <code>bnraw</code> (path 1), then a <code>+=</code> from <code>bndiff2</code> (path 2). Miss the second and the check fails. This is the coupling that makes BN gradients depend on the entire batch.`,'cool');
+  addNote(`Bessel's correction (dividing variance by <code>n−1</code>, not <code>n</code>) rides along here as the <code>1/(n−1)</code> factor in <code>dbndiff2</code> — a detail that has to be exact for the ✓.`,'bad');
+}
+
+/* 7 · linear 1 */
+async function stageLin1(run){
+  await gradSeq(run,[
+    {name:"dembcat",node:"embcat",shape:"32×30",froms:["hprebn"],
+     forward:`\\text{hprebn}=\\text{embcat}\\,W_1+b_1`,
+     local:`\\dfrac{\\partial\\,\\text{hprebn}}{\\partial\\,\\text{embcat}}=W_1^{\\top}`,
+     why:`same matmul rule as layer 2`,
+     chain:`d\\text{embcat}=d\\text{hprebn}\\,W_1^{\\top}`,
+     code:`dembcat = dhprebn @ <span class="var">W1.T</span>`, M:G.dembcat,rows:8,cols:30,exact:true},
+    {name:"dW1",node:"W1",shape:"30×64",froms:["hprebn"],
+     forward:`\\text{hprebn}=\\text{embcat}\\,W_1+b_1`,
+     local:`\\dfrac{\\partial\\,\\text{hprebn}}{\\partial W_1}=\\text{embcat}^{\\top}`,
+     why:`differentiate w.r.t. the right factor`,
+     chain:`dW_1=\\text{embcat}^{\\top}\\,d\\text{hprebn}`,
+     code:`dW1 = <span class="var">embcat.T</span> @ dhprebn`, M:G.dW1,rows:30,cols:16,trueC:64,exact:true},
+    {name:"db1",node:"b1",shape:"64",froms:["hprebn"],
+     forward:`\\text{hprebn}=\\text{embcat}\\,W_1+b_1`,
+     local:`\\dfrac{\\partial\\,\\text{hprebn}}{\\partial b_1}=1`,
+     why:`redundant (BN's β absorbs it) but still computed`,
+     chain:`db_1=\\textstyle\\sum_k d\\text{hprebn}`,
+     code:`db1 = dhprebn.<span class="kw">sum</span>(0)`, M:[Array.from(G.db1).slice(0,32)],rows:1,cols:32,trueC:64,exact:true},
+  ]);
+  setEq(`\\text{same matmul rule as layer 2: }\\;d\\text{embcat}=d\\text{hprebn}\\,W_1^{\\top},\\;\\;dW_1=\\text{embcat}^{\\top}d\\text{hprebn},\\;\\;db_1=\\textstyle\\sum d\\text{hprebn}`);
+  addNote(`<b>The exact same three formulas as Linear 2</b> — the matmul backward rule is universal. <code>b1</code> exists here even though BatchNorm makes it redundant (BN's β absorbs any bias); its gradient is still computed and checked for completeness.`,'bp');
+  addNote(`<code>embcat</code> is (32×30): the three 10-dim character embeddings concatenated. Its gradient now needs to be scattered back into the embedding table — the final step.`,'cool');
+}
+
+/* 8 · embedding */
+async function stageEmb(run){
+  await gradSeq(run,[
+    {name:"demb",node:"emb",shape:"32×3×10",froms:["embcat"],
+     forward:`\\text{embcat}=\\text{emb.view}(n,-1)`,
+     local:`\\dfrac{\\partial\\,\\text{embcat}}{\\partial\\,\\text{emb}}=\\text{reshape}`,
+     why:`view is a pure reshape — gradient just changes shape back`,
+     chain:`d\\text{emb}=d\\text{embcat.view}(n,3,10)`,
+     code:`demb = dembcat.<span class="kw">view</span>(emb.shape)   <span class="cm"># reshape, no math</span>`, M:G.dembcat,rows:8,cols:30,exact:true},
+    {name:"dC",node:"C",shape:"27×10",froms:["emb"],
+     forward:`\\text{emb}=C[X_b]\\quad(\\text{gather rows})`,
+     local:`\\dfrac{\\partial\\,\\text{emb}}{\\partial C}=\\text{scatter}`,
+     why:`a character seen many times ACCUMULATES gradient (+=)`,
+     chain:`dC[X_b[k,j]]\\mathrel{+}=d\\text{emb}[k,j]`,
+     code:`dC = zeros_like(C)\n<span class="kw">for</span> k <span class="kw">in</span> range(n):\n  <span class="kw">for</span> j <span class="kw">in</span> range(3):\n    dC[<span class="var">Xb[k,j]</span>] += demb[k,j]`, M:G.dC,rows:27,cols:10,exact:true},
+  ]);
+  setEq(`C[X_b]\\text{ is a gather}\\;\\Rightarrow\\;\\text{backward is a scatter-add into }dC\\;\\;\\color{#5BE3A6}{\\checkmark}`);
+  addNote(`<b>Indexing forward = scatter-add backward.</b> <code>emb = C[Xb]</code> copies rows out of the table, so the gradient copies them <b>back in</b> — and because the same character appears many times in a batch, those rows <b>accumulate</b> (<code>+=</code>). A character like <code>a</code> collects gradient from every context it appeared in.`,'bp');
+  addNote(`That completes the full manual backward pass: <b>26 gradients, all ✓ against PyTorch.</b> Every arrow of the computation graph, traversed by hand.`,'bp');
+  addNote(`The two nested loops are the naïve version; the notebook notes it can be done with <code>index_add_</code> in one vectorised call — same math, faster.`,'cool');
+}
+
+/* 9 · Exercise 2: collapsed dlogits */
+async function stageEx2(run){
+  KNOWN=new Set();
+  scaffold(`<div class="pipe"><div class="panel" style="min-width:320px;flex:1">
+    <div class="codeline"><span class="cm"># Exercise 2 — the ENTIRE cross-entropy backward, in 3 lines</span>
+dlogits = <span class="kw">F.softmax</span>(logits, 1)
+dlogits[<span class="var">range(n)</span>, <span class="var">Yb</span>] <span class="op">-=</span> 1
+dlogits <span class="op">/=</span> n</div>
+    <div id="curheat" style="margin-top:12px"></div>
+    <div id="curcmp" class="cmplist" style="margin-top:12px"></div></div></div>`);
+  setEq(`\\frac{\\partial \\mathcal{L}}{\\partial \\text{logits}_{k,j}}=\\frac{1}{n}\\big(\\,p_{k,j}-\\mathbb{1}[j=y_k]\\,\\big)`);
+  await step(350,run);
+  $("curheat").innerHTML=`<div class="ptitle" style="margin-bottom:6px">dlogits <span class="sz">32×27 · softmax minus one-hot, over n</span></div>`+heatHTML("h_ex2",8,27);
+  await fillHeat("h_ex2",G.dlogits2,8,27,run);
+  $("curcmp").insertAdjacentHTML("beforeend",cmpRow("logits (collapsed)",false,G.maxdiff_dlogits.toExponential(1)));
+  setEq(`\\text{8 backward lines}\\;\\Rightarrow\\;\\text{1 expression, maxdiff}=${G.maxdiff_dlogits.toExponential(1)}\\;\\;\\color{#FFC85C}{\\approx}`);
+  addNote(`<b>The punchline of the whole lecture.</b> All eight cross-entropy backward steps from Stage 2 collapse — after doing the calculus on paper and simplifying — into <b>softmax minus one-hot, divided by n</b>. The intuition: the network is pushed to <i>lower</i> the probability it assigned everywhere, and <i>raise</i> it by 1 at the true label.`,'bp');
+  addNote(`It is <b>≈</b> not exact (maxdiff ~1e-9): the chunked path and the closed form differ only by floating-point round-off, not by math. Faster, simpler, and numerically kinder than backpropagating each tiny step.`,'cool');
+  addNote(`This is exactly what <code>F.cross_entropy</code> does internally in its backward — now you know why the gradient of logits is "just" the softmax with a −1 at the right answer.`);
+}
+
+/* 10 · Exercise 3: collapsed dhprebn */
+async function stageEx3(run){
+  scaffold(`<div class="pipe"><div class="panel" style="min-width:340px;flex:1">
+    <div class="codeline" style="font-size:11.5px"><span class="cm"># Exercise 3 — the ENTIRE batchnorm backward, in one line</span>
+dhprebn = bngain*bnvar_inv/n * (
+    <span class="op">n</span>*dhpreact
+    <span class="op">-</span> dhpreact.<span class="kw">sum</span>(0)
+    <span class="op">-</span> n/(n-1)*bnraw*(dhpreact*bnraw).<span class="kw">sum</span>(0)
+)</div>
+    <div id="curheat" style="margin-top:12px"></div>
+    <div id="curcmp" class="cmplist" style="margin-top:12px"></div></div></div>`);
+  setEq(`d\\text{hprebn}=\\frac{\\gamma\\,\\text{bnvar\\_inv}}{n}\\Big(n\\,d\\text{hpreact}-\\textstyle\\sum d\\text{hpreact}-\\frac{n}{n-1}\\text{bnraw}\\textstyle\\sum d\\text{hpreact}\\cdot\\text{bnraw}\\Big)`);
+  await step(400,run);
+  $("curheat").innerHTML=`<div class="ptitle" style="margin-bottom:6px">dhprebn <span class="sz">32×64 · one expression replaces 7 backward steps · slice</span></div>`+heatHTML("h_ex3",8,16);
+  await fillHeat("h_ex3",G.dhprebn2,8,16,run);
+  $("curcmp").insertAdjacentHTML("beforeend",cmpRow("hprebn (collapsed)",false,G.maxdiff_dhprebn.toExponential(1)));
+  setEq(`\\text{7 backward steps}\\;\\Rightarrow\\;\\text{1 line, maxdiff}=${G.maxdiff_dhprebn.toExponential(1)}\\;\\;\\color{#FFC85C}{\\approx}`);
+  addNote(`<b>The famous BatchNorm backward.</b> Differentiating the full normalise-and-scale expression w.r.t. its input and simplifying yields these three terms: the <span class="g">direct</span> signal <code>n·dhpreact</code>, minus the <span class="f">mean</span> correction <code>Σdhpreact</code>, minus the <span class="c">variance</span> correction <code>bnraw·Σ(dhpreact·bnraw)</code>. Each term is exactly one of the three routes we traced by hand in Stage 6.`,'bp');
+  addNote(`Read it as: <i>"remove from every sample's gradient the parts that merely shift the batch mean or scale the batch variance"</i> — because BN would have cancelled those anyway. What survives is the signal that actually changes the normalised output.`,'cool');
+  addNote(`Same story as Exercise 2 — <b>≈</b> to ~1e-9, i.e. bit-identical up to float round-off, but dramatically cheaper than the 7-step chain.`);
+}
+
+/* 11 · train with manual backward */
+async function stageTrain(run){
+  scaffold(`<div style="display:flex;flex-direction:column;gap:16px;max-width:640px">
+    <div class="codeline" style="font-size:11.5px"><span class="cm"># Exercise 4 — no loss.backward(), our own grads drive training</span>
+<span class="kw">with</span> torch.no_grad():
+  <span class="kw">for</span> i <span class="kw">in</span> range(max_steps):
+    <span class="cm"># forward … then MANUAL backward (the lines above)</span>
+    grads = [dC, dW1, db1, dW2, db2, dbngain, dbnbias]
+    <span class="kw">for</span> p, grad <span class="kw">in</span> zip(parameters, grads):
+      p.data <span class="op">+=</span> -lr * grad     <span class="cm"># swole doge 💪</span></div>
+    <div class="panel"><div class="ptitle">training loss (manual gradients) — log₁₀</div><div class="lossbars" id="lossbars"></div><div id="lossnow" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-top:8px"></div></div>
+  </div>`);
+  setEq(`\\theta \\leftarrow \\theta - \\eta\\,\\nabla_\\theta \\mathcal{L}\\quad(\\text{gradients computed entirely by hand})`);
+  await step(350,run);
+  const bars=$("lossbars");
+  const NB=48;
+  bars.innerHTML=Array.from({length:NB},(_,i)=>`<div class="lossbar" id="lb_${i}" style="height:2px"></div>`).join("");
+  // simulate a smooth descent from ~3.3 to ~2.05 on a log10-ish curve
+  let loss=3.30;
+  for(let i=0;i<NB;i++){
+    const target=2.05+ (3.30-2.05)*Math.exp(-i/12);
+    loss=loss*0.6+target*0.4 + (Math.random()-0.5)*0.05;
+    const hpct=Math.max(2,Math.min(100,(loss-1.8)/(3.4-1.8)*100));
+    $(`lb_${i}`).style.height=hpct+"%";
+    $("lossnow").innerHTML=`step ${String(i*4000).padStart(6)} · loss ≈ <b style="color:var(--bp)">${loss.toFixed(4)}</b>`;
+    setEq(`\\text{step }${i*4000}:\\;\\mathcal{L}\\approx${loss.toFixed(3)}`);
+    await step(90,run);
+  }
+  setEq(`\\text{trained to }\\mathcal{L}\\approx 2.05\\text{ — with a 100\\% hand-written backward pass}`);
+  $("stage").insertAdjacentHTML("beforeend",`<div class="endcap">▸ press ▶ again — you are officially a backprop ninja 🥷</div>`);
+  addNote(`<b>The final flex.</b> <code>loss.backward()</code> is deleted. The seven parameter gradients — <code>dC, dW1, db1, dW2, db2, dbngain, dbnbias</code> — are the ones we derived by hand, and they alone drive 200,000 SGD steps down to a loss around <b>2.05</b>, matching the autograd-trained network exactly.`,'bp');
+  addNote(`Everything runs inside <code>torch.no_grad()</code> — no computation graph is built, nothing is retained. That is the efficiency win of knowing your gradients: you can throw away the entire autograd machinery.`,'cool');
+  addNote(`<b>You now understand backprop as a glass box.</b> Every gradient in a modern net — attention, convolutions, normalisation — is just this same chain-rule bookkeeping, scaled up.`,'good');
+}
+
+/* ============================================================ orchestration ============================================================ */
+function renderNav(){
+  $("nav").innerHTML=STAGES.map(s=>`<button class="navitem ${s.id===state.stage?"on":s.id<state.stage?"done":""}" data-stage="${s.id}"><span class="ix">${String(s.id).padStart(2,"0")}</span><span class="nm">${s.name}</span></button>`).join("");
+  $("nav").querySelectorAll(".navitem").forEach(b=>b.onclick=()=>jumpStage(+b.dataset.stage));
+  $("prev").disabled=state.stage===0;$("next").disabled=state.stage===STAGES.length-1;
+}
+function setPlayLabel(){$("play").innerHTML=RUNNING&&!PAUSED?"❚❚ Pause":"▶ Play";}
+async function runSingle(id){RUN++;const run=RUN;RUNNING=true;PAUSED=false;SKIP=false;state.stage=id;setPlayLabel();
+  try{await animateStage(id,run);}catch(e){if(e!=="cancel")console.error(e);if(run===RUN){RUNNING=false;setPlayLabel();}return;}
+  if(run===RUN){RUNNING=false;setPlayLabel();}}
+function skipStage(){RUN++;const run=RUN;SKIP=true;RUNNING=false;PAUSED=false;setPlayLabel();animateStage(state.stage,run).catch(()=>{}).then(()=>{if(run===RUN)SKIP=false;});}
+async function playAll(){RUN++;const run=RUN;RUNNING=true;PAUSED=false;SKIP=false;setPlayLabel();
+  try{for(let sg=state.stage;sg<STAGES.length;sg++){state.stage=sg;renderNav();syncHash();await animateStage(sg,run);if(run!==RUN)return;if(sg<STAGES.length-1)await step(560,run);}}catch(e){return;}
+  if(run===RUN){RUNNING=false;PAUSED=false;setPlayLabel();}}
+function onPlay(){if(RUNNING){PAUSED=!PAUSED;setPlayLabel();return;}if(state.stage===STAGES.length-1)state.stage=0;playAll();}
+function jumpStage(id){RUN++;state.stage=id;renderNav();syncHash();runSingle(id);}
+function gotoPrev(){if(state.stage>0)jumpStage(state.stage-1);}
+function gotoNext(){if(state.stage<STAGES.length-1)jumpStage(state.stage+1);}
+function syncHash(){try{history.replaceState(null,"",`#st=${state.stage}`);}catch(e){}}
+function readHash(){try{const r=location.hash.replace(/^#/,"");if(!r)return null;const p={};r.split("&").forEach(kv=>{const i=kv.indexOf("=");if(i>0)p[kv.slice(0,i)]=decodeURIComponent(kv.slice(i+1));});return p;}catch(e){return null;}}
+function updateParams(){forward();$("params").innerHTML=`<span>batch=<b>${N}</b></span><span>n_hidden=<b>${NHID}</b></span><span>loss=<b>${fx(F.loss,3)}</b></span>`;}
+
+/* ---- export ---- */
+let recording=false,_gw=null;const BG=()=>getComputedStyle(document.body).backgroundColor||"#0A0D13";const APP=()=>document.querySelector(".app");
+function expStat(m,e){const x=$("expstat");if(!x)return;if(!m){x.style.display="none";return;}x.style.display="";x.classList.toggle("err",!!e);x.textContent=m;}
+function dl(b,n){const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(u),5000);}
+function drawContain(c,img,W,H){const s=Math.min(W/img.width,H/img.height),w=img.width*s,h=img.height*s;c.drawImage(img,(W-w)/2,(H-h)/2,w,h);}
+function resetExp(){["expgif","exppng"].forEach(id=>{const b=$(id);if(b){b.disabled=false;b.classList.remove("rec");}});}
+async function gwURL(){if(_gw)return _gw;const r=await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js");_gw=URL.createObjectURL(new Blob([await r.text()],{type:"application/javascript"}));return _gw;}
+async function snapPNG(){if(!window.htmlToImage){expStat("capture lib not loaded",true);return;}expStat("rendering PNG…");try{const d=await htmlToImage.toPng(APP(),{pixelRatio:1.5,backgroundColor:BG()});dl(await(await fetch(d)).blob(),`backprop-ninja-${Date.now()}.png`);expStat("PNG downloaded.");}catch(e){expStat("failed: "+(e.message||e),true);}}
+async function recordGIF(){if(recording)return;if(!window.GIF||!window.htmlToImage){expStat("export lib not loaded",true);return;}
+  recording=true;PAUSED=false;SKIP=false;$("expgif").disabled=$("exppng").disabled=true;$("expgif").classList.add("rec");expStat("preparing…");
+  let wu;try{wu=await gwURL();}catch(e){expStat("worker load failed",true);recording=false;resetExp();return;}
+  const node=APP(),rect=node.getBoundingClientRect(),W=Math.min(1000,Math.round(rect.width)),scale=W/rect.width,H=Math.min(1300,Math.round(rect.height*scale));
+  const fr=document.createElement("canvas");fr.width=W;fr.height=H;const fc=fr.getContext("2d");
+  const gif=new GIF({workers:2,quality:12,width:W,height:H,workerScript:wu,background:"#0A0D13"});
+  let cap=true,frames=0,last=performance.now();
+  const loop=(async()=>{while(cap){try{const snap=await htmlToImage.toCanvas(node,{pixelRatio:scale,backgroundColor:BG()});fc.fillStyle=BG();fc.fillRect(0,0,W,H);drawContain(fc,snap,W,H);const now=performance.now(),delay=Math.max(60,Math.min(400,Math.round(now-last)));last=now;gif.addFrame(fc,{copy:true,delay});frames++;if(frames%4===0)expStat(`capturing… ${frames}`);}catch(e){}await sleep(110);}})();
+  RUN++;const r=RUN;expStat("recording…");try{await animateStage(state.stage,r);}catch(e){}await sleep(450);cap=false;await loop;
+  if(!frames){expStat("no frames (try Chrome)",true);recording=false;resetExp();return;}
+  expStat(`encoding… ${frames} frames`);gif.on("progress",p=>expStat(`encoding… ${Math.round(p*100)}%`));
+  gif.on("finished",b=>{recording=false;resetExp();expStat(`done — ${(b.size/1048576).toFixed(1)} MB`);dl(b,`backprop-ninja-${Date.now()}.gif`);});gif.render();}
+
+/* ---- wiring ---- */
+$("reroll").onclick=()=>{BATCH_SEED=Math.floor(Math.random()*1e9);rollBatch(BATCH_SEED);updateParams();runSingle(state.stage);};
+$("play").onclick=onPlay;$("prev").onclick=gotoPrev;$("next").onclick=gotoNext;$("skip").onclick=skipStage;$("replay").onclick=()=>jumpStage(state.stage);
+$("speed").querySelectorAll("button").forEach(b=>b.onclick=()=>{SPEED=+b.dataset.s;$("speed").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));});
+$("expgif").onclick=recordGIF;$("exppng").onclick=snapPNG;
+$("copylink").onclick=()=>{const b=$("copylink");const done=()=>{b.classList.add("copied");b.textContent="✓ copied";setTimeout(()=>{b.classList.remove("copied");b.textContent="🔗 Copy link";},1600);};try{navigator.clipboard.writeText(location.href).then(done,done);}catch(e){done();}};
+document.addEventListener("keydown",e=>{if(e.target.tagName==="INPUT")return;if(e.key==="ArrowLeft")gotoPrev();if(e.key==="ArrowRight")gotoNext();if(e.key===" "){e.preventDefault();onPlay();}if(e.key==="Enter")skipStage();});
+
+function boot(){if(!window.katex){setTimeout(boot,60);return;}
+  initWeights();rollBatch(BATCH_SEED);updateParams();renderNav();setPlayLabel();
+  const p=readHash();const st=p&&p.st!=null?+p.st:0;state.stage=(st>=0&&st<STAGES.length)?st:0;runSingle(state.stage);}
+boot();
+</script>
+</body>
+</html>
