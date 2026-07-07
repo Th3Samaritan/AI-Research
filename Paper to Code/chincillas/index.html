@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chinchilla, Animated — compute-optimal training, live</title>
+<meta name="description" content="An interactive, animated visualizer of every equation in Hoffmann et al. 2022, 'Training Compute-Optimal Large Language Models' (Chinchilla). IsoFLOP valleys, the 20-tokens-per-parameter rule, and the fight with Kaplan's scaling laws — plotted live. By Abdulsamad Teniola Muyideen.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#0A0D13">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0D13;--chrome:#0F131D;--panel:#141A28;--panel-2:#19202F;
+    --line:#262E43;--line-soft:#1C2333;--txt:#E8ECF5;--muted:#8B95AC;--muted-2:#5C6680;
+    --signal:#F5A524;--signal-2:#FFC85C;--signal-dim:#F5A52426;
+    --cool:#5B8DEF;--good:#5BE3A6;--bad:#EF5B7B;--violet:#B98CFF;
+    --cellbg:#111726;--celledge:#283251;--radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  html,body{margin:0;padding:0}
+  body{background:
+      radial-gradient(1100px 560px at 82% -8%,#17223c 0%,transparent 55%),
+      radial-gradient(900px 480px at -5% 108%,#1a1430 0%,transparent 52%),var(--ink);
+    color:var(--txt);font-family:"Space Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:288px 1fr;min-height:100vh}
+  @media(max-width:960px){.app{grid-template-columns:1fr}}
+  aside{background:linear-gradient(180deg,var(--chrome),var(--ink));border-right:1px solid var(--line);
+    padding:24px 20px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:18px}
+  @media(max-width:960px){aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--signal)}
+  .title{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:4px 0 0}
+  .title .thin{color:var(--muted);font-weight:500}
+  .byline{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);line-height:1.7;margin-top:4px}
+  .byline a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
+  .byline a:hover{color:var(--signal);border-color:var(--signal)}
+  nav{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  nav a{display:flex;gap:10px;align-items:baseline;font-size:13.5px;color:var(--muted);text-decoration:none;
+    padding:7px 10px;border-radius:9px;border:1px solid transparent;transition:.15s}
+  nav a .num{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);min-width:26px}
+  nav a:hover{color:var(--txt);background:var(--panel)}
+  nav a.on{color:var(--signal);background:var(--signal-dim);border-color:#F5A52455}
+  nav a.on .num{color:var(--signal)}
+  .side-foot{margin-top:auto;font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);line-height:1.7;border-top:1px solid var(--line-soft);padding-top:14px}
+  main{padding:38px clamp(20px,4vw,64px) 120px;max-width:1080px}
+  .hero{margin-bottom:20px}
+  .hero h1{font-size:clamp(30px,5vw,50px);line-height:1.02;letter-spacing:-.03em;margin:6px 0 12px;font-weight:700}
+  .hero h1 .grad{background:linear-gradient(92deg,var(--signal),var(--signal-2) 45%,var(--cool));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:17px;line-height:1.65;color:var(--muted);max-width:70ch}
+  .lede b{color:var(--txt);font-weight:600}
+  .paper-tag{display:inline-flex;gap:8px;align-items:center;font-family:"JetBrains Mono",monospace;font-size:11px;
+    color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 13px;margin-bottom:6px}
+  .paper-tag b{color:var(--signal)}
+  section{margin-top:42px;scroll-margin-top:20px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px}
+  .sec-head .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--signal)}
+  .sec-head h2{font-size:25px;letter-spacing:-.02em;margin:0;font-weight:700}
+  .sec-sub{color:var(--muted);font-size:15px;line-height:1.6;max-width:74ch;margin:2px 0 20px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px 22px 20px;margin-bottom:20px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;
+    background:linear-gradient(var(--signal),var(--cool));opacity:0;transition:.5s}
+  .card.lit::before{opacity:.9}
+  .eqno{position:absolute;top:14px;right:16px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted-2);
+    border:1px solid var(--line);border-radius:7px;padding:3px 8px}
+  .eqname{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--signal);margin-bottom:6px}
+  .eq{padding:12px 6px 14px;font-size:19px;overflow-x:auto;overflow-y:hidden}
+  .katex{color:var(--txt)}
+  .does{color:var(--muted);font-size:14.5px;line-height:1.66;margin:6px 0 14px}
+  .does b{color:var(--txt);font-weight:600}
+  .does .hl{color:var(--signal-2);font-weight:600}
+  .params{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+  .param{display:flex;flex-direction:column;gap:1px;background:var(--cellbg);border:1px solid var(--celledge);
+    border-radius:10px;padding:8px 11px;min-width:120px}
+  .param .sym{font-family:"JetBrains Mono",monospace;color:var(--signal);font-size:12.5px}
+  .param .desc{color:var(--muted);font-size:11.5px;line-height:1.4}
+  .param .val{color:var(--good);font-family:"JetBrains Mono",monospace;font-size:11px}
+  .lab{display:grid;grid-template-columns:1fr 300px;gap:18px;margin-top:16px}
+  @media(max-width:820px){.lab{grid-template-columns:1fr}}
+  .plotwrap{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px 12px 6px;position:relative}
+  canvas.plot{width:100%;display:block;border-radius:8px}
+  .plot-cap{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);text-align:center;padding:6px 0 2px}
+  .readout{position:absolute;top:16px;left:18px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);
+    background:#0A0D13cc;border:1px solid var(--line);border-radius:8px;padding:6px 9px;line-height:1.7;backdrop-filter:blur(4px)}
+  .readout b{color:var(--signal)}
+  .controls{display:flex;flex-direction:column;gap:14px}
+  .ctl{display:flex;flex-direction:column;gap:6px}
+  .ctl .row{display:flex;justify-content:space-between;align-items:baseline}
+  .ctl label{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);letter-spacing:.05em}
+  .ctl .cur{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--signal)}
+  input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:5px;
+    background:linear-gradient(90deg,var(--signal),var(--cool));outline:none;width:100%}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:#fff;border:3px solid var(--signal);cursor:pointer;box-shadow:0 2px 6px #0008}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--signal);cursor:pointer}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  button.act{font-family:"JetBrains Mono",monospace;font-size:11.5px;letter-spacing:.05em;color:var(--ink);
+    background:linear-gradient(92deg,var(--signal),var(--signal-2));border:none;border-radius:9px;padding:9px 14px;
+    cursor:pointer;font-weight:700;transition:.15s}
+  button.act:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  button.ghost:hover{color:var(--txt);border-color:var(--signal)}
+  .note{font-size:12.5px;color:var(--muted-2);line-height:1.6;border-left:2px solid var(--line);padding-left:11px;margin-top:8px}
+  .note b{color:var(--muted)}
+  table.sum{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  table.sum th,table.sum td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-soft)}
+  table.sum th{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)}
+  table.sum tr:hover td{background:var(--panel)}
+  table.sum .mono{font-family:"JetBrains Mono",monospace;color:var(--good);font-size:12px}
+  table.sum .hi td{color:var(--signal-2)}
+  .findings{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px}
+  .finding{background:var(--cellbg);border:1px solid var(--celledge);border-radius:11px;padding:14px 15px}
+  .finding .h{font-size:14px;font-weight:600;color:var(--signal-2);margin-bottom:4px}
+  .finding .b{font-size:13px;color:var(--muted);line-height:1.55}
+  .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s cubic-bezier(.2,.7,.2,1),transform .6s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  .foot{margin-top:60px;border-top:1px solid var(--line);padding-top:20px;color:var(--muted-2);font-size:12.5px;line-height:1.7;font-family:"JetBrains Mono",monospace}
+  .vs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 4px}
+  @media(max-width:700px){.vs{grid-template-columns:1fr}}
+  .vs .side{background:var(--cellbg);border:1px solid var(--celledge);border-radius:11px;padding:14px 15px}
+  .vs .side.win{border-color:#5BE3A655}
+  .vs .side .h{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;margin-bottom:6px}
+  .vs .side.win .h{color:var(--good)} .vs .side.lose .h{color:var(--bad)}
+  .vs .side .b{font-size:13px;color:var(--muted);line-height:1.6}
+  .vs .side .b b{color:var(--txt)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <div class="eyebrow">Paper&nbsp;→&nbsp;Code</div>
+      <div class="title">Chinchilla<br><span class="thin">Animated</span></div>
+      <div class="byline">
+        Hoffmann et al. — DeepMind, 2022<br>
+        arXiv:2203.15556<br>
+        visualized by <a href="mailto:abdulsamadmuyideen@gmail.com">A. T. Muyideen</a>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      Every curve is computed live from<br>the paper's fitted constants<br>(E=1.69, A=406.4, B=410.7,<br>α=0.34, β=0.28).
+    </div>
+  </aside>
+
+  <main>
+    <div class="hero reveal">
+      <span class="paper-tag">TRAINING COMPUTE-OPTIMAL LARGE LANGUAGE MODELS · <b>the paper that shrank the models</b></span>
+      <h1>Same compute.<br><span class="grad">4× smaller. 4× more data. Better.</span></h1>
+      <p class="lede">
+        In 2020, Kaplan's scaling laws said: given more compute, <b>grow the model</b> (N ∝ C<sup>0.73</sup>).
+        Everyone obeyed — GPT-3, Gopher, MT-NLG. In 2022 DeepMind re-ran the experiment with one
+        methodological fix and found the advice was wrong: <b>model and data should grow in equal
+        proportion</b> (N ∝ C<sup>0.50</sup>), roughly <b>20 tokens per parameter</b>. The proof:
+        <b>Chinchilla</b> — 70B parameters on 1.4T tokens, same compute as the 280B Gopher — beat it everywhere.
+      </p>
+    </div>
+    <div id="sections"></div>
+    <div class="foot reveal">
+      Built as a "paper-with-code" companion · constants from Eq. 10 &amp; Table 2 of arXiv:2203.15556 ·
+      loss L in nats/token on MassiveText · C = 6·N·D FLOPs.<br>
+      Runnable tiny-scale reproduction: <b>Nanogpt/nano_chinchilla.py</b> · sister page: <b>Scaling Laws, Animated</b> (Kaplan 2020).<br>
+      © Abdulsamad Teniola Muyideen — companion PDF: <b>Chinchilla — the math explained.pdf</b>
+    </div>
+  </main>
+</div>
+
+<script src="formulas.js"></script>
+<script>
+/* ============ plot engine (shared house pattern) ============ */
+const DPR=Math.min(window.devicePixelRatio||1,2);
+function fmtSI(v){if(v===0)return"0";const neg=v<0;v=Math.abs(v);const e=Math.floor(Math.log10(v));
+  if(e>=24)return(neg?"-":"")+(v/1e24).toFixed(1)+"Y";
+  if(e>=21)return(neg?"-":"")+(v/1e21).toFixed(1)+"Z";
+  if(e>=18)return(neg?"-":"")+(v/1e18).toFixed(1)+"E";
+  if(e>=15)return(neg?"-":"")+(v/1e15).toFixed(1)+"P";
+  if(e>=12)return(neg?"-":"")+(v/1e12).toFixed(1)+"T";
+  if(e>=9)return(neg?"-":"")+(v/1e9).toFixed(1)+"B";
+  if(e>=6)return(neg?"-":"")+(v/1e6).toFixed(1)+"M";
+  if(e>=3)return(neg?"-":"")+(v/1e3).toFixed(1)+"k";
+  if(v<0.01)return(neg?"-":"")+v.toExponential(1);
+  return(neg?"-":"")+(+v.toPrecision(3)).toString();}
+function supE(e){const m={'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
+  return String(e).split('').map(c=>m[c]||c).join('');}
+class Plot{
+  constructor(canvas,opts){this.c=canvas;this.ctx=canvas.getContext('2d');
+    this.o=Object.assign({xlog:true,ylog:false,xmin:1e17,xmax:1e26,ymin:1.5,ymax:5,
+      xlabel:'x',ylabel:'L (nats/token)',pad:{l:56,r:16,t:14,b:34},height:300},opts);
+    this.curves=[];this.markers=[];this.resize();}
+  resize(){const w=this.c.clientWidth||620,h=this.o.height;this.c.width=w*DPR;this.c.height=h*DPR;
+    this.c.style.height=h+'px';this.ctx.setTransform(DPR,0,0,DPR,0,0);this.W=w;this.H=h;}
+  X(v){const o=this.o,p=o.pad,w=this.W-p.l-p.r;
+    const a=o.xlog?Math.log10(v):v,mn=o.xlog?Math.log10(o.xmin):o.xmin,mx=o.xlog?Math.log10(o.xmax):o.xmax;
+    return p.l+(a-mn)/(mx-mn)*w;}
+  Y(v){const o=this.o,p=o.pad,h=this.H-p.t-p.b;
+    const a=o.ylog?Math.log10(v):v,mn=o.ylog?Math.log10(o.ymin):o.ymin,mx=o.ylog?Math.log10(o.ymax):o.ymax;
+    return p.t+(1-(a-mn)/(mx-mn))*h;}
+  grid(){const ctx=this.ctx,o=this.o,p=o.pad;ctx.clearRect(0,0,this.W,this.H);
+    ctx.font='10px JetBrains Mono, monospace';
+    const dec=(mn,mx)=>{let a=[];for(let e=Math.floor(Math.log10(mn));e<=Math.ceil(Math.log10(mx));e++)a.push(Math.pow(10,e));return a;};
+    ctx.strokeStyle='#1C2333';ctx.fillStyle='#5C6680';ctx.lineWidth=1;
+    if(o.xlog){for(const t of dec(o.xmin,o.xmax)){if(t<o.xmin||t>o.xmax)continue;const x=this.X(t);
+      ctx.beginPath();ctx.moveTo(x,p.t);ctx.lineTo(x,this.H-p.b);ctx.stroke();
+      ctx.textAlign='center';ctx.fillText('10'+supE(Math.round(Math.log10(t))),x,this.H-p.b+15);}}
+    if(o.ylog){for(const t of dec(o.ymin,o.ymax)){if(t<o.ymin||t>o.ymax)continue;const y=this.Y(t);
+      ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(this.W-p.r,y);ctx.stroke();
+      ctx.textAlign='right';ctx.fillText(fmtSI(t),p.l-6,y+3);}}
+    else{const N=5;for(let i=0;i<=N;i++){const v=o.ymin+(o.ymax-o.ymin)*i/N,y=this.Y(v);
+      ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(this.W-p.r,y);ctx.stroke();
+      ctx.textAlign='right';ctx.fillText((+v.toFixed(2)).toString(),p.l-6,y+3);}}
+    ctx.strokeStyle='#262E43';ctx.lineWidth=1.2;ctx.strokeRect(p.l,p.t,this.W-p.l-p.r,this.H-p.t-p.b);
+    ctx.fillStyle='#8B95AC';ctx.textAlign='center';
+    ctx.fillText(o.xlabel,p.l+(this.W-p.l-p.r)/2,this.H-4);
+    ctx.save();ctx.translate(12,p.t+(this.H-p.t-p.b)/2);ctx.rotate(-Math.PI/2);ctx.fillText(o.ylabel,0,0);ctx.restore();}
+  draw(prog){this.grid();const ctx=this.ctx;
+    for(const cv of this.curves){const n=cv.n||160,pr=cv.prog!==undefined?cv.prog:(prog!==undefined?prog:1);
+      ctx.strokeStyle=cv.color;ctx.lineWidth=cv.w||2.4;ctx.setLineDash(cv.dash||[]);ctx.lineJoin='round';
+      ctx.beginPath();let started=false;const last=Math.floor(n*pr);
+      for(let i=0;i<=last;i++){const t=i/n,xl=Math.log10(cv.from),xh=Math.log10(cv.to),x=Math.pow(10,xl+(xh-xl)*t);
+        const y=cv.fn(x);if(!isFinite(y))continue;
+        const py=this.Y(Math.min(Math.max(y,this.o.ymin),this.o.ymax));
+        if(!started){ctx.moveTo(this.X(x),py);started=true;}else ctx.lineTo(this.X(x),py);}
+      ctx.stroke();ctx.setLineDash([]);
+      if(pr<1&&started){const t=last/n,xl=Math.log10(cv.from),xh=Math.log10(cv.to),x=Math.pow(10,xl+(xh-xl)*t);
+        const y=cv.fn(x);if(isFinite(y)){ctx.fillStyle=cv.color;ctx.beginPath();
+          ctx.arc(this.X(x),this.Y(Math.min(Math.max(y,this.o.ymin),this.o.ymax)),3.5,0,7);ctx.fill();}}}
+    for(const m of this.markers){if(m.hide)continue;const px=this.X(m.x),py=this.Y(m.y);
+      ctx.setLineDash([3,3]);ctx.strokeStyle=m.color||'#F5A524';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(px,this.Y(this.o.ymin));ctx.lineTo(px,py);ctx.lineTo(this.o.pad.l,py);ctx.stroke();
+      ctx.setLineDash([]);ctx.fillStyle=m.color||'#F5A524';ctx.beginPath();ctx.arc(px,py,4.5,0,7);ctx.fill();
+      ctx.strokeStyle='#0A0D13';ctx.lineWidth=1.5;ctx.stroke();
+      if(m.label){ctx.fillStyle=m.color;ctx.font='10px JetBrains Mono, monospace';ctx.textAlign='left';
+        ctx.fillText(m.label,px+7,py-7);}}}
+  animate(dur=1200,cb){const t0=performance.now();const step=(t)=>{let p=Math.min(1,(t-t0)/dur);
+    p=1-Math.pow(1-p,3);this.draw(p);if(p<1)requestAnimationFrame(step);else if(cb)cb();};requestAnimationFrame(step);}
+}
+
+/* ============ content ============ */
+const F=window.CHfn; /* CH is the global const from formulas.js — do not redeclare */
+const eq=(s)=>{try{return katex.renderToString(s,{throwOnError:false,displayMode:true});}catch(e){return s;}};
+const ieq=(s)=>{try{return katex.renderToString(s,{throwOnError:false,displayMode:false});}catch(e){return s;}};
+function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
+function paramChips(list){const w=el('div','params');list.forEach(p=>{
+  w.appendChild(el('div','param',`<span class="sym">${ieq(p.sym)}</span><span class="desc">${p.desc}</span>${p.val?`<span class="val">${p.val}</span>`:''}`));});return w;}
+function slider(id,label,min,max,val,step){const c=el('div','ctl');
+  c.innerHTML=`<div class="row"><label>${label}</label><span class="cur" id="${id}v"></span></div>
+  <input type="range" id="${id}" min="${min}" max="${max}" value="${val}" step="${step}">`;return c;}
+function labGrid(canvasId,cap,controls,roId){const lab=el('div','lab');
+  const pw=el('div','plotwrap');
+  pw.innerHTML=`${roId?`<div class="readout" id="${roId}"></div>`:''}<canvas class="plot" id="${canvasId}"></canvas><div class="plot-cap">${cap}</div>`;
+  const cw=el('div','controls');controls.forEach(x=>cw.appendChild(x));
+  lab.appendChild(pw);lab.appendChild(cw);return lab;}
+function bind(id,fn){const s=document.getElementById(id);s.addEventListener('input',()=>fn(parseFloat(s.value)));}
+function setVal(id,v){const s=document.getElementById(id);s.value=v;s.dispatchEvent(new Event('input'));}
+
+const SECTIONS=[
+ {id:'law',num:'§3.3',kicker:'The parametric loss law',title:'Three terms explain everything',
+  sub:'One equation, fit to over 400 training runs, decomposes the loss into an irreducible floor, a model-capacity term, and a finite-data term.',build:buildLaw},
+ {id:'iso',num:'§3.2',kicker:'IsoFLOP valleys',title:'Fix the compute — find the valley',
+  sub:'At a fixed FLOP budget, sweep the model size (data adjusts via D = C/6N). Too small can\'t learn; too big is undertrained. The bottom of the valley is the optimal model.',build:buildIso},
+ {id:'frontier',num:'Eq. 4',kicker:'The compute-optimal frontier',title:'Grow N and D together',
+  sub:'Minimising the loss law under the constraint C = 6ND gives closed-form optimal allocations — and they scale in near-equal proportion.',build:buildFrontier},
+ {id:'fight',num:'§3.4',kicker:'Chinchilla vs Kaplan',title:'The correction that shrank the models',
+  sub:'Same loss surface, two allocation rules. Kaplan\'s N ∝ C^0.73 over-sizes the model and starves it of data; the penalty grows with every order of magnitude of compute.',build:buildFight},
+ {id:'summary',num:'Tables',kicker:'Reference',title:'Every number on one page',
+  sub:'The three approaches, the fitted constants, and what compute-optimal actually prescribes.',build:buildSummary},
+];
+
+function buildLaw(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">Eq. 2 / 10</div><div class="eqname">L(N,D) · the parametric loss</div>
+    <div class="eq">${eq('\\hat{L}(N,D)=\\underbrace{E}_{\\text{entropy of text}}+\\underbrace{\\dfrac{A}{N^{\\alpha}}}_{\\text{capacity error}}+\\underbrace{\\dfrac{B}{D^{\\beta}}}_{\\text{data error}}=1.69+\\dfrac{406.4}{N^{0.34}}+\\dfrac{410.7}{D^{0.28}}')}</div>
+    <div class="does"><b>What it does.</b> Predicts the final loss of a model with <b>N</b> parameters trained on <b>D</b> tokens (one epoch). A classical risk decomposition: <span class="hl">E</span> is what a perfect model would score (the entropy of natural text — no model beats it); <span class="hl">A/N<sup>α</sup></span> is the price of finite capacity; <span class="hl">B/D<sup>β</sup></span> is the price of finite data. Fitted by a Huber loss on log-L over all ~400 runs (Eq. 11) — robust so noisy small runs don't drag the fit.</div>`;
+  c.appendChild(paramChips([
+    {sym:'E',desc:'irreducible loss floor',val:'1.69 nats'},
+    {sym:'A',desc:'capacity-term scale',val:'406.4'},
+    {sym:'\\alpha',desc:'capacity exponent',val:'0.34'},
+    {sym:'B',desc:'data-term scale',val:'410.7'},
+    {sym:'\\beta',desc:'data exponent',val:'0.28'},
+  ]));
+  root.appendChild(c);
+  const controls=[slider('lN','N (params, log₁₀)',8,12,10,0.05)];
+  const btns=el('div','btnrow');btns.innerHTML=`<button class="act" id="lPlay">▶ Animate</button><button class="ghost" id="lReset">Reset</button>`;controls.push(btns);
+  controls.push(el('div','note',`<b>Read it:</b> the blue curve is loss vs training tokens D for the model size you pick. The dashed amber line is that model's capacity floor E + A/N<sup>α</sup> — no amount of data goes below it. The dotted red line is E = 1.69, the entropy of text — no model of any size goes below <i>that</i>.`));
+  root.appendChild(labGrid('cvLaw','L(N,D) vs tokens — blue = loss · amber dash = capacity floor · red dots = entropy E',controls,'roLaw'));
+  setTimeout(()=>{   /* not rAF: rAF never fires in occluded windows */
+    const P=new Plot(document.getElementById('cvLaw'),{xmin:1e9,xmax:1e14,ymin:1.5,ymax:4,
+      xlabel:'D — training tokens',ylabel:'L (nats/token)'});
+    const ro=document.getElementById('roLaw');const st={N:1e10};
+    function redraw(anim){
+      const floor=window.CH.E+window.CH.A/Math.pow(st.N,window.CH.alpha);
+      P.curves=[
+        {fn:D=>F.L_ND(st.N,D),from:1e9,to:1e14,color:'#5B8DEF',w:2.8},
+        {fn:_=>floor,from:1e9,to:1e14,color:'#F5A524',w:1.6,dash:[6,5]},
+        {fn:_=>window.CH.E,from:1e9,to:1e14,color:'#EF5B7B',w:1.3,dash:[2,4]},
+      ];
+      ro.innerHTML=`<b>N</b> ${fmtSI(st.N)} params<br>capacity floor ${floor.toFixed(3)}<br>at D=1T → L=${F.L_ND(st.N,1e12).toFixed(3)}`;
+      anim?P.animate(1100):P.draw(1);
+    }
+    bind('lN',v=>{st.N=Math.pow(10,v);document.getElementById('lNv').textContent=fmtSI(st.N);redraw(false);});
+    document.getElementById('lPlay').onclick=()=>redraw(true);
+    document.getElementById('lReset').onclick=()=>setVal('lN',10);
+    setVal('lN',10);window.addEventListener('resize',()=>{P.resize();redraw(false);});
+  });
+}
+
+function buildIso(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">§3.2</div><div class="eqname">IsoFLOP profile · the paper's key experiment</div>
+    <div class="eq">${eq('\\text{IsoL}(N;C)=\\hat{L}\\!\\left(N,\\;\\tfrac{C}{6N}\\right)\\qquad\\text{with}\\qquad C=6\\,N\\,D\\ \\text{held fixed}')}</div>
+    <div class="does"><b>What it does.</b> The question a lab actually faces: <i>"I have C FLOPs. What model do I train?"</i> Fix C, sweep N — every extra parameter costs tokens (D = C/6N). Small N: the capacity term A/N<sup>α</sup> hurts. Big N: the data term B/D<sup>β</sup> hurts because D shrank. <span class="hl">The minimum of the valley is N<sub>opt</sub>(C)</span>. The paper ran 9 budgets (6×10<sup>18</sup>→3×10<sup>21</sup> FLOPs), fit a parabola to each valley, then a power law through the minima. Its crucial fix over Kaplan: <b>the cosine LR schedule is stretched to match each run's horizon</b> — Kaplan reused one schedule, under-crediting the long-data runs.</div>`;
+  root.appendChild(c);
+  const controls=[slider('iC','C (FLOPs, log₁₀)',19,25,21,0.1)];
+  const btns=el('div','btnrow');btns.innerHTML=`<button class="act" id="iPlay">▶ Animate</button><button class="ghost" id="iReset">Reset</button>`;controls.push(btns);
+  controls.push(el('div','note',`<b>Read it:</b> grey curves are fixed reference budgets; the amber curve is <i>your</i> budget from the slider. The green marker sits at the valley bottom N<sub>opt</sub> — watch it slide right as compute grows. Every valley bottom lies on one straight line in log-log space: the efficient frontier.`));
+  root.appendChild(labGrid('cvIso','IsoFLOP valleys — loss vs model size at fixed compute',controls,'roIso'));
+  setTimeout(()=>{   /* not rAF: rAF never fires in occluded windows */
+    const P=new Plot(document.getElementById('cvIso'),{xmin:1e7,xmax:1e13,ymin:1.7,ymax:4,
+      xlabel:'N — parameters',ylabel:'final loss (nats/token)'});
+    const ro=document.getElementById('roIso');const st={C:1e21};
+    const refs=[1e19,1e20,1e22,1e23];
+    function redraw(anim){
+      P.curves=refs.map(C=>({fn:N=>F.isoL(N,C),from:1e7,to:1e13,color:'#5C668055',w:1.6}));
+      P.curves.push({fn:N=>F.isoL(N,st.C),from:1e7,to:1e13,color:'#F5A524',w:3});
+      const No=F.N_opt(st.C);
+      P.markers=[{x:No,y:F.isoL(No,st.C),color:'#5BE3A6',label:'N_opt'}];
+      ro.innerHTML=`<b>C</b> ${fmtSI(st.C)} FLOPs<br>N_opt=<b>${fmtSI(No)}</b> · D_opt=${fmtSI(F.D_opt(st.C))}<br>D/N=${F.tokensPerParam(st.C).toFixed(0)} (A3) · rule-of-thumb 20 · L=${F.L_opt(st.C).toFixed(3)}`;
+      anim?P.animate(1300):P.draw(1);
+    }
+    bind('iC',v=>{st.C=Math.pow(10,v);document.getElementById('iCv').textContent=fmtSI(st.C);redraw(false);});
+    document.getElementById('iPlay').onclick=()=>redraw(true);
+    document.getElementById('iReset').onclick=()=>setVal('iC',21);
+    setVal('iC',21);window.addEventListener('resize',()=>{P.resize();redraw(false);});
+  });
+}
+
+function buildFrontier(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">Eq. 4</div><div class="eqname">closed-form optimal allocation</div>
+    <div class="eq">${eq('N_{opt}(C)=G\\left(\\tfrac{C}{6}\\right)^{a}\\quad D_{opt}(C)=G^{-1}\\left(\\tfrac{C}{6}\\right)^{b}\\quad G=\\left(\\tfrac{\\alpha A}{\\beta B}\\right)^{\\frac{1}{\\alpha+\\beta}}\\quad a=\\tfrac{\\beta}{\\alpha+\\beta}\\;\\;b=\\tfrac{\\alpha}{\\alpha+\\beta}')}</div>
+    <div class="does"><b>What it does.</b> Minimise L(N,D) subject to 6ND = C and the optimum falls out in closed form. With α=0.34, β=0.28: <span class="hl">a = 0.46, b = 0.54</span> — parameters and tokens scale in near-equal proportion. The three independent approaches agree (0.50/0.49/0.46), and all three flatly contradict Kaplan's 0.73. The famous shorthand <span class="hl">D<sub>opt</sub> ≈ 20 × N<sub>opt</sub></span> comes from Approaches 1–2, where a = b = 0.5 makes the ratio exactly constant (Table 3); this Approach-3 closed form has a slightly unequal split, so its ratio drifts upward (~40–60) — which is why it predicts the smallest models of the three.</div>`;
+  c.appendChild(paramChips([
+    {sym:'a',desc:'model-size exponent',val:'0.46–0.50'},
+    {sym:'b',desc:'data exponent',val:'0.50–0.54'},
+    {sym:'G',desc:'allocation constant',val:'from α,β,A,B'},
+    {sym:'D/N',desc:'rule of thumb',val:'≈ 20 tok/param'},
+  ]));
+  root.appendChild(c);
+  const controls=[slider('fC','C (FLOPs, log₁₀)',19,26,23.76,0.05)];
+  const btns=el('div','btnrow');btns.innerHTML=`<button class="act" id="fPlay">▶ Animate</button><button class="ghost" id="fGopher">Gopher budget</button>`;controls.push(btns);
+  controls.push(el('div','note',`<b>Read it:</b> amber = N<sub>opt</sub>(C), blue = D<sub>opt</sub>(C) — near-parallel lines of slope ≈ ½ on log-log axes. Solid = Approach-3 closed form; faint dashed = Approach-1/2 (exact a=b=0.5, 20 tokens/param). The dots are real models at their training budgets: Chinchilla sits <i>on</i> the frontier; Gopher, GPT-3 and MT-NLG sit far above it (too many params for their data). Press "Gopher budget" to jump to C = 5.76×10²³ — the paper's headline: the optimal model there is ~40–70B, not 280B.`));
+  root.appendChild(labGrid('cvFr','The frontier — optimal params (amber) and tokens (blue) vs compute',controls,'roFr'));
+  setTimeout(()=>{   /* not rAF: rAF never fires in occluded windows */
+    const P=new Plot(document.getElementById('cvFr'),{xmin:1e19,xmax:1e26,ymin:1e8,ymax:1e14,ylog:true,
+      xlabel:'C — training compute (FLOPs)',ylabel:'optimal quantity'});
+    const ro=document.getElementById('roFr');const st={C:5.76e23};
+    const models=Object.entries(window.CH.models);
+    function redraw(anim){
+      P.curves=[
+        {fn:C=>F.N_opt(C),from:1e19,to:1e26,color:'#F5A524',w:2.8},
+        {fn:C=>F.D_opt(C),from:1e19,to:1e26,color:'#5B8DEF',w:2.8},
+        {fn:C=>F.N_opt12(C),from:1e19,to:1e26,color:'#F5A52466',w:1.6,dash:[6,5]},
+        {fn:C=>F.D_opt12(C),from:1e19,to:1e26,color:'#5B8DEF66',w:1.6,dash:[6,5]},
+      ];
+      P.markers=[
+        {x:st.C,y:F.N_opt(st.C),color:'#F5A524'},
+        {x:st.C,y:F.D_opt(st.C),color:'#5B8DEF'},
+        ...models.map(([name,m])=>({x:6*m.N*m.D,y:m.N,color:name==='Chinchilla'?'#5BE3A6':'#EF5B7B',label:name})),
+      ];
+      ro.innerHTML=`<b>C</b> ${fmtSI(st.C)} FLOPs<br>A3: N=<b>${fmtSI(F.N_opt(st.C))}</b> · D=<b>${fmtSI(F.D_opt(st.C))}</b><br>A1/2 (20 tok/param): N=${fmtSI(F.N_opt12(st.C))} · D=${fmtSI(F.D_opt12(st.C))}`;
+      anim?P.animate(1300):P.draw(1);
+    }
+    bind('fC',v=>{st.C=Math.pow(10,v);document.getElementById('fCv').textContent=fmtSI(st.C);redraw(false);});
+    document.getElementById('fPlay').onclick=()=>redraw(true);
+    document.getElementById('fGopher').onclick=()=>setVal('fC',Math.log10(5.76e23));
+    setVal('fC',Math.log10(5.76e23));window.addEventListener('resize',()=>{P.resize();redraw(false);});
+  });
+}
+
+function buildFight(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">§3.4</div><div class="eqname">two rules, one loss surface</div>
+    <div class="eq">${eq('L_{\\text{Chin}}(C)=\\hat{L}\\big(N_{opt}(C),\\tfrac{C}{6N_{opt}}\\big)\\qquad L_{\\text{Kaplan}}(C)=\\hat{L}\\big(N\\!\\propto\\!C^{0.73},\\tfrac{C}{6N}\\big)')}</div>
+    <div class="does"><b>What it does.</b> Feed both allocation rules into the <i>same</i> fitted loss surface. Kaplan's rule buys too many parameters and too few tokens, so its loss curve sits above the optimal one — and the gap <span class="hl">widens with compute</span>. Why did Kaplan get it wrong? Two subtleties: he used a <b>fixed LR schedule</b> for all horizons (penalising long-data runs), and fit mostly <b>small models (&lt;100M)</b> where curvature in the frontier misleads the extrapolation.</div>`;
+  const vs=el('div','vs');
+  vs.innerHTML=`
+    <div class="side win"><div class="h">Chinchilla · 70B</div><div class="b"><b>1.4T tokens</b> (20/param) · C≈5.9×10²³<br>Beat Gopher on essentially every benchmark: +7% MMLU (67.5%), better LM loss on all 19 Pile subsets, and <b>4× cheaper to run at inference</b> forever after.</div></div>
+    <div class="side lose"><div class="h">Gopher · 280B</div><div class="b"><b>300B tokens</b> (~1/params) · same compute<br>Sized by the Kaplan-era instinct: bigger is better. Under-trained by a factor of ~4-5× on data — most of those 280B parameters never got the tokens to earn their keep.</div></div>`;
+  c.appendChild(vs);
+  root.appendChild(c);
+  const controls=[];
+  const btns=el('div','btnrow');btns.innerHTML=`<button class="act" id="kPlay">▶ Animate the gap</button>`;controls.push(btns);
+  controls.push(el('div','note',`<b>Read it:</b> green = compute-optimal loss L(C); red dashed = the same budget allocated Kaplan's way (anchored to agree at Gopher scale). Left of the anchor Kaplan under-sizes slightly; right of it the over-sizing penalty compounds. The vertical line marks the Gopher/Chinchilla budget where the fight was settled empirically.`));
+  root.appendChild(labGrid('cvKF','Loss vs compute under the two allocation rules',controls,'roKF'));
+  setTimeout(()=>{   /* not rAF: rAF never fires in occluded windows */
+    const P=new Plot(document.getElementById('cvKF'),{xmin:1e20,xmax:1e27,ymin:1.7,ymax:3,
+      xlabel:'C — training compute (FLOPs)',ylabel:'achievable loss (nats/token)'});
+    const ro=document.getElementById('roKF');
+    function redraw(anim){
+      P.curves=[
+        {fn:C=>F.L_opt(C),from:1e20,to:1e27,color:'#5BE3A6',w:2.8},
+        {fn:C=>F.L_kaplan(C),from:1e20,to:1e27,color:'#EF5B7B',w:2.4,dash:[7,5]},
+      ];
+      P.markers=[{x:5.76e23,y:F.L_opt(5.76e23),color:'#F5A524',label:'Gopher budget'}];
+      const gap=(F.L_kaplan(1e26)-F.L_opt(1e26));
+      ro.innerHTML=`at C=10²⁶ FLOPs:<br>optimal L=${F.L_opt(1e26).toFixed(3)}<br>Kaplan-rule L=${F.L_kaplan(1e26).toFixed(3)} <b>(+${gap.toFixed(3)})</b>`;
+      anim?P.animate(1500):P.draw(1);
+    }
+    document.getElementById('kPlay').onclick=()=>redraw(true);
+    redraw(false);window.addEventListener('resize',()=>{P.resize();redraw(false);});
+  });
+}
+
+function buildSummary(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqname">Table 2 · three approaches, one answer</div>`;
+  const t=el('table','sum');
+  t.innerHTML=`<thead><tr><th>Approach</th><th>Method</th><th>a (N ∝ C^a)</th><th>b (D ∝ C^b)</th></tr></thead><tbody>
+    <tr><td>1</td><td>Minimum over training curves (fix N, vary horizon)</td><td class="mono">0.50</td><td class="mono">0.50</td></tr>
+    <tr><td>2</td><td>IsoFLOP profiles (fix C, vary N, parabola valleys)</td><td class="mono">0.49</td><td class="mono">0.51</td></tr>
+    <tr><td>3</td><td>Parametric fit L=E+A/N^α+B/D^β (Huber + L-BFGS)</td><td class="mono">0.46</td><td class="mono">0.54</td></tr>
+    <tr class="hi"><td>—</td><td>Kaplan et al. 2020 (the claim being corrected)</td><td class="mono">0.73</td><td class="mono">0.27</td></tr>
+  </tbody>`;
+  c.appendChild(t);root.appendChild(c);
+
+  const c2=el('div','card');
+  c2.innerHTML=`<div class="eqname">Table 3 · what compute-optimal prescribes</div>`;
+  const t2=el('table','sum');
+  t2.innerHTML=`<thead><tr><th>Model size</th><th>Budget (FLOPs)</th><th>Optimal tokens</th><th>tokens/param</th></tr></thead><tbody>
+    <tr><td>400M</td><td class="mono">1.92e19</td><td class="mono">8.0B</td><td class="mono">20</td></tr>
+    <tr><td>1B</td><td class="mono">1.21e20</td><td class="mono">20.2B</td><td class="mono">20</td></tr>
+    <tr><td>10B</td><td class="mono">1.23e22</td><td class="mono">205.1B</td><td class="mono">21</td></tr>
+    <tr class="hi"><td>67B (≈Chinchilla)</td><td class="mono">5.76e23</td><td class="mono">1.5T</td><td class="mono">22</td></tr>
+    <tr><td>175B (GPT-3 size)</td><td class="mono">3.85e24</td><td class="mono">3.7T</td><td class="mono">21</td></tr>
+    <tr><td>280B (Gopher size)</td><td class="mono">9.90e24</td><td class="mono">5.9T</td><td class="mono">21</td></tr>
+    <tr><td>1T</td><td class="mono">1.27e26</td><td class="mono">21.2T</td><td class="mono">21</td></tr>
+  </tbody>`;
+  c2.appendChild(t2);root.appendChild(c2);
+
+  const c3=el('div','card');
+  c3.innerHTML=`<div class="eqname">The five headline findings</div>`;
+  const fw=el('div','findings');
+  [['Equal scaling','N_opt ∝ C^0.5 and D_opt ∝ C^0.5 — grow model and data together, not model alone.'],
+   ['~20 tokens/param','The frontier ratio D/N stays near 20 across all practical budgets. Chinchilla: 1.4T/70B = 20.'],
+   ['LLMs were oversized','GPT-3, Gopher, MT-NLG all sit far off the frontier — too many params, too few tokens.'],
+   ['Proof by training','Chinchilla (70B) beat Gopher (280B) at equal compute — and is 4× cheaper at inference.'],
+   ['Why Kaplan differed','Fixed LR schedules for all horizons + extrapolating from small models inflated a to 0.73. Matching the cosine schedule to each run\'s length fixes it.']
+  ].forEach(([h,b])=>fw.appendChild(el('div','finding',`<div class="h">${h}</div><div class="b">${b}</div>`)));
+  c3.appendChild(fw);root.appendChild(c3);
+
+  const c4=el('div','card');
+  c4.innerHTML=`<div class="eqname">Run it yourself</div>
+    <div class="does">The IsoFLOP experiment miniaturises to a laptop: <b>Nanogpt/nano_chinchilla.py</b> trains a grid of tiny GPTs at fixed FLOP budgets on tiny-Shakespeare, fits the parabola valleys (Approach 2) <i>and</i> the Huber/L-BFGS parametric law (Approach 3), and reports which exponent — 0.50 or 0.73 — your own data supports. Its sibling <b>nano_scaling_laws.py</b> runs the Kaplan ladder for comparison.</div>`;
+  root.appendChild(c4);
+}
+
+function boot(){
+  const nav=document.getElementById('nav'),host=document.getElementById('sections');
+  SECTIONS.forEach(S=>{
+    const a=el('a');a.href='#'+S.id;a.innerHTML=`<span class="num">${S.num}</span><span>${S.kicker}</span>`;nav.appendChild(a);
+    const sec=el('section','reveal');sec.id=S.id;
+    sec.innerHTML=`<div class="sec-head"><span class="kicker">${S.kicker}</span></div>
+      <div class="sec-head"><h2>${S.title}</h2></div><p class="sec-sub">${S.sub}</p>`;
+    const holder=el('div');S.build(holder);sec.appendChild(holder);host.appendChild(sec);
+  });
+  const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in');});},{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(x=>io.observe(x));
+  const navlinks=[...nav.querySelectorAll('a')];
+  const io2=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+    navlinks.forEach(l=>l.classList.toggle('on',l.getAttribute('href')==='#'+e.target.id));
+    e.target.querySelectorAll('.card').forEach(cd=>cd.classList.add('lit'));}});},{threshold:.3});
+  document.querySelectorAll('section').forEach(s=>io2.observe(s));
+}
+window.addEventListener('DOMContentLoaded',()=>{ if(window.katex) boot(); else window.addEventListener('load',boot); });
+</script>
+</body>
+</html>

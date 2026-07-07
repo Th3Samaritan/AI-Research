@@ -1,0 +1,4 @@
+# regeneratable artifacts — run the scripts/notebooks to recreate
+runs/
+input.txt
+__pycache__/

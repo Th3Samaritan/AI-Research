@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BERT, Animated — delete the mask, hide the words</title>
+<meta name="description" content="An interactive, animated breakdown of BERT (Devlin et al. 2018): bidirectional self-attention, the masked-language-model objective (15%, 80/10/10), NSP, and the fine-tuning heads — with live demos. By Abdulsamad Teniola Muyideen.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#0A0D13">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0D13;--chrome:#0F131D;--panel:#141A28;--panel-2:#19202F;
+    --line:#262E43;--line-soft:#1C2333;--txt:#E8ECF5;--muted:#8B95AC;--muted-2:#5C6680;
+    --signal:#F5A524;--signal-2:#FFC85C;--signal-dim:#F5A52426;
+    --cool:#5B8DEF;--good:#5BE3A6;--bad:#EF5B7B;--violet:#B98CFF;
+    --cellbg:#111726;--celledge:#283251;--radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  html,body{margin:0;padding:0}
+  body{background:
+      radial-gradient(1100px 560px at 82% -8%,#17223c 0%,transparent 55%),
+      radial-gradient(900px 480px at -5% 108%,#1a1430 0%,transparent 52%),var(--ink);
+    color:var(--txt);font-family:"Space Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:288px 1fr;min-height:100vh}
+  @media(max-width:960px){.app{grid-template-columns:1fr}}
+  aside{background:linear-gradient(180deg,var(--chrome),var(--ink));border-right:1px solid var(--line);
+    padding:24px 20px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:18px}
+  @media(max-width:960px){aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--signal)}
+  .title{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:4px 0 0}
+  .title .thin{color:var(--muted);font-weight:500}
+  .byline{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);line-height:1.7;margin-top:4px}
+  .byline a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
+  .byline a:hover{color:var(--signal);border-color:var(--signal)}
+  nav{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  nav a{display:flex;gap:10px;align-items:baseline;font-size:13.5px;color:var(--muted);text-decoration:none;
+    padding:7px 10px;border-radius:9px;border:1px solid transparent;transition:.15s}
+  nav a .num{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);min-width:26px}
+  nav a:hover{color:var(--txt);background:var(--panel)}
+  nav a.on{color:var(--signal);background:var(--signal-dim);border-color:#F5A52455}
+  nav a.on .num{color:var(--signal)}
+  .side-foot{margin-top:auto;font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);line-height:1.7;border-top:1px solid var(--line-soft);padding-top:14px}
+  main{padding:38px clamp(20px,4vw,64px) 120px;max-width:1080px}
+  .hero{margin-bottom:20px}
+  .hero h1{font-size:clamp(30px,5vw,50px);line-height:1.02;letter-spacing:-.03em;margin:6px 0 12px;font-weight:700}
+  .hero h1 .grad{background:linear-gradient(92deg,var(--signal),var(--signal-2) 45%,var(--cool));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:17px;line-height:1.65;color:var(--muted);max-width:70ch}
+  .lede b{color:var(--txt);font-weight:600}
+  .paper-tag{display:inline-flex;gap:8px;align-items:center;font-family:"JetBrains Mono",monospace;font-size:11px;
+    color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 13px;margin-bottom:6px}
+  .paper-tag b{color:var(--signal)}
+  section{margin-top:42px;scroll-margin-top:20px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px}
+  .sec-head .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--signal)}
+  .sec-head h2{font-size:25px;letter-spacing:-.02em;margin:0;font-weight:700}
+  .sec-sub{color:var(--muted);font-size:15px;line-height:1.6;max-width:74ch;margin:2px 0 20px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px 22px 20px;margin-bottom:20px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;
+    background:linear-gradient(var(--signal),var(--cool));opacity:0;transition:.5s}
+  .card.lit::before{opacity:.9}
+  .eqno{position:absolute;top:14px;right:16px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted-2);
+    border:1px solid var(--line);border-radius:7px;padding:3px 8px}
+  .eqname{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--signal);margin-bottom:6px}
+  .eq{padding:12px 6px 14px;font-size:19px;overflow-x:auto;overflow-y:hidden}
+  .katex{color:var(--txt)}
+  .does{color:var(--muted);font-size:14.5px;line-height:1.66;margin:6px 0 14px}
+  .does b{color:var(--txt);font-weight:600}
+  .does .hl{color:var(--signal-2);font-weight:600}
+  .params{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+  .param{display:flex;flex-direction:column;gap:1px;background:var(--cellbg);border:1px solid var(--celledge);
+    border-radius:10px;padding:8px 11px;min-width:120px}
+  .param .sym{font-family:"JetBrains Mono",monospace;color:var(--signal);font-size:12.5px}
+  .param .desc{color:var(--muted);font-size:11.5px;line-height:1.4}
+  .param .val{color:var(--good);font-family:"JetBrains Mono",monospace;font-size:11px}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button.act{font-family:"JetBrains Mono",monospace;font-size:11.5px;letter-spacing:.05em;color:var(--ink);
+    background:linear-gradient(92deg,var(--signal),var(--signal-2));border:none;border-radius:9px;padding:9px 14px;
+    cursor:pointer;font-weight:700;transition:.15s}
+  button.act:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:9px;padding:9px 14px;
+    font-family:"JetBrains Mono",monospace;font-size:11.5px;cursor:pointer}
+  button.ghost:hover{color:var(--txt);border-color:var(--signal)}
+  button.ghost.on{color:var(--signal);border-color:var(--signal);background:var(--signal-dim)}
+  .note{font-size:12.5px;color:var(--muted-2);line-height:1.6;border-left:2px solid var(--line);padding-left:11px;margin-top:12px}
+  .note b{color:var(--muted)}
+  /* attention-mask lab */
+  .attlab{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px}
+  @media(max-width:760px){.attlab{grid-template-columns:1fr}}
+  .attbox{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+  .attbox .h{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;margin-bottom:10px}
+  .attbox.gpt .h{color:var(--bad)} .attbox.bert .h{color:var(--good)}
+  canvas.att{width:100%;max-width:300px;display:block;margin:0 auto;border-radius:8px}
+  .attcap{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);margin-top:8px;line-height:1.6}
+  /* MLM demo */
+  input#mlmtext{background:var(--ink);border:1px solid var(--line);border-radius:10px;color:var(--txt);
+    font-family:"Space Grotesk",sans-serif;font-size:15px;padding:11px 12px;outline:none;width:100%;transition:.15s}
+  input#mlmtext:focus{border-color:var(--signal);box-shadow:0 0 0 3px var(--signal-dim)}
+  .tokens{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;min-height:44px}
+  .tok{font-family:"JetBrains Mono",monospace;font-size:13px;padding:7px 10px;border-radius:8px;
+    background:var(--cellbg);border:1px solid var(--celledge);color:var(--muted);transition:.3s;position:relative}
+  .tok.mask{background:#F5A52422;border-color:var(--signal);color:var(--signal)}
+  .tok.rand{background:#EF5B7B22;border-color:var(--bad);color:var(--bad)}
+  .tok.same{background:#5BE3A622;border-color:var(--good);color:var(--good)}
+  .tok .tag{position:absolute;top:-9px;right:-4px;font-size:8px;padding:1px 5px;border-radius:6px;background:var(--ink)}
+  .tok.mask .tag{color:var(--signal);border:1px solid var(--signal)}
+  .tok.rand .tag{color:var(--bad);border:1px solid var(--bad)}
+  .tok.same .tag{color:var(--good);border:1px solid var(--good)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2)}
+  .legend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .mlmstats{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);margin-top:10px;line-height:1.8}
+  .mlmstats b{color:var(--signal)}
+  table.sum{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  table.sum th,table.sum td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-soft)}
+  table.sum th{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)}
+  table.sum tr:hover td{background:var(--panel)}
+  table.sum .mono{font-family:"JetBrains Mono",monospace;color:var(--good);font-size:12px}
+  .findings{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px}
+  .finding{background:var(--cellbg);border:1px solid var(--celledge);border-radius:11px;padding:14px 15px}
+  .finding .h{font-size:14px;font-weight:600;color:var(--signal-2);margin-bottom:4px}
+  .finding .b{font-size:13px;color:var(--muted);line-height:1.55}
+  .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s cubic-bezier(.2,.7,.2,1),transform .6s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  .foot{margin-top:60px;border-top:1px solid var(--line);padding-top:20px;color:var(--muted-2);font-size:12.5px;line-height:1.7;font-family:"JetBrains Mono",monospace}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <div class="eyebrow">Paper&nbsp;→&nbsp;Code</div>
+      <div class="title">BERT<br><span class="thin">Animated</span></div>
+      <div class="byline">
+        Devlin, Chang, Lee, Toutanova<br>
+        Google AI, 2018 — arXiv:1810.04805<br>
+        visualized by <a href="mailto:abdulsamadmuyideen@gmail.com">A. T. Muyideen</a>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      Two live demos: the attention<br>mask that gets deleted, and the<br>15% / 80-10-10 masking recipe.
+    </div>
+  </aside>
+
+  <main>
+    <div class="hero reveal">
+      <span class="paper-tag">BERT: PRE-TRAINING OF DEEP BIDIRECTIONAL TRANSFORMERS · <b>2 demos live</b></span>
+      <h1>Delete one mask.<br><span class="grad">Hide the words instead.</span></h1>
+      <p class="lede">
+        GPT reads left-to-right and predicts the next word — so it can <b>generate</b>. BERT makes
+        two moves: it <b>deletes the causal mask</b> so every token sees both directions at once,
+        and — since next-word prediction is now trivially cheatable — it invents a new exam:
+        <b>hide 15% of the input and reconstruct it</b>. The result set the state of the art on
+        11 NLP tasks and became the default way to <b>understand</b> text, while GPT remained the
+        way to <b>write</b> it.
+      </p>
+    </div>
+    <div id="sections"></div>
+    <div class="foot reveal">
+      Built as a "paper-with-code" companion · arXiv:1810.04805 · runnable char-level twin: <b>Nanogpt/nanobert.py</b>
+      (diff it against nanogpt_attention.py — the causal mask is the only architectural change).<br>
+      © Abdulsamad Teniola Muyideen — companion PDF: <b>BERT — the math explained.pdf</b>
+    </div>
+  </main>
+</div>
+
+<script>
+const eq=(s)=>{try{return katex.renderToString(s,{throwOnError:false,displayMode:true});}catch(e){return s;}};
+const ieq=(s)=>{try{return katex.renderToString(s,{throwOnError:false,displayMode:false});}catch(e){return s;}};
+function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
+function paramChips(list){const w=el('div','params');list.forEach(p=>{
+  w.appendChild(el('div','param',`<span class="sym">${ieq(p.sym)}</span><span class="desc">${p.desc}</span>${p.val?`<span class="val">${p.val}</span>`:''}`));});return w;}
+
+const SECTIONS=[
+ {id:'mask',num:'§3',kicker:'The one-line difference',title:'Bidirectional = delete the causal mask',
+  sub:'GPT and BERT share the identical Transformer block. The entire architectural difference is one masked_fill line in the attention head.',build:buildMask},
+ {id:'mlm',num:'§3.1',kicker:'Masked language modelling',title:'The 15% / 80-10-10 exam',
+  sub:'Without a causal mask, next-word prediction is cheatable — each position could just look the answer up. So BERT corrupts the input and grades only the corrupted spots.',build:buildMLM},
+ {id:'nsp',num:'§3.1',kicker:'NSP & the input recipe',title:'Sentence pairs, three embeddings',
+  sub:'The second pre-training task, the [CLS]/[SEP] machinery, and the input representation that makes fine-tuning plug-and-play.',build:buildNSP},
+ {id:'arch',num:'§3',kicker:'Architecture & training',title:'The numbers that made BERT',
+  sub:'Base and Large configurations, and where the parameters live.',build:buildArch},
+ {id:'finetune',num:'§4',kicker:'Fine-tuning heads',title:'One backbone, four task shapes',
+  sub:'The pre-trained encoder plus a tiny task head, trained end-to-end for a few epochs — the transfer-learning recipe that dominated NLP for years.',build:buildFT},
+];
+
+/* ============ §1 attention-mask lab ============ */
+function buildMask(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">Eq. (att)</div><div class="eqname">self-attention · shared by GPT &amp; BERT</div>
+    <div class="eq">${eq('\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\!\\left(\\dfrac{QK^{\\top}}{\\sqrt{d_k}}+M\\right)V')}</div>
+    <div class="does"><b>What it does.</b> Every token builds a query <b>Q</b>, offers a key <b>K</b> and a value <b>V</b>; scores QK<sup>T</sup>/√d<sub>k</sub> decide how much each token reads from every other. The whole GPT/BERT split lives in <span class="hl">M</span>: GPT sets M = −∞ above the diagonal (no peeking at the future); <span class="hl">BERT sets M = 0 — the mask is simply deleted</span>, and every token attends both ways. That deletion is why BERT understands better and why it cannot generate: it was never trained to predict without seeing the right side.</div>`;
+  c.appendChild(paramChips([
+    {sym:'Q,K,V',desc:'learned projections of the input'},
+    {sym:'\\sqrt{d_k}',desc:'keeps softmax from saturating'},
+    {sym:'M_{GPT}',desc:'−∞ above diagonal',val:'causal'},
+    {sym:'M_{BERT}',desc:'all zeros',val:'bidirectional'},
+  ]));
+  const lab=el('div','attlab');
+  lab.innerHTML=`
+    <div class="attbox gpt"><div class="h">GPT · causal mask</div><canvas class="att" id="attG" width="300" height="300"></canvas>
+      <div class="attcap">row t may only read columns ≤ t<br>upper triangle = −∞ (black)</div></div>
+    <div class="attbox bert"><div class="h">BERT · no mask</div><canvas class="att" id="attB" width="300" height="300"></canvas>
+      <div class="attcap">every row reads every column<br>full bidirectional context</div></div>`;
+  c.appendChild(lab);
+  const btns=el('div','btnrow');
+  btns.innerHTML=`<button class="act" id="attPlay">▶ Animate attention flow</button>`;
+  c.appendChild(btns);
+  c.appendChild(el('div','note',`<b>Read it:</b> each grid is a T×T attention matrix (T=12 tokens); brightness = attention weight (random softmax rows for illustration). Watch the animation sweep row by row: in GPT a token's world stops at itself; in BERT the whole sentence is visible from every seat. In <b>Nanogpt/nanobert.py</b> this is literally the removal of two lines: the <code>tril</code> buffer and the <code>masked_fill</code>.`));
+  root.appendChild(c);
+
+  setTimeout(()=>{
+    const T=12;
+    function rowWeights(t,causal){
+      const lim=causal?t+1:T;
+      let w=[];for(let j=0;j<T;j++)w.push(j<lim?Math.exp(2*Math.sin(j*1.7+t*2.3)+Math.random()*0.5):0);
+      const s=w.reduce((a,b)=>a+b,0);return w.map(x=>x/s);
+    }
+    function draw(id,causal,upto){
+      const cv=document.getElementById(id),ctx=cv.getContext('2d');
+      const cell=cv.width/T;ctx.clearRect(0,0,cv.width,cv.height);
+      for(let t=0;t<T;t++){
+        const w=rowWeights(t,causal);
+        for(let j=0;j<T;j++){
+          const visible=causal?j<=t:true;
+          if(t>upto){ctx.fillStyle='#0E1320';}
+          else if(!visible){ctx.fillStyle='#05070C';}
+          else{const v=Math.min(1,w[j]*T*0.55);
+            ctx.fillStyle=causal?`rgba(239,91,123,${0.12+v*0.8})`:`rgba(91,227,166,${0.12+v*0.8})`;}
+          ctx.fillRect(j*cell+1,t*cell+1,cell-2,cell-2);
+        }
+      }
+    }
+    let seed=0;
+    function render(upto){draw('attG',true,upto);draw('attB',false,upto);}
+    render(T);
+    document.getElementById('attPlay').onclick=()=>{
+      let t=0;const iv=setInterval(()=>{render(t);t++;if(t>T){clearInterval(iv);}},120);
+    };
+  });
+}
+
+/* ============ §2 MLM lab ============ */
+function buildMLM(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">§3.1 Task 1</div><div class="eqname">the MLM objective</div>
+    <div class="eq">${eq('\\mathcal{L}_{\\mathrm{MLM}}=-\\!\\!\\sum_{i\\in\\mathcal{M}}\\log P\\big(x_i\\,\\big|\\,\\tilde{x}\\big)\\qquad |\\mathcal{M}|\\approx 0.15\\,T')}</div>
+    <div class="does"><b>What it does.</b> Corrupt the sentence x into x̃, then maximise the probability of the ORIGINAL tokens at the corrupted positions only. The recipe for each selected token: <span class="hl">80% → [MASK]</span>, <span class="hl">10% → a random word</span>, <span class="hl">10% → left unchanged</span>. Why not 100% [MASK]? Because [MASK] never appears at fine-tuning time — the mismatch would teach the model that only masked slots matter. The random and unchanged cases force it to keep a full contextual representation of <i>every</i> token, never knowing which ones it will be graded on.</div>`;
+  c.appendChild(paramChips([
+    {sym:'\\mathcal{M}',desc:'the 15% selected positions'},
+    {sym:'\\tilde{x}',desc:'the corrupted input'},
+    {sym:'80/10/10',desc:'[MASK] / random / unchanged',val:'the recipe'},
+  ]));
+  c.appendChild(el('div',null,`<div style="margin-top:14px">
+    <input id="mlmtext" value="the quick brown fox jumps over the lazy dog near the river bank today" spellcheck="false">
+    <div class="tokens" id="mlmtok"></div>
+    <div class="legend">
+      <span><span class="sw" style="background:#F5A524"></span>→ [MASK] (80%)</span>
+      <span><span class="sw" style="background:#EF5B7B"></span>→ random word (10%)</span>
+      <span><span class="sw" style="background:#5BE3A6"></span>→ unchanged, still graded (10%)</span>
+      <span><span class="sw" style="background:#283251"></span>not selected (85%) — no loss</span>
+    </div>
+    <div class="mlmstats" id="mlmstats"></div>
+    <div class="btnrow"><button class="act" id="mlmRoll">🎲 Re-roll the corruption</button></div>
+  </div>`));
+  c.appendChild(el('div','note',`<b>Read it:</b> type any sentence and re-roll. Only the coloured tokens enter the loss — the model must output the <i>original</i> word at each of them (yes, even the green "unchanged" ones). This exact recipe runs in <b>Nanogpt/nanobert.py :: mask_batch()</b>, where the grading trick is one argument: <code>ignore_index=-100</code>.`));
+  root.appendChild(c);
+
+  setTimeout(()=>{
+    const RAND=['banana','quantum','sofa','yodel','pickle','nebula','walrus','disco'];
+    function roll(){
+      const words=document.getElementById('mlmtext').value.trim().split(/\s+/).filter(Boolean);
+      const holder=document.getElementById('mlmtok');holder.innerHTML='';
+      let sel=0,m=0,r=0,s=0;
+      words.forEach(w=>{
+        const t=el('span','tok');
+        if(Math.random()<0.15){
+          sel++;const u=Math.random();
+          if(u<0.8){m++;t.className='tok mask';t.innerHTML=`[MASK]<span class="tag">was: ${w}</span>`;}
+          else if(u<0.9){r++;t.className='tok rand';
+            t.innerHTML=`${RAND[Math.floor(Math.random()*RAND.length)]}<span class="tag">was: ${w}</span>`;}
+          else{s++;t.className='tok same';t.innerHTML=`${w}<span class="tag">graded</span>`;}
+        } else t.textContent=w;
+        holder.appendChild(t);
+      });
+      document.getElementById('mlmstats').innerHTML=
+        `selected <b>${sel}/${words.length}</b> tokens (${(100*sel/Math.max(words.length,1)).toFixed(0)}%) · `+
+        `→ [MASK]: <b>${m}</b> · → random: <b>${r}</b> · → unchanged: <b>${s}</b> · loss computed on ${sel} positions only`;
+    }
+    document.getElementById('mlmRoll').onclick=roll;
+    document.getElementById('mlmtext').addEventListener('input',roll);
+    roll();
+  });
+}
+
+/* ============ §3 NSP ============ */
+function buildNSP(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">§3.1 Task 2</div><div class="eqname">next sentence prediction</div>
+    <div class="eq">${eq('\\mathcal{L}_{\\mathrm{NSP}}=-\\log P\\big(\\mathrm{IsNext}\\,\\big|\\,\\mathbf{C}\\big),\\qquad \\mathbf{C}=h_{[\\mathrm{CLS}]}')}</div>
+    <div class="does"><b>What it does.</b> 50% of training pairs are consecutive sentences (IsNext), 50% are random (NotNext); a binary classifier on the <b>[CLS]</b> vector must tell them apart — meant to teach sentence-level relationships for QA/NLI. <span class="hl">History's verdict:</span> the paper's own ablation shows small gains, and RoBERTa (2019) dropped NSP entirely with no loss — which is why <b>Nanogpt/nanobert.py</b> implements only the MLM heart.</div>`;
+  root.appendChild(c);
+  const c2=el('div','card');
+  c2.innerHTML=`<div class="eqno">§3</div><div class="eqname">the input representation</div>
+    <div class="eq">${eq('\\mathrm{input}_i=E_{\\mathrm{tok}}(x_i)+E_{\\mathrm{seg}}(A/B)+E_{\\mathrm{pos}}(i)')}</div>
+    <div class="does"><b>What it does.</b> Three embeddings summed per token: WordPiece identity (30,000-piece vocabulary), segment A/B (which sentence of the pair), and learned position. Special tokens: <b>[CLS]</b> up front (its final vector represents the whole sequence) and <b>[SEP]</b> between/after sentences. This fixed packaging is what lets every downstream task reuse one pre-trained backbone unchanged.</div>`;
+  c2.appendChild(paramChips([
+    {sym:'\\mathrm{[CLS]}',desc:'sequence-level summary slot'},
+    {sym:'\\mathrm{[SEP]}',desc:'sentence boundary marker'},
+    {sym:'E_{seg}',desc:'sentence A vs B flag'},
+    {sym:'\\mathrm{WordPiece}',desc:'subword vocabulary',val:'30k pieces'},
+  ]));
+  root.appendChild(c2);
+}
+
+/* ============ §4 architecture ============ */
+function buildArch(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqname">Base vs Large · where the parameters live</div>`;
+  const t=el('table','sum');
+  t.innerHTML=`<thead><tr><th></th><th>layers L</th><th>width H</th><th>heads A</th><th>feed-fwd</th><th>params</th></tr></thead><tbody>
+    <tr><td>BERT-Base</td><td class="mono">12</td><td class="mono">768</td><td class="mono">12</td><td class="mono">3072 (4H)</td><td class="mono">110M</td></tr>
+    <tr><td>BERT-Large</td><td class="mono">24</td><td class="mono">1024</td><td class="mono">16</td><td class="mono">4096 (4H)</td><td class="mono">340M</td></tr>
+  </tbody>`;
+  c.appendChild(t);
+  c.appendChild(el('div','does',`<b>Sizing intuition</b> (same identity as the scaling-laws pages): non-embedding params ≈ 12·L·H². Base: 12·12·768² ≈ 85M, plus ~23M of WordPiece embeddings ≈ 110M. Base was deliberately sized to match GPT-1 for a fair fight; Large is where the headline numbers came from. Trained 40 epochs over 3.3B words (BooksCorpus + English Wikipedia) with GELU activations — pre-Chinchilla, but at ~30 tokens/param BERT-Base was accidentally close to compute-optimal.`));
+  root.appendChild(c);
+}
+
+/* ============ §5 fine-tuning ============ */
+function buildFT(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">§4.1</div><div class="eqname">classification head · GLUE tasks</div>
+    <div class="eq">${eq('P(y\\,|\\,\\text{sent})=\\mathrm{softmax}\\big(W\\,\\mathbf{C}\\big),\\qquad W\\in\\mathbb{R}^{K\\times H}')}</div>
+    <div class="does"><b>What it does.</b> Sentiment, entailment, similarity — one new matrix W on the [CLS] vector, then fine-tune <i>everything</i> for 2–4 epochs. K·H new parameters (a few thousand) against 110M pre-trained ones. Result at publication: GLUE 80.5% (+7.7 over prior art).</div>`;
+  root.appendChild(c);
+  const c2=el('div','card');
+  c2.innerHTML=`<div class="eqno">§4.2</div><div class="eqname">span head · SQuAD question answering</div>
+    <div class="eq">${eq('P_{\\mathrm{start}}(i)=\\dfrac{e^{S\\cdot h_i}}{\\sum_j e^{S\\cdot h_j}}\\qquad P_{\\mathrm{end}}(i)=\\dfrac{e^{E\\cdot h_i}}{\\sum_j e^{E\\cdot h_j}}\\qquad \\hat{\\jmath},\\hat{k}=\\arg\\max_{j\\le k}\\,S\\!\\cdot\\!h_j+E\\!\\cdot\\!h_k')}</div>
+    <div class="does"><b>What it does.</b> The answer to a question is a <i>span</i> of the passage. Two learned vectors S, E score every token as a potential start/end; the best valid pair wins. Just 2·H new parameters — and it hit 93.2 F1 on SQuAD v1.1, past human performance. <span class="hl">The pattern in all heads:</span> bidirectional context did the hard work in pre-training; the task head is nearly free.</div>`;
+  root.appendChild(c2);
+  const c3=el('div','card');
+  c3.innerHTML=`<div class="eqname">The five headline findings</div>`;
+  const fw=el('div','findings');
+  [['Bidirectional wins','Ablation: BERT vs the same model with a causal mask (LTR) loses big on every task — SQuAD 84.9 vs 77.8 F1.'],
+   ['MLM makes it possible','You cannot train bidirectionally on next-word prediction (it\'s cheatable); masking the input is the trick that unlocks it.'],
+   ['Fine-tune, don\'t engineer','One backbone + a tiny head beat task-specific architectures on 11 benchmarks simultaneously.'],
+   ['Scale helps here too','Large (340M) beats Base (110M) everywhere — two years before the scaling-law papers quantified why.'],
+   ['The GPT/BERT split','Autoregressive = generation; bidirectional = understanding. Modern LLMs are GPT-style — and encoder models still power search & embeddings.']
+  ].forEach(([h,b])=>fw.appendChild(el('div','finding',`<div class="h">${h}</div><div class="b">${b}</div>`)));
+  c3.appendChild(fw);
+  root.appendChild(c3);
+}
+
+/* ============ boot ============ */
+function boot(){
+  const nav=document.getElementById('nav'),host=document.getElementById('sections');
+  SECTIONS.forEach(S=>{
+    const a=el('a');a.href='#'+S.id;a.innerHTML=`<span class="num">${S.num}</span><span>${S.kicker}</span>`;nav.appendChild(a);
+    const sec=el('section','reveal');sec.id=S.id;
+    sec.innerHTML=`<div class="sec-head"><span class="kicker">${S.kicker}</span></div>
+      <div class="sec-head"><h2>${S.title}</h2></div><p class="sec-sub">${S.sub}</p>`;
+    const holder=el('div');S.build(holder);sec.appendChild(holder);host.appendChild(sec);
+  });
+  const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in');});},{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(x=>io.observe(x));
+  const navlinks=[...nav.querySelectorAll('a')];
+  const io2=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+    navlinks.forEach(l=>l.classList.toggle('on',l.getAttribute('href')==='#'+e.target.id));
+    e.target.querySelectorAll('.card').forEach(cd=>cd.classList.add('lit'));}});},{threshold:.3});
+  document.querySelectorAll('section').forEach(s=>io2.observe(s));
+}
+window.addEventListener('DOMContentLoaded',()=>{ if(window.katex) boot(); else window.addEventListener('load',boot); });
+</script>
+</body>
+</html>
