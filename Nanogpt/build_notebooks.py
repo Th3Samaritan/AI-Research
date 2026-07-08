@@ -85,6 +85,16 @@ JOBS = [
      (md("## The picture"),
       code("from IPython.display import Image, display\n"
            "display(Image('runs/chinchilla_isoflop.png'))"))),
+    ("nano_rope.py", "nano RoPE — rotate, don't memorise",
+     "deeper/wider models make the extrapolation gap even clearer",
+     (md("## The picture"),
+      code("from IPython.display import Image, display\n"
+           "display(Image('runs/rope_extrapolation.png'))"))),
+    ("nano_llama.py", "nano LLaMA — the modern recipe vs GPT-2",
+     "the architectural gap grows with training length",
+     (md("## The picture"),
+      code("from IPython.display import Image, display\n"
+           "display(Image('runs/llama_vs_gpt.png'))"))),
 ]
 
 for pyfile, title, note, tail in JOBS:

@@ -26,6 +26,8 @@ gpt   = load("gpt_attention.json")
 bert  = load("bert_mlm.json")
 scal  = load("scaling_laws.json")
 chin  = load("chinchilla.json")
+rope  = load("rope.json")
+llama = load("llama.json")
 
 W = 78
 def hr(c="─"): print(c * W)
@@ -106,6 +108,46 @@ else:
     print("run nano_chinchilla.py first")
 
 # ---------------------------------------------------------------------------
+# TABLE 4 — RoPE: rotate positions instead of memorising them
+# ---------------------------------------------------------------------------
+print()
+title("4. SU et al. 2021 — 'RoFormer': rotary position embedding")
+if rope:
+    lr_, rp = rope["learned"], rope["rope"]
+    print("claim   : rotating q,k by position angles makes attention depend only")
+    print("          on RELATIVE offsets — works at ANY length, zero pos params")
+    print(f"measured: at train context {rope['train_context']}:  "
+          f"learned={lr_['final_val']:.4f}  rope={rp['final_val']:.4f}")
+    for T, L in rp["extrapolation"].items():
+        le = lr_["extrapolation"].get(T) or lr_["extrapolation"].get(str(T))
+        le_s = f"{le:.4f}" if le else "impossible (no such table row)"
+        print(f"   context {T:>4}: rope={L:.4f} | learned={le_s}")
+    ok = rp["final_val"] <= lr_["final_val"] + 0.02
+    print(f"verdict : {'✔ SUPPORTED' if ok else '~ mixed'} — RoPE matches/beats "
+          f"learned at train length and extrapolates; learned cannot run at all")
+else:
+    print("run nano_rope.py first")
+
+# ---------------------------------------------------------------------------
+# TABLE 5 — LLaMA: the modern recipe
+# ---------------------------------------------------------------------------
+print()
+title("5. TOUVRON et al. 2023 — 'LLaMA': RMSNorm + SwiGLU + RoPE")
+if llama:
+    g, l = llama["gpt2"], llama["llama"]
+    print("claim   : three architecture upgrades (+ training far past the")
+    print("          Chinchilla point) let a 13B model beat GPT-3 175B")
+    print(f"measured: same data/steps/optimizer —")
+    print(f"   gpt2-recipe : {g['params']:>9,} params -> val {g['final_val']:.4f}")
+    print(f"   llama-recipe: {l['params']:>9,} params -> val {l['final_val']:.4f}")
+    better = l["final_val"] <= g["final_val"] + 0.02
+    print(f"verdict : {'✔ recipe matches/beats GPT-2 at equal budget' if better else '~ mixed at nano scale'};")
+    print("          its structural wins (RoPE extrapolation — see table 4 —")
+    print("          and RMSNorm stability at depth) grow with scale")
+else:
+    print("run nano_llama.py first")
+
+# ---------------------------------------------------------------------------
 # THE BIG PICTURE
 # ---------------------------------------------------------------------------
 print()
@@ -119,8 +161,12 @@ print("""
     predictable function of scale, not alchemy (Kaplan 2020).
  4. nano_chinchilla.py   — but Kaplan's ALLOCATION advice was off: balance
     model and data ~50/50, don't just grow the model (Hoffmann 2022).
+ 5. nano_rope.py         — position can be geometry instead of memory:
+    rotate q,k and attention sees only relative offsets (Su 2021).
+ 6. nano_llama.py        — RMSNorm + SwiGLU + RoPE, trained far past the
+    Chinchilla point because inference cost matters too (Touvron 2023).
  Historical punchline: GPT-3 (175B) was sized by Kaplan's rule; Chinchilla
- (70B on 4x the data, same compute) beat it. Llama and everything since
- train small models on many more than 20 tokens/param — because inference
- cost matters too, which neither paper's objective includes.
+ (70B on 4x the data, same compute) beat it; LLaMA-13B — Chinchilla's
+ lesson plus the modern recipe, trained 7x past "optimal" — beat GPT-3
+ at 1/13th the size. Every open model since is LLaMA's grandchild.
 """)

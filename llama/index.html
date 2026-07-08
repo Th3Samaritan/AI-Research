@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLaMA, Animated — smaller model, more tokens</title>
+<meta name="description" content="An interactive, animated breakdown of Touvron et al. 2023 'LLaMA: Open and Efficient Foundation Language Models': inference-optimal scaling, RMSNorm, SwiGLU, RoPE, and the benchmarks that beat GPT-3 at 13B — with live demos. By Abdulsamad Teniola Muyideen.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#0A0D13">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0D13;--chrome:#0F131D;--panel:#141A28;--panel-2:#19202F;
+    --line:#262E43;--line-soft:#1C2333;--txt:#E8ECF5;--muted:#8B95AC;--muted-2:#5C6680;
+    --signal:#F5A524;--signal-2:#FFC85C;--signal-dim:#F5A52426;
+    --cool:#5B8DEF;--good:#5BE3A6;--bad:#EF5B7B;--violet:#B98CFF;
+    --cellbg:#111726;--celledge:#283251;--radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  html,body{margin:0;padding:0}
+  body{background:
+      radial-gradient(1100px 560px at 82% -8%,#17223c 0%,transparent 55%),
+      radial-gradient(900px 480px at -5% 108%,#1a1430 0%,transparent 52%),var(--ink);
+    color:var(--txt);font-family:"Space Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:288px 1fr;min-height:100vh}
+  @media(max-width:960px){.app{grid-template-columns:1fr}}
+  aside{background:linear-gradient(180deg,var(--chrome),var(--ink));border-right:1px solid var(--line);
+    padding:24px 20px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:18px}
+  @media(max-width:960px){aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--signal)}
+  .title{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:4px 0 0}
+  .title .thin{color:var(--muted);font-weight:500}
+  .byline{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);line-height:1.7;margin-top:4px}
+  .byline a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
+  .byline a:hover{color:var(--signal);border-color:var(--signal)}
+  nav{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  nav a{display:flex;gap:10px;align-items:baseline;font-size:13.5px;color:var(--muted);text-decoration:none;
+    padding:7px 10px;border-radius:9px;border:1px solid transparent;transition:.15s}
+  nav a .num{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);min-width:26px}
+  nav a:hover{color:var(--txt);background:var(--panel)}
+  nav a.on{color:var(--signal);background:var(--signal-dim);border-color:#F5A52455}
+  nav a.on .num{color:var(--signal)}
+  .side-foot{margin-top:auto;font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);line-height:1.7;border-top:1px solid var(--line-soft);padding-top:14px}
+  main{padding:38px clamp(20px,4vw,64px) 120px;max-width:1080px}
+  .hero{margin-bottom:20px}
+  .hero h1{font-size:clamp(30px,5vw,50px);line-height:1.02;letter-spacing:-.03em;margin:6px 0 12px;font-weight:700}
+  .hero h1 .grad{background:linear-gradient(92deg,var(--signal),var(--signal-2) 45%,var(--cool));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:17px;line-height:1.65;color:var(--muted);max-width:70ch}
+  .lede b{color:var(--txt);font-weight:600}
+  .paper-tag{display:inline-flex;gap:8px;align-items:center;font-family:"JetBrains Mono",monospace;font-size:11px;
+    color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 13px;margin-bottom:6px}
+  .paper-tag b{color:var(--signal)}
+  section{margin-top:42px;scroll-margin-top:20px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px}
+  .sec-head .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--signal)}
+  .sec-head h2{font-size:25px;letter-spacing:-.02em;margin:0;font-weight:700}
+  .sec-sub{color:var(--muted);font-size:15px;line-height:1.6;max-width:74ch;margin:2px 0 20px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px 22px 20px;margin-bottom:20px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;
+    background:linear-gradient(var(--signal),var(--cool));opacity:0;transition:.5s}
+  .card.lit::before{opacity:.9}
+  .eqno{position:absolute;top:14px;right:16px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted-2);
+    border:1px solid var(--line);border-radius:7px;padding:3px 8px}
+  .eqname{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--signal);margin-bottom:6px}
+  .eq{padding:12px 6px 14px;font-size:19px;overflow-x:auto;overflow-y:hidden}
+  .katex{color:var(--txt)}
+  .does{color:var(--muted);font-size:14.5px;line-height:1.66;margin:6px 0 14px}
+  .does b{color:var(--txt);font-weight:600}
+  .does .hl{color:var(--signal-2);font-weight:600}
+  .params{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+  .param{display:flex;flex-direction:column;gap:1px;background:var(--cellbg);border:1px solid var(--celledge);
+    border-radius:10px;padding:8px 11px;min-width:120px}
+  .param .sym{font-family:"JetBrains Mono",monospace;color:var(--signal);font-size:12.5px}
+  .param .desc{color:var(--muted);font-size:11.5px;line-height:1.4}
+  .param .val{color:var(--good);font-family:"JetBrains Mono",monospace;font-size:11px}
+  .lab{display:grid;grid-template-columns:1fr 300px;gap:18px;margin-top:16px}
+  @media(max-width:820px){.lab{grid-template-columns:1fr}}
+  .plotwrap{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px 12px 6px;position:relative}
+  canvas.plot{width:100%;display:block;border-radius:8px}
+  .plot-cap{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);text-align:center;padding:6px 0 2px}
+  .readout{position:absolute;top:16px;left:18px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);
+    background:#0A0D13cc;border:1px solid var(--line);border-radius:8px;padding:6px 9px;line-height:1.7;backdrop-filter:blur(4px)}
+  .readout b{color:var(--signal)}
+  .controls{display:flex;flex-direction:column;gap:14px}
+  .ctl{display:flex;flex-direction:column;gap:6px}
+  .ctl .row{display:flex;justify-content:space-between;align-items:baseline}
+  .ctl label{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);letter-spacing:.05em}
+  .ctl .cur{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--signal)}
+  input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:5px;
+    background:linear-gradient(90deg,var(--signal),var(--cool));outline:none;width:100%}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:#fff;border:3px solid var(--signal);cursor:pointer;box-shadow:0 2px 6px #0008}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--signal);cursor:pointer}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button.act{font-family:"JetBrains Mono",monospace;font-size:11.5px;letter-spacing:.05em;color:var(--ink);
+    background:linear-gradient(92deg,var(--signal),var(--signal-2));border:none;border-radius:9px;padding:9px 14px;
+    cursor:pointer;font-weight:700;transition:.15s}
+  button.act:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:9px;padding:9px 14px;
+    font-family:"JetBrains Mono",monospace;font-size:11.5px;cursor:pointer}
+  button.ghost:hover{color:var(--txt);border-color:var(--signal)}
+  button.ghost.on{color:var(--signal);border-color:var(--signal);background:var(--signal-dim)}
+  .note{font-size:12.5px;color:var(--muted-2);line-height:1.6;border-left:2px solid var(--line);padding-left:11px;margin-top:12px}
+  .note b{color:var(--muted)}
+  table.sum{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  table.sum th,table.sum td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-soft)}
+  table.sum th{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)}
+  table.sum tr:hover td{background:var(--panel)}
+  table.sum .mono{font-family:"JetBrains Mono",monospace;color:var(--good);font-size:12px}
+  table.sum .hi td{color:var(--signal-2)}
+  table.sum td.win{color:var(--good);font-weight:600}
+  .findings{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px}
+  .finding{background:var(--cellbg);border:1px solid var(--celledge);border-radius:11px;padding:14px 15px}
+  .finding .h{font-size:14px;font-weight:600;color:var(--signal-2);margin-bottom:4px}
+  .finding .b{font-size:13px;color:var(--muted);line-height:1.55}
+  .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s cubic-bezier(.2,.7,.2,1),transform .6s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  .foot{margin-top:60px;border-top:1px solid var(--line);padding-top:20px;color:var(--muted-2);font-size:12.5px;line-height:1.7;font-family:"JetBrains Mono",monospace}
+  /* treemap */
+  .treemap-wrap{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:14px;position:relative}
+  canvas.treemap{width:100%;display:block;border-radius:8px;cursor:crosshair}
+  .treemap-cap{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--muted-2);text-align:center;padding:6px 0 2px}
+  .treemap-tip{position:absolute;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--txt);
+    background:#0A0D13ee;border:1px solid var(--signal);border-radius:8px;padding:7px 10px;line-height:1.7;
+    pointer-events:none;opacity:0;transition:opacity .15s;white-space:nowrap;z-index:10}
+  /* transformer block diagram */
+  .arch-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px}
+  @media(max-width:760px){.arch-grid{grid-template-columns:1fr}}
+  .arch-box{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+  .arch-box .h{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;margin-bottom:10px}
+  .arch-box.vanilla .h{color:var(--muted)} .arch-box.llama .h{color:var(--signal)}
+  canvas.arch{width:100%;display:block;border-radius:8px}
+  .arch-cap{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);margin-top:8px;line-height:1.6}
+  /* link card */
+  .link-card{display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;transition:.15s}
+  .link-card:hover{transform:translateY(-1px)}
+  .link-card .arrow{font-size:22px;color:var(--signal);flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <div class="eyebrow">Paper&nbsp;→&nbsp;Code</div>
+      <div class="title">LLaMA<br><span class="thin">Animated</span></div>
+      <div class="byline">
+        Touvron, Lavril, Izacard et al.<br>
+        Meta AI, 2023 — arXiv:2302.13971<br>
+        visualized by <a href="mailto:abdulsamadmuyideen@gmail.com">A. T. Muyideen</a>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      Train past Chinchilla-optimal. The<br>inference cost drops, and the<br>benchmarks don't.
+    </div>
+  </aside>
+
+  <main>
+    <div class="hero reveal">
+      <span class="paper-tag">LLAMA: OPEN AND EFFICIENT FOUNDATION LANGUAGE MODELS · <b>the paper that launched the open-model era</b></span>
+      <h1>Smaller model.<br><span class="grad">More tokens.</span></h1>
+      <p class="lede">
+        Chinchilla said <b>scale the model</b>. LLaMA said <b>scale the data</b>. A 13B model trained on
+        1 trillion public tokens outperforms GPT-3 at 175B — not because it saw smarter data,
+        but because it saw <b>enough of it</b>. Three architectural tweaks and the courage to train
+        past the "optimal" point made LLaMA the model that <b>opened everything</b>.
+      </p>
+    </div>
+    <div id="sections"></div>
+    <div class="foot reveal">
+      Built as a "paper-with-code" companion · arXiv:2302.13971 · companion notebook: <b>LLaMA_explained.ipynb</b><br>
+      © Abdulsamad Teniola Muyideen
+    </div>
+  </main>
+</div>
+
+<script>
+/* ============ helpers ============ */
+const DPR=Math.min(window.devicePixelRatio||1,2);
+const eq=(s)=>{try{return katex.renderToString(s,{throwOnError:false,displayMode:true});}catch(e){return s;}};
+const ieq=(s)=>{try{return katex.renderToString(s,{throwOnError:false,displayMode:false});}catch(e){return s;}};
+function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
+function paramChips(list){const w=el('div','params');list.forEach(p=>{
+  w.appendChild(el('div','param',`<span class="sym">${ieq(p.sym)}</span><span class="desc">${p.desc}</span>${p.val?`<span class="val">${p.val}</span>`:''}`));});return w;}
+function slider(id,label,min,max,val,step){const c=el('div','ctl');
+  c.innerHTML=`<div class="row"><label>${label}</label><span class="cur" id="${id}v"></span></div>
+  <input type="range" id="${id}" min="${min}" max="${max}" value="${val}" step="${step}">`;return c;}
+function labGrid(canvasId,cap,controls,roId,height){const lab=el('div','lab');
+  const pw=el('div','plotwrap');
+  pw.innerHTML=`${roId?`<div class="readout" id="${roId}"></div>`:''}<canvas class="plot" id="${canvasId}"></canvas><div class="plot-cap">${cap}</div>`;
+  const cw=el('div','controls');controls.forEach(x=>cw.appendChild(x));
+  lab.appendChild(pw);lab.appendChild(cw);return lab;}
+function bind(id,fn){const s=document.getElementById(id);s.addEventListener('input',()=>fn(parseFloat(s.value)));}
+function setVal(id,v){const s=document.getElementById(id);s.value=v;s.dispatchEvent(new Event('input'));}
+function fitCanvas(canvas,height){
+  const w=canvas.clientWidth||620;const h=height||300;
+  canvas.width=w*DPR;canvas.height=h*DPR;canvas.style.height=h+'px';
+  const ctx=canvas.getContext('2d');ctx.setTransform(DPR,0,0,DPR,0,0);return[ctx,w,h];}
+
+/* ============ sections ============ */
+const SECTIONS=[
+ {id:'thesis',num:'§1',kicker:'§1 — Core thesis',title:'More tokens, smaller model',
+  sub:'Chinchilla says scale model and data equally. LLaMA asks: what if we keep training a smaller model far past "optimal"? The training cost goes up, but inference — where the real cost lives — drops by 10×. And the benchmarks don\'t suffer.',build:buildThesis},
+ {id:'data',num:'§2.1',kicker:'§2.1 — Pre-training data',title:'1.4 trillion tokens, all public',
+  sub:'No proprietary datasets. Seven public sources, mixed by quality-weighted sampling, tokenized with SentencePiece BPE into a 32k vocabulary.',build:buildData},
+ {id:'arch',num:'§2.2',kicker:'§2.2 — Architecture',title:'Three changes to the Transformer',
+  sub:'LLaMA inherits the standard Transformer and makes three surgical modifications — each borrowed from a separate paper, each proven individually, combined here for the first time at scale.',build:buildArch},
+ {id:'config',num:'§2.2',kicker:'§2.2 — Configurations',title:'Four sizes, one recipe',
+  sub:'Every model uses the same data mix, the same training procedure, and the same 4M-token batch size. Only the architecture dimensions, learning rate, and total tokens change.',build:buildConfig},
+ {id:'train',num:'§2.3',kicker:'§2.3 — Training',title:'AdamW + cosine decay',
+  sub:'A standard recipe executed at scale: AdamW with cosine learning-rate decay, gradient clipping, and a warmup ramp. The 65B model trained for 21 days on 2048 A100-80GB GPUs.',build:buildTrain},
+ {id:'bench',num:'§3',kicker:'§3 — Benchmarks',title:'The scoreboard',
+  sub:'LLaMA-13B beats GPT-3 (175B) on most common-sense reasoning benchmarks. LLaMA-65B is competitive with Chinchilla-70B and PaLM-540B — at a fraction of the serving cost.',build:buildBench},
+ {id:'ref',num:'ref',kicker:'Reference',title:'Why it changed everything',
+  sub:'A comparison table, the five headline findings, and pointers to run it yourself.',build:buildRef},
+];
+
+/* ============ §1 Core Thesis ============ */
+function buildThesis(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">§1</div><div class="eqname">the inference-optimal argument</div>
+    <div class="does"><b>The key insight.</b> Chinchilla's scaling law optimizes for <span class="hl">training compute</span> — it tells you the cheapest way to reach a given loss. But in production, <span class="hl">inference cost dominates</span>: a model serves millions of requests after training once. A 13B model is ~13× cheaper to serve than 175B. LLaMA's bet: train the small model <b>longer than Chinchilla recommends</b> (spending more FLOPs at training) so it reaches the same quality — then enjoy 10× cheaper inference forever. The result: <span class="hl">LLaMA-13B outperforms GPT-3 (175B)</span> on most benchmarks, and <span class="hl">LLaMA-65B is competitive with Chinchilla-70B and PaLM-540B</span>.</div>`;
+  c.appendChild(paramChips([
+    {sym:'13\\text{B}',desc:'LLaMA-13B parameters',val:'beats GPT-3 175B'},
+    {sym:'65\\text{B}',desc:'LLaMA-65B parameters',val:'≈ Chinchilla-70B'},
+    {sym:'1\\text{T}–1.4\\text{T}',desc:'training tokens',val:'all public data'},
+    {sym:'10\\times',desc:'inference cost reduction vs GPT-3'},
+  ]));
+  root.appendChild(c);
+
+  /* Interactive bar chart */
+  const cLab=el('div','card');
+  cLab.innerHTML=`<div class="eqname">model size vs benchmark performance</div>
+    <div class="does"><b>The visual argument.</b> The amber bars show model size (parameters). The coloured bars show average benchmark score. Notice how <span class="hl">LLaMA-13B's tiny parameter bar achieves a taller score bar than GPT-3's massive one</span>.</div>
+    <div class="plotwrap"><canvas class="plot" id="cvThesis"></canvas><div class="plot-cap">params (amber, log scale) vs avg benchmark score (coloured) — higher is better</div></div>
+    <div class="btnrow"><button class="act" id="thesisPlay">▶ Animate</button></div>`;
+  root.appendChild(cLab);
+
+  setTimeout(()=>{
+    const models=[
+      {name:'LLaMA-13B',params:13,score:74.0,color:'#5BE3A6'},
+      {name:'LLaMA-65B',params:65.2,score:77.8,color:'#5BE3A6'},
+      {name:'GPT-3',params:175,score:71.2,color:'#EF5B7B'},
+      {name:'Chinchilla',params:70,score:77.0,color:'#5B8DEF'},
+      {name:'PaLM-540B',params:540,score:78.5,color:'#B98CFF'},
+    ];
+    const cv=document.getElementById('cvThesis');
+    function drawBars(prog){
+      const[ctx,W,H]=fitCanvas(cv,320);
+      const pad={l:110,r:30,t:20,b:20};
+      const rowH=(H-pad.t-pad.b)/models.length;
+      const barH=rowH*0.32;
+      const maxParams=600,maxScore=85;
+      ctx.clearRect(0,0,W,H);
+      models.forEach((m,i)=>{
+        const y=pad.t+i*rowH;
+        /* label */
+        ctx.fillStyle=m.color;ctx.font='600 13px "Space Grotesk",sans-serif';ctx.textAlign='right';
+        ctx.fillText(m.name,pad.l-12,y+rowH*0.38);
+        /* param bar (log scale, amber) */
+        const paramW=((Math.log10(m.params)-Math.log10(1))/(Math.log10(maxParams)-Math.log10(1)))*(W-pad.l-pad.r)*prog;
+        ctx.fillStyle='#F5A52466';
+        ctx.beginPath();ctx.roundRect(pad.l,y+4,paramW,barH,4);ctx.fill();
+        ctx.fillStyle='#F5A524';ctx.font='500 10px "JetBrains Mono",monospace';ctx.textAlign='left';
+        if(prog>0.3)ctx.fillText(m.params+'B',pad.l+paramW+6,y+4+barH-3);
+        /* score bar */
+        const scoreW=(m.score/maxScore)*(W-pad.l-pad.r)*prog;
+        ctx.fillStyle=m.color+'88';
+        ctx.beginPath();ctx.roundRect(pad.l,y+4+barH+4,scoreW,barH,4);ctx.fill();
+        ctx.fillStyle=m.color;ctx.font='700 11px "JetBrains Mono",monospace';
+        if(prog>0.3)ctx.fillText(m.score.toFixed(1),pad.l+scoreW+6,y+4+barH+4+barH-3);
+      });
+      /* legend */
+      ctx.fillStyle='#F5A524';ctx.font='10px "JetBrains Mono",monospace';ctx.textAlign='left';
+      ctx.fillRect(pad.l,H-14,10,3);ctx.fillText('params (B, log)',pad.l+16,H-10);
+      ctx.fillStyle='#8B95AC';ctx.fillRect(pad.l+140,H-14,10,3);ctx.fillText('avg score',pad.l+156,H-10);
+    }
+    drawBars(1);
+    document.getElementById('thesisPlay').onclick=()=>{
+      let t0=performance.now();
+      (function step(t){
+        let p=Math.min(1,(t-t0)/1200);p=1-Math.pow(1-p,3);
+        drawBars(p);if(p<1)requestAnimationFrame(step);
+      })(t0);
+    };
+    window.addEventListener('resize',()=>drawBars(1));
+  });
+}
+
+/* ============ §2 Pre-training Data ============ */
+function buildData(root){
+  const sources=[
+    {name:'CommonCrawl',pct:67.0,epochs:1.10,size:'3.3 TB',color:'#5B8DEF'},
+    {name:'C4',pct:15.0,epochs:1.06,size:'783 GB',color:'#5BE3A6'},
+    {name:'GitHub',pct:4.5,epochs:0.64,size:'328 GB',color:'#F5A524'},
+    {name:'Wikipedia',pct:4.5,epochs:2.45,size:'83 GB',color:'#B98CFF'},
+    {name:'Books',pct:4.5,epochs:2.23,size:'85 GB',color:'#FFC85C'},
+    {name:'ArXiv',pct:2.5,epochs:1.06,size:'92 GB',color:'#EF5B7B'},
+    {name:'StackExchange',pct:2.0,epochs:1.03,size:'78 GB',color:'#5BE3A688'},
+  ];
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">Table 1</div><div class="eqname">pre-training data mix</div>
+    <div class="does"><b>What it does.</b> Seven public sources mixed by quality-weighted sampling. <span class="hl">CommonCrawl dominates at 67%</span> — filtered via a linear classifier trained on Wikipedia & Books references. All text tokenized with <b>SentencePiece BPE</b> into a 32k vocabulary. Total: <span class="hl">~1.4 trillion tokens</span>. The smaller 7B and 13B models train on 1T tokens; the 33B and 65B see 1.4T tokens.</div>`;
+  /* table */
+  const t=el('table','sum');
+  t.innerHTML=`<thead><tr><th>source</th><th>sampling %</th><th>epochs</th><th>disk size</th></tr></thead><tbody>`+
+    sources.map(s=>`<tr><td style="color:${s.color};font-weight:600">${s.name}</td><td class="mono">${s.pct}%</td><td class="mono">${s.epochs}</td><td class="mono">${s.size}</td></tr>`).join('')+
+    `</tbody>`;
+  c.appendChild(t);
+  root.appendChild(c);
+
+  /* Treemap */
+  const c2=el('div','card');
+  c2.innerHTML=`<div class="eqname">proportional data map</div>
+    <div class="treemap-wrap"><div class="treemap-tip" id="tmTip"></div><canvas class="treemap" id="cvTreemap"></canvas>
+    <div class="treemap-cap">area ∝ sampling proportion — hover for details</div></div>`;
+  root.appendChild(c2);
+
+  setTimeout(()=>{
+    const cv=document.getElementById('cvTreemap');
+    const tip=document.getElementById('tmTip');
+    let rects=[];
+    function drawTreemap(){
+      const[ctx,W,H]=fitCanvas(cv,280);
+      rects=[];
+      /* simple strip layout */
+      const total=sources.reduce((a,s)=>a+s.pct,0);
+      let x=0;
+      sources.forEach(s=>{
+        const w=(s.pct/total)*W;
+        const r={x,y:0,w,h:H,src:s};
+        rects.push(r);
+        /* fill */
+        ctx.fillStyle=s.color+'33';
+        ctx.fillRect(x+1,1,w-2,H-2);
+        ctx.strokeStyle=s.color+'88';ctx.lineWidth=1.5;
+        ctx.strokeRect(x+1,1,w-2,H-2);
+        /* label if wide enough */
+        if(w>50){
+          ctx.fillStyle=s.color;ctx.font='600 13px "Space Grotesk",sans-serif';ctx.textAlign='center';
+          ctx.fillText(s.name,x+w/2,H/2-10);
+          ctx.font='700 16px "JetBrains Mono",monospace';
+          ctx.fillText(s.pct+'%',x+w/2,H/2+14);
+          ctx.font='10px "JetBrains Mono",monospace';ctx.fillStyle=s.color+'99';
+          ctx.fillText(s.size,x+w/2,H/2+32);
+        } else if(w>30){
+          ctx.save();ctx.translate(x+w/2,H/2);ctx.rotate(-Math.PI/2);
+          ctx.fillStyle=s.color;ctx.font='600 11px "Space Grotesk",sans-serif';ctx.textAlign='center';
+          ctx.fillText(s.name+' '+s.pct+'%',0,4);ctx.restore();
+        }
+        x+=w;
+      });
+    }
+    drawTreemap();
+    cv.addEventListener('mousemove',e=>{
+      const rect=cv.getBoundingClientRect();
+      const mx=(e.clientX-rect.left)*(cv.width/DPR)/rect.width;
+      const my=(e.clientY-rect.top)*(cv.height/DPR)/rect.height;
+      const hit=rects.find(r=>mx>=r.x&&mx<=r.x+r.w&&my>=r.y&&my<=r.y+r.h);
+      if(hit){
+        tip.style.opacity='1';
+        tip.innerHTML=`<b style="color:${hit.src.color}">${hit.src.name}</b><br>${hit.src.pct}% · ${hit.src.epochs} epochs · ${hit.src.size}`;
+        tip.style.left=Math.min(e.clientX-rect.left+12, rect.width-180)+'px';
+        tip.style.top=(e.clientY-rect.top-60)+'px';
+      } else tip.style.opacity='0';
+    });
+    cv.addEventListener('mouseleave',()=>tip.style.opacity='0');
+    window.addEventListener('resize',drawTreemap);
+  });
+}
+
+/* ============ §3 Architecture ============ */
+function buildArch(root){
+  /* Card 1: RMSNorm */
+  const c1=el('div','card');
+  c1.innerHTML=`<div class="eqno">Eq. 1</div><div class="eqname">RMSNorm · Pre-normalization</div>
+    <div class="eq">${eq('\\bar{a}_i = \\frac{a_i}{\\text{RMS}(\\mathbf{a})} \\cdot g_i \\qquad \\text{RMS}(\\mathbf{a}) = \\sqrt{\\frac{1}{n}\\sum_{i=1}^{n}a_i^2}')}</div>
+    <div class="does"><b>What it does.</b> Normalize the <span class="hl">inputs</span> (not outputs) of each sub-layer — the "pre-norm" pattern from GPT-2. RMSNorm is cheaper than LayerNorm because it <span class="hl">skips the mean subtraction</span>: it divides by the root mean square alone, then applies a learnable per-element gain. Empirically equivalent in quality but measurably faster at scale.</div>`;
+  c1.appendChild(paramChips([
+    {sym:'a_i',desc:'input activation at position i'},
+    {sym:'g_i',desc:'learnable gain parameter'},
+    {sym:'\\text{RMS}(\\mathbf{a})',desc:'root mean square of the vector'},
+    {sym:'n',desc:'hidden dimension'},
+  ]));
+  root.appendChild(c1);
+
+  /* Card 2: SwiGLU */
+  const c2=el('div','card');
+  c2.innerHTML=`<div class="eqno">Eq. 2</div><div class="eqname">SwiGLU · gated feed-forward</div>
+    <div class="eq">${eq('\\text{FFN}_{\\text{SwiGLU}}(x, W, V, W_2) = (\\text{SiLU}(xW) \\otimes xV)\\,W_2 \\qquad \\text{SiLU}(x) = x \\cdot \\sigma(x)')}</div>
+    <div class="does"><b>What it does.</b> Replaces the standard ReLU feed-forward with a <span class="hl">gated linear unit</span> using <b>SiLU (Swish)</b> as the gating activation. The input is projected <i>twice</i> — once through W (gated by SiLU) and once through V — then element-wise multiplied and projected down via W₂. To keep the parameter count the same as a standard 4d FFN, LLaMA uses <span class="hl">⅔ · 4d</span> as the hidden dimension (rounded to the nearest multiple of 256).</div>`;
+  c2.appendChild(paramChips([
+    {sym:'W, V',desc:'gate and linear projections',val:'d × ⅔·4d'},
+    {sym:'W_2',desc:'down projection',val:'⅔·4d × d'},
+    {sym:'\\text{SiLU}(x)',desc:'smooth gating: x·σ(x)'},
+    {sym:'\\otimes',desc:'element-wise product'},
+  ]));
+  root.appendChild(c2);
+
+  /* Card 3: RoPE link */
+  const c3=el('div','card');
+  c3.innerHTML=`<div class="eqno">RoPE</div><div class="eqname">rotary position embeddings</div>
+    <div class="does"><b>What it does.</b> Rotary Position Embeddings replace absolute positional embeddings. Position is encoded as a <span class="hl">rotation in 2D subspaces</span> applied at <b>every attention layer</b>, not just the input. This lets attention scores depend on relative position naturally, and enables <span class="hl">length generalization</span> beyond the training context window. Originally from Su et al. 2021 (RoFormer).</div>
+    <a href="../roformer/" class="link-card" style="margin-top:12px;padding:12px;background:var(--cellbg);border:1px solid var(--celledge);border-radius:10px">
+      <span class="arrow">→</span>
+      <span><b style="color:var(--signal)">See the full interactive breakdown</b><br><span style="font-size:12px;color:var(--muted)">RoFormer, Animated — rotary position embeddings explained with live demos</span></span>
+    </a>`;
+  root.appendChild(c3);
+
+  /* Interactive: Transformer block comparison */
+  const cLab=el('div','card');
+  cLab.innerHTML=`<div class="eqname">vanilla transformer vs LLaMA block</div>
+    <div class="does"><b>Side by side.</b> The standard Transformer block (left) vs the LLaMA variant (right). Watch data flow through each — the <span class="hl">amber highlights</span> mark where LLaMA diverges.</div>
+    <div class="arch-grid">
+      <div class="arch-box vanilla"><div class="h">Vanilla Transformer</div><canvas class="arch" id="cvVanilla" height="380"></canvas>
+        <div class="arch-cap">LayerNorm after · ReLU FFN<br>absolute position embeddings</div></div>
+      <div class="arch-box llama"><div class="h">LLaMA Block</div><canvas class="arch" id="cvLlama" height="380"></canvas>
+        <div class="arch-cap">RMSNorm before · SwiGLU FFN<br>RoPE at every attention layer</div></div>
+    </div>
+    <div class="btnrow"><button class="act" id="archPlay">▶ Animate data flow</button></div>`;
+  root.appendChild(cLab);
+
+  setTimeout(()=>{
+    function drawBlock(id,isLlama,prog){
+      const cv=document.getElementById(id);
+      const[ctx,W,H]=fitCanvas(cv,380);
+      const cx=W/2, bw=Math.min(W*0.7,160);
+      const accent=isLlama?'#F5A524':'#5C6680';
+      const accentDim=isLlama?'#F5A52444':'#5C668044';
+
+      function box(y,h,label,highlight){
+        ctx.fillStyle=highlight?accentDim:'#19202F';
+        ctx.strokeStyle=highlight?accent:'#262E43';ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.roundRect(cx-bw/2,y,bw,h,8);ctx.fill();ctx.stroke();
+        ctx.fillStyle=highlight?accent:'#8B95AC';
+        ctx.font='600 11px "Space Grotesk",sans-serif';ctx.textAlign='center';
+        ctx.fillText(label,cx,y+h/2+4);
+      }
+      function arrow(y1,y2){
+        ctx.strokeStyle='#5C668066';ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.moveTo(cx,y1);ctx.lineTo(cx,y2);ctx.stroke();
+        ctx.fillStyle='#5C668066';ctx.beginPath();
+        ctx.moveTo(cx-4,y2-6);ctx.lineTo(cx+4,y2-6);ctx.lineTo(cx,y2);ctx.fill();
+      }
+      function flowDot(y1,y2,p){
+        if(p<=0)return;
+        const dotY=y1+(y2-y1)*Math.min(p,1);
+        ctx.fillStyle=accent;ctx.beginPath();ctx.arc(cx,dotY,4,0,7);ctx.fill();
+        ctx.shadowColor=accent;ctx.shadowBlur=8;ctx.beginPath();ctx.arc(cx,dotY,3,0,7);ctx.fill();ctx.shadowBlur=0;
+      }
+
+      ctx.clearRect(0,0,W,H);
+      /* Input */
+      ctx.fillStyle='#8B95AC';ctx.font='10px "JetBrains Mono",monospace';ctx.textAlign='center';
+      ctx.fillText('Input',cx,18);
+
+      const steps=isLlama?
+        [{y:28,h:30,label:isLlama?'RMSNorm':'LayerNorm',hl:true},
+         {y:68,h:36,label:'Multi-Head Attention',hl:false},
+         {y:108,h:10,label:'',hl:false,isAdd:true},
+         {y:126,h:30,label:'RMSNorm',hl:true},
+         {y:164,h:36,label:'SwiGLU FFN',hl:true},
+         {y:208,h:10,label:'',hl:false,isAdd:true}]:
+        [{y:28,h:36,label:'Multi-Head Attention',hl:false},
+         {y:72,h:10,label:'',hl:false,isAdd:true},
+         {y:90,h:30,label:'LayerNorm',hl:false},
+         {y:128,h:36,label:'ReLU FFN',hl:false},
+         {y:172,h:10,label:'',hl:false,isAdd:true},
+         {y:190,h:30,label:'LayerNorm',hl:false}];
+
+      if(isLlama){
+        /* RoPE label */
+        ctx.fillStyle='#F5A524';ctx.font='500 9px "JetBrains Mono",monospace';ctx.textAlign='left';
+        ctx.fillText('+ RoPE',cx+bw/2+6,68+18+4);
+      } else {
+        ctx.fillStyle='#5C6680';ctx.font='500 9px "JetBrains Mono",monospace';ctx.textAlign='left';
+        ctx.fillText('+ pos embed',cx+bw/2+6,28+18+4);
+      }
+
+      const totalSteps=steps.length;
+      for(let i=0;i<steps.length;i++){
+        const s=steps[i];
+        if(s.isAdd){
+          /* residual add symbol */
+          ctx.fillStyle='#5C6680';ctx.font='700 16px "Space Grotesk",sans-serif';ctx.textAlign='center';
+          ctx.fillText('+',cx,s.y+8);
+          /* residual arrow */
+          const prevTop=steps[Math.max(0,i-2)]?.y||28;
+          ctx.strokeStyle='#5C668044';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+          ctx.beginPath();ctx.moveTo(cx-bw/2-10,prevTop+10);ctx.lineTo(cx-bw/2-10,s.y+5);ctx.lineTo(cx-bw/2+10,s.y+5);ctx.stroke();
+          ctx.setLineDash([]);
+        } else {
+          box(s.y,s.h,s.label,s.hl);
+        }
+        if(i<steps.length-1)arrow(s.y+s.h,steps[i+1].y);
+        /* flow dot */
+        const phaseLen=1/totalSteps;
+        const phase=prog-i*phaseLen;
+        if(phase>0){
+          const nextY=i<steps.length-1?steps[i+1].y:s.y+s.h+20;
+          flowDot(s.y,nextY,phase/phaseLen);
+        }
+      }
+      /* output */
+      const lastStep=steps[steps.length-1];
+      arrow(lastStep.y+lastStep.h,lastStep.y+lastStep.h+22);
+      ctx.fillStyle='#8B95AC';ctx.font='10px "JetBrains Mono",monospace';ctx.textAlign='center';
+      ctx.fillText('Output',cx,lastStep.y+lastStep.h+36);
+    }
+    drawBlock('cvVanilla',false,0);
+    drawBlock('cvLlama',true,0);
+    let animating=false;
+    document.getElementById('archPlay').onclick=()=>{
+      if(animating)return;animating=true;
+      const t0=performance.now();
+      (function step(t){
+        let p=Math.min(1,(t-t0)/2000);
+        drawBlock('cvVanilla',false,p);
+        drawBlock('cvLlama',true,p);
+        if(p<1)requestAnimationFrame(step);else animating=false;
+      })(t0);
+    };
+    window.addEventListener('resize',()=>{drawBlock('cvVanilla',false,0);drawBlock('cvLlama',true,0);});
+  });
+}
+
+/* ============ §4 Configurations ============ */
+function buildConfig(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">Table 2</div><div class="eqname">model hyperparameters</div>`;
+  const t=el('table','sum');
+  t.innerHTML=`<thead><tr><th>Model</th><th>Params</th><th>Dim</th><th>Heads</th><th>Layers</th><th>LR</th><th>Batch</th><th>Tokens</th></tr></thead><tbody>
+    <tr><td>LLaMA-7B</td><td class="mono">6.7B</td><td class="mono">4096</td><td class="mono">32</td><td class="mono">32</td><td class="mono">3.0e-4</td><td class="mono">4M</td><td class="mono">1.0T</td></tr>
+    <tr><td>LLaMA-13B</td><td class="mono">13.0B</td><td class="mono">5120</td><td class="mono">40</td><td class="mono">40</td><td class="mono">3.0e-4</td><td class="mono">4M</td><td class="mono">1.0T</td></tr>
+    <tr><td>LLaMA-33B</td><td class="mono">32.5B</td><td class="mono">6656</td><td class="mono">52</td><td class="mono">60</td><td class="mono">1.5e-4</td><td class="mono">4M</td><td class="mono">1.4T</td></tr>
+    <tr><td>LLaMA-65B</td><td class="mono">65.2B</td><td class="mono">8192</td><td class="mono">64</td><td class="mono">80</td><td class="mono">1.5e-4</td><td class="mono">4M</td><td class="mono">1.4T</td></tr>
+  </tbody>`;
+  c.appendChild(t);
+  c.appendChild(el('div','does','<b>Key pattern.</b> All four models share the <span class="hl">same 4M-token batch size</span> and the same data recipe. The larger models (33B, 65B) train on <span class="hl">1.4T tokens</span> instead of 1.0T — well past the Chinchilla-optimal point of ~20 tokens/param. LLaMA-65B sees ~21.5 tokens per parameter (1.4T/65.2B), while Chinchilla trained at exactly 20 tokens/param. The head dimension is always dim/heads = 128.'));
+  c.appendChild(paramChips([
+    {sym:'d_{\\text{head}}',desc:'per-head dimension',val:'128 (all models)'},
+    {sym:'\\text{batch}',desc:'tokens per gradient step',val:'4M (all models)'},
+    {sym:'\\text{tok/param}',desc:'LLaMA-65B ratio',val:'~21.5 (> Chinchilla)'},
+  ]));
+  root.appendChild(c);
+}
+
+/* ============ §5 Training ============ */
+function buildTrain(root){
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">§2.3</div><div class="eqname">cosine learning-rate schedule</div>
+    <div class="eq">${eq('\\eta_t = \\eta_{\\min} + \\frac{1}{2}(\\eta_{\\max} - \\eta_{\\min})\\left(1 + \\cos\\left(\\frac{\\pi\\, t}{T}\\right)\\right)')}</div>
+    <div class="does"><b>What it does.</b> After a <span class="hl">linear warmup</span> phase, the learning rate follows a <b>cosine decay</b> from η<sub>max</sub> down to η<sub>min</sub> = 0.1 · η<sub>max</sub> over the full training horizon T. This gives a smooth, gradual annealing that's been shown to outperform step-decay schedules. Combined with <b>AdamW</b> (β₁=0.9, β₂=0.95), weight decay 0.1, and gradient clipping at 1.0.</div>`;
+  c.appendChild(paramChips([
+    {sym:'\\eta_{\\max}',desc:'peak learning rate',val:'3e-4 (7B/13B)'},
+    {sym:'\\eta_{\\min}',desc:'final learning rate',val:'10% of η_max'},
+    {sym:'T',desc:'total training steps'},
+    {sym:'\\text{warmup}',desc:'linear warmup steps',val:'2000'},
+  ]));
+  root.appendChild(c);
+
+  /* Efficiency stats */
+  const c2=el('div','card');
+  c2.innerHTML=`<div class="eqname">training efficiency · LLaMA-65B</div>
+    <div class="does"><b>The numbers.</b> LLaMA-65B trained on <b>2048 A100-80GB GPUs</b> for approximately <span class="hl">21 days</span>, processing ~380 tokens/sec/GPU. Total compute: ~1,022,362 GPU-hours, consuming <span class="hl">449 MWh</span> of energy and producing an estimated <span class="hl">173 tCO₂eq</span> of carbon emissions.</div>`;
+  c2.appendChild(paramChips([
+    {sym:'\\text{GPUs}',desc:'A100-80GB',val:'2048'},
+    {sym:'\\text{throughput}',desc:'tokens/sec/GPU',val:'~380'},
+    {sym:'\\text{time}',desc:'wall-clock training',val:'~21 days'},
+    {sym:'\\text{energy}',desc:'total consumption',val:'449 MWh'},
+    {sym:'\\text{CO}_2',desc:'carbon emissions',val:'173 tCO₂eq'},
+  ]));
+  root.appendChild(c2);
+
+  /* Interactive LR schedule */
+  const controls=[
+    slider('warmup','Warmup steps',500,5000,2000,100),
+    slider('etaMax','η_max (×10⁻⁴)',1,5,3,0.1),
+  ];
+  const btns=el('div','btnrow');btns.innerHTML=`<button class="act" id="lrPlay">▶ Animate</button><button class="ghost" id="lrReset">Reset</button>`;
+  controls.push(btns);
+  controls.push(el('div','note','<b>Read it:</b> the plot shows the full learning-rate schedule over training steps. The linear ramp is the warmup phase; after that, cosine decay takes over. Drag the warmup slider to see how the ramp length changes the schedule shape.'));
+  root.appendChild(labGrid('cvLR','cosine LR schedule with warmup — drag sliders to explore',controls,'roLR'));
+
+  setTimeout(()=>{
+    const cv=document.getElementById('cvLR');
+    const ro=document.getElementById('roLR');
+    const st={warmup:2000,etaMax:3e-4};
+    const T=250000; /* total steps for 1T tokens at 4M batch */
+
+    function lrAt(t,warmup,etaMax){
+      const etaMin=etaMax*0.1;
+      if(t<warmup)return etaMax*(t/warmup);
+      const progress=(t-warmup)/(T-warmup);
+      return etaMin+0.5*(etaMax-etaMin)*(1+Math.cos(Math.PI*progress));
+    }
+
+    function drawLR(prog){
+      const[ctx,W,H]=fitCanvas(cv,280);
+      const pad={l:64,r:20,t:14,b:34};
+      const pw=W-pad.l-pad.r,ph=H-pad.t-pad.b;
+      ctx.clearRect(0,0,W,H);
+      /* grid */
+      ctx.strokeStyle='#1C2333';ctx.lineWidth=1;
+      for(let i=0;i<=5;i++){
+        const y=pad.t+ph*i/5;
+        ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
+        ctx.fillStyle='#5C6680';ctx.font='10px "JetBrains Mono",monospace';ctx.textAlign='right';
+        const val=(st.etaMax*(1-i/5)*1e4).toFixed(1);
+        ctx.fillText(val+'e-4',pad.l-6,y+3);
+      }
+      for(let i=0;i<=5;i++){
+        const x=pad.l+pw*i/5;
+        ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,H-pad.b);ctx.stroke();
+        ctx.fillStyle='#5C6680';ctx.textAlign='center';
+        ctx.fillText((T*i/5/1000).toFixed(0)+'k',x,H-pad.b+15);
+      }
+      ctx.strokeStyle='#262E43';ctx.lineWidth=1.2;ctx.strokeRect(pad.l,pad.t,pw,ph);
+      /* axis labels */
+      ctx.fillStyle='#8B95AC';ctx.textAlign='center';ctx.font='10px "JetBrains Mono",monospace';
+      ctx.fillText('training steps',pad.l+pw/2,H-4);
+      ctx.save();ctx.translate(12,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.fillText('learning rate',0,0);ctx.restore();
+
+      /* warmup line */
+      const warmupX=pad.l+(st.warmup/T)*pw;
+      ctx.strokeStyle='#F5A52444';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(warmupX,pad.t);ctx.lineTo(warmupX,H-pad.b);ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle='#F5A52488';ctx.font='9px "JetBrains Mono",monospace';ctx.textAlign='center';
+      ctx.fillText('warmup',warmupX,pad.t-4);
+
+      /* LR curve */
+      const n=400;const last=Math.floor(n*prog);
+      ctx.strokeStyle='#5B8DEF';ctx.lineWidth=2.5;ctx.lineJoin='round';
+      ctx.beginPath();
+      for(let i=0;i<=last;i++){
+        const t=i/n*T;
+        const lr=lrAt(t,st.warmup,st.etaMax);
+        const x=pad.l+(t/T)*pw;
+        const y=pad.t+(1-lr/st.etaMax)*ph;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+
+      /* dot at end */
+      if(prog<1&&last>0){
+        const t=last/n*T;const lr=lrAt(t,st.warmup,st.etaMax);
+        ctx.fillStyle='#5B8DEF';ctx.beginPath();
+        ctx.arc(pad.l+(t/T)*pw,pad.t+(1-lr/st.etaMax)*ph,4,0,7);ctx.fill();
+      }
+      /* η_min line */
+      const etaMin=st.etaMax*0.1;
+      const yMin=pad.t+(1-etaMin/st.etaMax)*ph;
+      ctx.strokeStyle='#EF5B7B44';ctx.lineWidth=1;ctx.setLineDash([3,4]);
+      ctx.beginPath();ctx.moveTo(pad.l,yMin);ctx.lineTo(W-pad.r,yMin);ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle='#EF5B7B88';ctx.font='9px "JetBrains Mono",monospace';ctx.textAlign='left';
+      ctx.fillText('η_min',W-pad.r+4,yMin+3);
+
+      ro.innerHTML=`warmup: <b>${st.warmup}</b> steps<br>η_max: <b>${(st.etaMax*1e4).toFixed(1)}e-4</b><br>η_min: <b>${(etaMin*1e4).toFixed(2)}e-4</b><br>total: <b>${(T/1000).toFixed(0)}k</b> steps`;
+    }
+
+    bind('warmup',v=>{st.warmup=v;document.getElementById('warmupv').textContent=v;drawLR(1);});
+    bind('etaMax',v=>{st.etaMax=v*1e-4;document.getElementById('etaMaxv').textContent=(v).toFixed(1)+'e-4';drawLR(1);});
+    document.getElementById('lrPlay').onclick=()=>{
+      const t0=performance.now();
+      (function step(t){let p=Math.min(1,(t-t0)/1500);p=1-Math.pow(1-p,3);drawLR(p);if(p<1)requestAnimationFrame(step);})(t0);
+    };
+    document.getElementById('lrReset').onclick=()=>{setVal('warmup',2000);setVal('etaMax',3);};
+    setVal('warmup',2000);setVal('etaMax',3);
+    window.addEventListener('resize',()=>drawLR(1));
+  });
+}
+
+/* ============ §6 Benchmarks ============ */
+function buildBench(root){
+  /* Common Sense Reasoning */
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqno">Table 3</div><div class="eqname">common sense reasoning · 0-shot</div>
+    <div class="does"><b>The headline.</b> LLaMA-13B (13 billion parameters) <span class="hl">outperforms GPT-3 (175 billion)</span> on the majority of common-sense reasoning benchmarks — with 13× fewer parameters. Green cells mark where LLaMA-13B wins.</div>`;
+  const t=el('table','sum');
+  t.innerHTML=`<thead><tr><th>Benchmark</th><th>GPT-3 175B</th><th>LLaMA-13B</th><th>LLaMA-65B</th></tr></thead><tbody>
+    <tr><td>BoolQ</td><td class="mono">60.5</td><td class="mono win">78.1</td><td class="mono">85.3</td></tr>
+    <tr><td>PIQA</td><td class="mono">81.0</td><td class="mono win">80.1</td><td class="mono">82.8</td></tr>
+    <tr><td>HellaSwag</td><td class="mono">78.9</td><td class="mono win">80.9</td><td class="mono">86.0</td></tr>
+    <tr><td>WinoGrande</td><td class="mono">70.2</td><td class="mono win">73.0</td><td class="mono">77.0</td></tr>
+    <tr><td>ARC-e</td><td class="mono">68.8</td><td class="mono win">74.8</td><td class="mono">78.9</td></tr>
+    <tr><td>ARC-c</td><td class="mono">51.4</td><td class="mono win">52.7</td><td class="mono">56.0</td></tr>
+    <tr><td>OBQA</td><td class="mono">57.6</td><td class="mono win">57.0</td><td class="mono">60.2</td></tr>
+  </tbody>`;
+  c.appendChild(t);
+  c.appendChild(el('div','note','<b>Read it:</b> PIQA and OBQA are very close (LLaMA-13B is within 1pt) — on the other five benchmarks, the 13B model clearly wins against a model with 13× more parameters. LLaMA-65B dominates across the board.'));
+  root.appendChild(c);
+
+  /* MMLU + other highlights */
+  const c2=el('div','card');
+  c2.innerHTML=`<div class="eqno">Tables 9, 6, 7</div><div class="eqname">MMLU, TriviaQA, HumanEval</div>
+    <div class="does"><b>Wider benchmarks.</b> On massive multi-task (MMLU), LLaMA-65B trails Chinchilla and PaLM — but on question answering (TriviaQA) it <span class="hl">beats Chinchilla by 13 points</span>. On code generation (HumanEval), LLaMA-65B reaches 23.7% pass@1 despite not being fine-tuned for code.</div>`;
+  const t2=el('table','sum');
+  t2.innerHTML=`<thead><tr><th>Benchmark</th><th>LLaMA-65B</th><th>Chinchilla-70B</th><th>PaLM-540B</th></tr></thead><tbody>
+    <tr><td>MMLU (5-shot)</td><td class="mono">63.4</td><td class="mono">67.5</td><td class="mono">69.3</td></tr>
+    <tr><td>TriviaQA (0-shot)</td><td class="mono win">68.2</td><td class="mono">55.4</td><td class="mono">81.4</td></tr>
+    <tr><td>HumanEval pass@1</td><td class="mono">23.7</td><td class="mono">—</td><td class="mono">26.2</td></tr>
+    <tr><td>HumanEval pass@100</td><td class="mono">79.3</td><td class="mono">—</td><td class="mono">—</td></tr>
+  </tbody>`;
+  c2.appendChild(t2);
+  root.appendChild(c2);
+}
+
+/* ============ §7 Reference ============ */
+function buildRef(root){
+  /* Comparison table */
+  const c=el('div','card');
+  c.innerHTML=`<div class="eqname">model comparison at a glance</div>`;
+  const t=el('table','sum');
+  t.innerHTML=`<thead><tr><th></th><th>GPT-3</th><th>Chinchilla</th><th>PaLM</th><th>LLaMA</th></tr></thead><tbody>
+    <tr><td>Params</td><td class="mono">175B</td><td class="mono">70B</td><td class="mono">540B</td><td class="mono">7B–65B</td></tr>
+    <tr><td>Training tokens</td><td class="mono">300B</td><td class="mono">1.4T</td><td class="mono">780B</td><td class="mono">1.0–1.4T</td></tr>
+    <tr><td>Tokens/param</td><td class="mono">1.7</td><td class="mono">20</td><td class="mono">1.4</td><td class="mono" style="color:var(--signal)">~150–21</td></tr>
+    <tr><td>Data</td><td>Proprietary</td><td>Proprietary</td><td>Proprietary</td><td style="color:var(--good);font-weight:600">Public only</td></tr>
+    <tr><td>Architecture</td><td>GPT</td><td>Chinchilla</td><td>PaLM</td><td style="color:var(--signal)">+RMSNorm +SwiGLU +RoPE</td></tr>
+    <tr><td>Open weights</td><td>No</td><td>No</td><td>No</td><td style="color:var(--good);font-weight:600">Yes (research)</td></tr>
+  </tbody>`;
+  c.appendChild(t);
+  root.appendChild(c);
+
+  /* Findings */
+  const c2=el('div','card');
+  c2.innerHTML=`<div class="eqname">five headline findings</div>`;
+  const fw=el('div','findings');
+  [['Inference-optimal, not train-optimal','Train small on more data; LLaMA-13B beats GPT-3 (175B) while being 10× cheaper to serve.'],
+   ['Public data only','No proprietary datasets. CommonCrawl + C4 + GitHub + Wikipedia + Books + ArXiv + StackExchange.'],
+   ['Three surgical upgrades','RMSNorm (stability), SwiGLU (expressiveness), RoPE (generalization) — each borrowed from a proven paper.'],
+   ['The 65B frontier','Competitive with Chinchilla-70B and PaLM-540B on most benchmarks, at a fraction of the serving cost.'],
+   ['Opened the floodgates','LLaMA\'s public weights spawned Alpaca, Vicuna, and the entire open-model ecosystem.']
+  ].forEach(([h,b])=>fw.appendChild(el('div','finding',`<div class="h">${h}</div><div class="b">${b}</div>`)));
+  c2.appendChild(fw);
+  root.appendChild(c2);
+
+  /* Run it yourself */
+  const c3=el('div','card');
+  c3.innerHTML=`<div class="eqname">run it yourself</div>
+    <div class="does">The companion notebook <b>LLaMA_explained.ipynb</b> walks through the architecture, the data pipeline, and key benchmark reproductions step by step. It covers the RMSNorm, SwiGLU, and RoPE implementations with annotated code, and compares the LLaMA approach to Chinchilla-optimal training on a toy scale. For the RoPE deep-dive, see the <a href="../roformer/" style="color:var(--signal);text-decoration:none;border-bottom:1px solid var(--signal)">RoFormer, Animated</a> companion page.</div>`;
+  root.appendChild(c3);
+}
+
+/* ============ boot ============ */
+function boot(){
+  const nav=document.getElementById('nav'),host=document.getElementById('sections');
+  SECTIONS.forEach(S=>{
+    const a=el('a');a.href='#'+S.id;a.innerHTML=`<span class="num">${S.num}</span><span>${S.kicker}</span>`;nav.appendChild(a);
+    const sec=el('section','reveal');sec.id=S.id;
+    sec.innerHTML=`<div class="sec-head"><span class="kicker">${S.kicker}</span></div>
+      <div class="sec-head"><h2>${S.title}</h2></div><p class="sec-sub">${S.sub}</p>`;
+    const holder=el('div');S.build(holder);sec.appendChild(holder);host.appendChild(sec);
+  });
+  const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in');});},{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(x=>io.observe(x));
+  const navlinks=[...nav.querySelectorAll('a')];
+  const io2=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+    navlinks.forEach(l=>l.classList.toggle('on',l.getAttribute('href')==='#'+e.target.id));
+    e.target.querySelectorAll('.card').forEach(cd=>cd.classList.add('lit'));}});},{threshold:.3});
+  document.querySelectorAll('section').forEach(s=>io2.observe(s));
+}
+window.addEventListener('DOMContentLoaded',()=>{ if(window.katex) boot(); else window.addEventListener('load',boot); });
+</script>
+</body>
+</html>
