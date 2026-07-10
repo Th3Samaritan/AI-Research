@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verification Over Memorization: Continuous Learning in AI - Research Blog</title>
+<meta name="description" content="A research exploration proving that AI can master physics via continuous learning, RAG, and RL rather than static dataset memorization.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-color: #ffffff;
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --border-color: #e5e7eb;
+    --accent-color: #2563eb;
+    --bg-code: #f3f4f6;
+    --bg-highlight: #f8fafc;
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-serif: 'Lora', Georgia, serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    font-family: var(--font-serif);
+    font-size: 18px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  /* Layout */
+  .container {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 60px 24px 100px;
+  }
+
+  /* Header */
+  .site-header {
+    margin-bottom: 60px;
+    font-family: var(--font-sans);
+  }
+  
+  .nav-link {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 40px;
+  }
+  .nav-link:hover { color: var(--text-primary); text-decoration: none; }
+  
+  .article-meta {
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-family: var(--font-sans);
+    font-size: clamp(36px, 5vw, 48px);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin: 0 0 24px;
+    color: #0f172a;
+  }
+
+  .subtitle {
+    font-family: var(--font-sans);
+    font-size: clamp(18px, 2.5vw, 22px);
+    color: var(--text-secondary);
+    font-weight: 400;
+    line-height: 1.5;
+    margin: 0 0 40px;
+  }
+
+  .author-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    padding: 20px 0;
+    margin-bottom: 60px;
+    font-family: var(--font-sans);
+  }
+  
+  .author-name {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-primary);
+  }
+  
+  .publish-date {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  /* Typography */
+  h2, h3, h4 {
+    font-family: var(--font-sans);
+    color: #0f172a;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-top: 56px;
+    margin-bottom: 24px;
+  }
+
+  h2 { font-size: 28px; letter-spacing: -0.01em; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; }
+  h3 { font-size: 22px; }
+  p { margin-top: 0; margin-bottom: 24px; }
+  
+  ul, ol {
+    margin-top: 0;
+    margin-bottom: 28px;
+    padding-left: 24px;
+  }
+  
+  li {
+    margin-bottom: 12px;
+  }
+
+  strong {
+    font-weight: 600;
+    color: #111827;
+  }
+
+  /* Images & Figures */
+  figure {
+    margin: 48px -40px;
+  }
+  
+  @media (max-width: 840px) {
+    figure { margin: 40px 0; }
+  }
+
+  figure img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background-color: #fff;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  }
+
+  figcaption {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-top: 16px;
+    line-height: 1.5;
+  }
+
+  /* Callouts & Highlights */
+  .callout {
+    background-color: var(--bg-highlight);
+    border-left: 4px solid var(--accent-color);
+    padding: 24px 32px;
+    margin: 40px 0;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .callout p:last-child {
+    margin-bottom: 0;
+  }
+  
+  .callout h4 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 16px;
+    color: var(--accent-color);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  
+  .warning {
+    border-left-color: #f59e0b;
+    background-color: #fffbeb;
+  }
+  .warning h4 {
+    color: #b45309;
+  }
+
+  /* File References */
+  .file-reference {
+    display: flex;
+    align-items: center;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: #475569;
+    margin: 24px 0;
+  }
+  
+  .file-reference svg {
+    width: 18px;
+    height: 18px;
+    margin-right: 12px;
+    color: #64748b;
+  }
+  
+  .file-reference code {
+    background-color: #e2e8f0;
+    color: #0f172a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin: 0 4px;
+    font-size: 13px;
+  }
+
+  /* Code */
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background-color: var(--bg-code);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    color: #db2777;
+  }
+
+  /* Citations */
+  .citations {
+    margin-top: 60px;
+    padding-top: 40px;
+    border-top: 1px solid var(--border-color);
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+  
+  .citations h3 {
+    margin-top: 0;
+    font-size: 18px;
+    color: var(--text-primary);
+  }
+  
+  .citation-item {
+    margin-bottom: 12px;
+    display: flex;
+  }
+  
+  .citation-number {
+    font-weight: 600;
+    margin-right: 8px;
+    min-width: 24px;
+  }
+
+  /* Footer */
+  .site-footer {
+    font-family: var(--font-sans);
+    margin-top: 40px;
+    padding-top: 40px;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header class="site-header">
+      <a href="../../index.html" class="nav-link">← Back to Research Portfolio</a>
+      <div class="article-meta">AI4Science Research Track</div>
+      <h1>Verification Over Memorization</h1>
+      <p class="subtitle">Proving that AI shouldn't just memorize massive datasets. Instead, it should be trained on small datasets with the ability to "think" and learn continuously.</p>
+      
+      <div class="author-info">
+        <div>
+          <div class="author-name">Abdulsamad Teniola Muyideen</div>
+          <div class="publish-date">July 2026 · AI Research Engineering</div>
+        </div>
+      </div>
+    </header>
+
+    <article>
+      <p>Imagine trying to learn math by reading a textbook containing a million solved equations and trying to memorize all of them. If you see "2 + 2", you remember the answer is "4". But what happens when you are asked "2,000,000 + 2,000,000"? If you only memorized patterns, you would fail.</p>
+      
+      <p>This is exactly how traditional "Big Data" Artificial Intelligence works today. It relies heavily on memorization. My research aims to prove a paradigm shift: Instead of feeding AI millions of examples (Training-Time Scaling), we should give AI a smaller set of rules, the ability to search for facts, and the structural capability to "think" and self-correct (Inference-Time Scaling).</p>
+
+      <h2>Part 1: The Initial Experiments (And Their Hidden Biases)</h2>
+      <p>To investigate this hypothesis, my first set of experiments focused on basic Physics (Kinematics). Physics is great for AI because it has absolute rules—an answer is either mathematically right or wrong. I pitted two AI models against each other:</p>
+      <ul>
+        <li><strong>Model A (The Memorizer):</strong> A standard neural network trained on 10,000 solved physics examples. It tried to learn the underlying math just by staring at the numbers.</li>
+        <li><strong>Model B (The Thinker):</strong> Started with zero solved problems. Given a problem, it looked up one of 6 physics formulas, chose which one to use, and sent the numbers to a perfect Python calculator to solve it. It learned through trial and error (Reinforcement Learning).</li>
+      </ul>
+
+      <figure>
+        <img src="../results/01_base_paradigm_proof.png" alt="Base AI Paradigm Proof Graph">
+        <figcaption>Figure 1: Memorization vs. Autonomous Reasoning. The thinker quickly reaches 100% accuracy.</figcaption>
+      </figure>
+
+      <div class="file-reference">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        <span><strong>Source Code:</strong> <code>experiments/01_base_paradigm_proof.py</code>, <code>experiments/02_domain_shock_proof.py</code>, and <code>experiments/03_unified_physics_shock.py</code> contain the Base Proof and "Domain Shock" testing logic.</span>
+      </div>
+
+      <h3>Domain Shock: Hitting the Models with Massive Numbers</h3>
+      <p>To test if they truly understood physics, I introduced a "Domain Shock". I trained both models using small numbers (like speed = 1 to 5). Then, during the test, I suddenly asked them to solve problems with massive numbers (speed = 20 to 50).</p>
+      
+      <figure>
+        <img src="../results/02_domain_shock_proof.png" alt="Domain Shock Analysis">
+        <figcaption>Figure 2: When hit with massive numbers, Model A collapses completely, while Model B survives.</figcaption>
+      </figure>
+
+      <h3>Multi-Hop Logic (Compositional Generalization)</h3>
+      <p>I also tested their ability to chain thoughts together. Imagine being asked to find the Force of an object, but you are only given its Speed, Time, and Mass. You have to first find Acceleration, and <em>then</em> find Force. I tested how many examples they needed to master this multi-step logic.</p>
+
+      <figure>
+        <img src="../results/04_compositional_generalization.png" alt="Compositional Generalization Graph">
+        <figcaption>Figure 3: Testing how quickly the models can learn to chain logic together.</figcaption>
+      </figure>
+
+      <div class="file-reference">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        <span><strong>Source Code:</strong> <code>experiments/04_compositional_generalization.py</code> implements the multi-step math engine for Zero-Shot and Few-Shot evaluation.</span>
+      </div>
+
+      <div class="callout warning">
+        <h4>Objective Scientific Critique: The Experiment was Rigged</h4>
+        <p>While the graphs look incredible, stepping back and reviewing this with a cold, scientific lens reveals a major flaw. The experiment was heavily biased against the Memorizer (Model A).</p>
+        <ul>
+          <li><strong>The Calculator Advantage:</strong> Model A was forced to guess exact math (like square roots) inside its brain. Neural networks are terrible at math. Model B, however, didn't do any math—it just picked a formula and let a perfect, hard-coded Python calculator do the work. It wasn't a fair fight.</li>
+          <li><strong>The Extrapolation Trap:</strong> Standard neural networks are "interpolators." They draw lines between data points they've seen. When we gave Model A massive numbers it had never seen, it collapsed to 0% because it couldn't guess outside its bounding box. Model B survived simply because picking 1 of 6 formulas doesn't depend on how big the numbers are.</li>
+        </ul>
+        <p>We didn't prove that reasoning is always better. We just proved that an AI equipped with a perfect calculator will beat an AI forced to guess math.</p>
+      </div>
+
+      <h2>Part 2: The Unbiased Pivot — Fuzzy Data and Concept Drift</h2>
+      <p>To build a bulletproof, mathematically rigorous proof, I completely refactored the experiment. I deleted the perfect Python calculator. From this point on, <strong>both models had to rely entirely on their own imperfect neural "brains" to process messy, noisy data.</strong></p>
+      
+      <p>I tested them against the ultimate enemy of artificial intelligence: <strong>Catastrophic Forgetting in a Non-Stationary Environment.</strong></p>
+
+      <h3>The Rules of the Universe Change (Concept Drift)</h3>
+      <p>I built an environment that generated 5 noisy sensor readings. The AI's goal was to predict a chemical yield. However, at Epoch 200, a "Concept Drift" occurred. <strong>The mathematical rules of the universe suddenly changed.</strong> Phase 1 required multiplication and sine waves. Phase 2 required squaring numbers and cosine waves.</p>
+      
+      <p>To survive, the AI would have to pay attention to a subtle "Hidden Context Signature" (a specific sensor reading) that indicated whether it was currently in Phase 1 or Phase 2.</p>
+
+      <h3>The Unbiased Architectures</h3>
+      <ul>
+        <li><strong>Model A (The Memorizer):</strong> Tries to memorize the direct path from the noisy sensors to the final yield.</li>
+        <li><strong>Model B (The Continuous Thinker):</strong> A neuro-symbolic agent. It has a short-term memory (GRU) and a library of theories (RAG). Before answering, it "thinks". It checks the hidden context signature, decides whether to pull Theory 1 or Theory 2 from its library, absorbs the knowledge, and then makes a prediction.</li>
+      </ul>
+
+      <div class="file-reference">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        <span><strong>Source Code:</strong> <code>experiments/05_unbiased_concept_drift.py</code> houses the unbiased fuzzy environment, the concept drift, and the core <code>RecurrentRLReasoner</code> architecture.</span>
+      </div>
+
+      <h2>Experiment 2: Catastrophic Forgetting</h2>
+      <p>As both models trained, the concept drift hit at Epoch 200. The rules of the universe flipped.</p>
+
+      <figure>
+        <img src="../results/05_unbiased_concept_drift.png" alt="Catastrophic Forgetting">
+        <figcaption>Figure 4: When the rules change, Model A (Red) completely forgets Mode 0. Model B (Blue/Green) struggles but attempts to remember both.</figcaption>
+      </figure>
+
+      <p><strong>The Result:</strong> Model A suffered <em>Catastrophic Forgetting</em>. Because it uses one giant brain, writing the new math for Phase 2 physically overwrote the old math for Phase 1. It dropped to 0% accuracy on the old task.</p>
+      
+      <p>To find a solution that allowed continuous learning without forgetting, I coded and evaluated four state-of-the-art architectures from scratch.</p>
+
+      <h2>Experiments 3–6: The Failures, The Parity, and The Ultimate Solution</h2>
+
+      <h3>1. Elastic Weight Consolidation (EWC)</h3>
+      <p><em>Analogy: Pinning down your most important memories.</em> EWC calculates exactly which neurons in the AI's brain were most important for Phase 1, and places an "elastic band" on them, penalizing the AI if it tries to change them while learning Phase 2.</p>
+      <p><strong>The Post-Mortem:</strong> EWC failed to hold the memories long-term. While it slowed down the forgetting, the penalty forces a mathematical compromise in a single neural network. Neither task is mastered perfectly, and the old weights drag down the new learning.</p>
+      <figure>
+        <img src="../results/06_elastic_weight_consolidation.png" alt="Elastic Weight Consolidation Graph">
+        <figcaption>Figure 5: EWC successfully slows down the degradation, but fails to prevent it completely.</figcaption>
+      </figure>
+      <div class="file-reference">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        <span><strong>Source Code:</strong> <code>experiments/06_elastic_weight_consolidation.py</code> (Computes the Fisher Information Matrix to protect weights).</span>
+      </div>
+
+      <h3>2. Episodic Experience Replay (ER)</h3>
+      <p><em>Analogy: Reviewing flashcards before learning a new subject.</em> The AI maintains a small buffer of past experiences and mixes them into its new training batches.</p>
+      <div class="callout warning">
+        <h4>The Scientific Post-Mortem: A Humbling Moment</h4>
+        <p>I hypothesized that Episodic Experience Replay combined with an RL+RAG routing agent would completely solve catastrophic forgetting and vastly outperform the static MLP. <strong>The data proved me wrong.</strong></p>
+        <p>Looking closely at the graph, two glaring realities emerge that dismantle the theoretical hype around RAG and RL in continuous learning:</p>
+        <ol>
+          <li><strong>The Initial Collapse Still Happened:</strong> Right at Epoch 200, both models plummeted from ~90% straight down to ~20%. ER did not prevent the shock; it merely allowed both models to rapidly relearn Mode 0 over the next 50 epochs.</li>
+          <li><strong>Model B Achieved No Meaningful Advantage:</strong> Look at the recovery phase (Epochs 250 to 400). Model B (the RL+RAG Reasoner) tracks almost perfectly with Model A (the brute-force MLP). It offered absolutely no advantage over basic pattern matching.</li>
+        </ol>
+        <p><strong>Why did the RL+RAG Agent Fail?</strong> Because the RL policy deciding which RAG chunk to use is also a neural network. When the concept drift hit, the RL agent didn't magically know the universe had changed. It experienced the same gradient shock. Its routing policy was scrambled. It guessed randomly, sent the wrong data to the wrong memory banks, and corrupted its own predictor head. By the time it relearned its routing policy, it had suffered the exact same Capacity Interference as the static MLP.</p>
+      </div>
+
+      <figure>
+        <img src="../results/07_experience_replay.png" alt="Experience Replay Graph">
+        <figcaption>Figure 6: Replay buffer allows recovery, but the advanced RL+RAG model performs no better than the static MLP.</figcaption>
+      </figure>
+      <div class="file-reference">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        <span><strong>Source Code:</strong> <code>experiments/07_experience_replay.py</code> (Implementation of memory replay buffers).</span>
+      </div>
+
+      <h3>3. Orthogonal Gradient Descent (OGD)</h3>
+      <p><em>Analogy: Walking sideways so you don't step on your old footprints.</em> OGD forces the network to update its weights in a mathematical direction that is exactly 90-degrees perpendicular to the old tasks.</p>
+      <p><strong>The Post-Mortem:</strong> While mathematically beautiful for protecting historic gradients, OGD heavily restricts the network's capacity. By forcing updates into shrinking orthogonal dimensions, it limits how well the network can actually learn the new task.</p>
+      <figure>
+        <img src="../results/08_orthogonal_gradient_descent.png" alt="Orthogonal Gradient Descent Graph">
+        <figcaption>Figure 7: Orthogonal projection protects old knowledge, but limits new learning.</figcaption>
+      </figure>
+      <div class="file-reference">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        <span><strong>Source Code:</strong> <code>experiments/08_orthogonal_gradient_descent.py</code> (Uses Singular Value Decomposition (SVD) for matrix projection).</span>
+      </div>
+
+      <h3>4. Progressive Neural Networks (PNN)</h3>
+      <p><em>Analogy: Building a new wing of a library while locking the doors to the old wing.</em> PNNs utilize dynamic structural expansion. When Phase 2 begins, the AI physically freezes its old brain cells and sprouts an entirely new column of neurons to learn the new task.</p>
+      <p><strong>The Post-Mortem:</strong> PNN achieves true zero-interference continuous learning. Because it physically expands, the optimization of a new universe mathematically cannot touch the parameters of the old one.</p>
+      <div class="callout warning">
+        <h4>The Downside: Infinite Structural Bloat</h4>
+        <p>While PNN is the only architecture in this test that perfectly solved catastrophic forgetting, it comes with a massive, unsustainable hardware cost. Because it creates a new frozen column of neurons for <em>every</em> new concept, the model's memory (its physical neural structure) must expand infinitely. If the AI learns 10,000 new concepts, it needs 10,000 new columns. It scales perfectly in mathematics, but fails entirely in practical engineering because you will eventually run out of RAM and GPU compute.</p>
+      </div>
+      <figure>
+        <img src="../results/09_progressive_neural_networks.png" alt="Progressive Neural Networks Graph">
+        <figcaption>Figure 8: PNN locks in old networks while providing fresh capacity for new tasks, resulting in perfect isolation.</figcaption>
+      </figure>
+      <div class="file-reference">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+        <span><strong>Source Code:</strong> <code>experiments/09_progressive_neural_networks.py</code> (Instantiates new <code>PNNColumn</code> classes laterally).</span>
+      </div>
+
+      <h2>The Ultimate Conclusion for Continuous Learning Research</h2>
+      <p>This series of experiments—from the initial biased kinematics test to the fully unbiased concept drift, the failures of EWC, and the parity of Experience Replay—provides a rigorous empirical methodology for continuous learning.</p>
+      
+      <p>It empirically proves a profound architectural truth: <strong>Adding RAG and RL to a system does not natively solve Catastrophic Forgetting.</strong></p>
+
+      <p>If the routing mechanism (the RL policy) and the decoding mechanism (the prediction head) share a fixed parameter space, they will suffer from capacity interference and gradient shock exactly like a standard neural network. To achieve true zero-interference continuous learning, an AI cannot just learn software routing; it requires <strong>Dynamic Structural Expansion</strong> (like Progressive Neural Networks) so that the optimization of a new universe mathematically cannot touch the parameters of the old one.</p>
+      
+      <p>This cuts through the current industry hype surrounding RAG and RL, relying strictly on mathematical and empirical realities to define the true frontier of inference-time scaling and continuous adaptation.</p>
+
+      <div class="citations">
+        <h3>References</h3>
+        <div class="citation-item">
+          <div class="citation-number">[1]</div>
+          <div>Google DeepMind. "Nested Learning: The Illusion of Deep Learning Architectures." <em>NeurIPS 2025</em>. Explores continuous learning optimizations through multi-level memory systems.</div>
+        </div>
+        <div class="citation-item">
+          <div class="citation-number">[2]</div>
+          <div>"Chain of Continuous Thought" (Coconut). Demonstrates how models can reason in continuous latent spaces to perform deep planning without discrete text bottlenecks.</div>
+        </div>
+        <div class="citation-item">
+          <div class="citation-number">[3]</div>
+          <div>"Continuous Thought Machines" (CTM). <em>NeurIPS 2025</em>. Reintroduces neural timing, allowing networks to pause and adjust compute dynamically before answering.</div>
+        </div>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>Experimental Research Code & Architecture</p>
+      <p><a href="https://github.com/Th3Samaritan/AI-Research" target="_blank" rel="noopener">View Repository</a></p>
+    </footer>
+  </div>
+</body>
+</html>
