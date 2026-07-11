@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI4Science Mathematics — Foundation for Scientific ML</title>
+<meta name="description" content="A complete, code-heavy reference covering the full mathematical foundation stack for scientific machine learning — with working Python implementations.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#0A0D13">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Prism for code highlighting -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+
+<style>
+  :root{
+    --ink:#0A0D13;--chrome:#0F131D;--panel:#141A28;--panel-2:#19202F;
+    --line:#262E43;--line-soft:#1C2333;--txt:#E8ECF5;--muted:#8B95AC;--muted-2:#5C6680;
+    --signal:#F5A524;--signal-2:#FFC85C;--signal-dim:#F5A52426;
+    --cool:#5B8DEF;--good:#5BE3A6;--bad:#EF5B7B;--violet:#B98CFF;
+    --cellbg:#111726;--celledge:#283251;--radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1100px 560px at 82% -8%,#17223c 0%,transparent 55%),
+      radial-gradient(900px 480px at -5% 108%,#1a1430 0%,transparent 52%),
+      var(--ink);
+    color:var(--txt);font-family:"Space Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+  }
+  .app{display:grid;grid-template-columns:300px 1fr;min-height:100vh}
+  @media(max-width:960px){.app{grid-template-columns:1fr}}
+  
+  /* Sidebar */
+  aside{
+    background:linear-gradient(180deg,var(--chrome),var(--ink));
+    border-right:1px solid var(--line);
+    padding:24px 20px;
+    position:sticky;top:0;height:100vh;overflow-y:auto;
+    display:flex;flex-direction:column;gap:18px;
+  }
+  @media(max-width:960px){aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--signal)}
+  .title{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:4px 0 0}
+  .title .thin{color:var(--muted);font-weight:500}
+  
+  nav{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  nav a{
+    display:flex;gap:10px;align-items:baseline;font-size:13.5px;
+    color:var(--muted);text-decoration:none;
+    padding:7px 10px;border-radius:9px;border:1px solid transparent;transition:.15s;
+  }
+  nav a .num{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--muted-2);min-width:26px}
+  nav a:hover{color:var(--txt);background:var(--panel)}
+  nav a.on{color:var(--signal);background:var(--signal-dim);border-color:#F5A52455}
+  nav a.on .num{color:var(--signal)}
+  
+  /* Main Content */
+  main{padding:38px clamp(20px,4vw,64px) 120px;max-width:1100px}
+  .hero{margin-bottom:40px}
+  .hero h1{font-size:clamp(30px,5vw,50px);line-height:1.02;letter-spacing:-.03em;margin:6px 0 12px;font-weight:700}
+  .hero h1 .grad{background:linear-gradient(92deg,var(--signal),var(--signal-2) 45%,var(--cool));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:17px;line-height:1.65;color:var(--muted);max-width:70ch}
+  .lede b{color:var(--txt);font-weight:600}
+  
+  section{margin-top:60px;scroll-margin-top:40px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:12px}
+  .sec-head .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--signal)}
+  .sec-head h2{font-size:25px;letter-spacing:-.02em;margin:0;font-weight:700}
+  .sec-sub{color:var(--muted);font-size:15px;line-height:1.6;max-width:74ch;margin:4px 0 24px}
+  
+  .card{
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1px solid var(--line);
+    border-radius:var(--radius);padding:24px;margin-bottom:24px;
+    position:relative;overflow:hidden;
+  }
+  
+  /* Code blocks */
+  pre[class*="language-"] {
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 13px;
+    margin: 16px 0;
+    max-height: 400px;
+    overflow: auto;
+  }
+  
+  /* Typography / Equations */
+  .eq{padding:12px 6px 14px;font-size:18px;overflow-x:auto;overflow-y:hidden; color: var(--txt);}
+  .katex{color:var(--txt)}
+  .inline-eq{color:var(--signal-2)}
+  
+  /* Print Styles */
+  @media print {
+    body { background: #fff; color: #000; }
+    aside, .no-print { display: none !important; }
+    main { padding: 0; max-width: 100%; margin: 0; }
+    .card { background: #fff; border: 1px solid #ccc; break-inside: avoid; page-break-inside: avoid; }
+    pre[class*="language-"] { background: #f5f5f5; border: 1px solid #ddd; max-height: none; }
+    section { page-break-before: always; }
+    h1, h2, h3, h4, h5, h6 { color: #000; break-after: avoid; }
+    .katex { color: #000; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <div class="eyebrow">AI4Science</div>
+      <div class="title">Mathematics<br><span class="thin">Foundations</span></div>
+      <div class="byline" style="margin-top: 10px;">
+        A complete, code-heavy reference<br>
+        for scientific machine learning.<br>
+      </div>
+    </div>
+    <nav id="nav">
+      <!-- Nav populated by JS -->
+    </nav>
+    <div style="margin-top:auto; padding-top:20px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted-2);">
+      <button onclick="window.print()" style="background: var(--panel); border: 1px solid var(--line); color: var(--txt); padding: 8px 12px; border-radius: 6px; cursor: pointer; width: 100%; font-family: inherit;">🖨️ Export to PDF</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="hero">
+      <h1>Mathematics for <br><span class="grad">AI for Science</span></h1>
+      <p class="lede">
+        <b>You cannot judge whether a neural network solved a PDE unless you can solve that PDE yourself the classical way.</b> 
+        This is a complete, interactive reference covering the mathematical foundations for scientific computing and machine learning.
+        It contains theory, rigorously derived, paired with <b>working Python implementations</b>.
+      </p>
+    </div>
+    
+    <div id="content">
+      <!-- Chapter 1 -->
+      <section id="ch1">
+        <div class="sec-head">
+          <span class="kicker">Chapter 1</span>
+          <h2>Linear Algebra for Scientific Computing</h2>
+        </div>
+        <p class="sec-sub">Vector spaces, bases, linear maps, eigendecomposition, SVD, positive definiteness, conditioning, and sparse matrices.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Matrix Factorizations from Scratch</div>
+           <p style="color: var(--muted); font-size: 14px; margin-bottom: 16px;">
+             Linear systems $A\mathbf{x} = \mathbf{b}$ are the foundation of numerical PDEs. Here we implement LU, Cholesky, and QR factorizations.
+           </p>
+           <pre><code class="language-python" id="code-ch1-matrix-ops"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Eigensolvers & SVD</div>
+           <p style="color: var(--muted); font-size: 14px; margin-bottom: 16px;">
+             Eigenvalue problems $A\mathbf{v} = \lambda\mathbf{v}$ and SVD $A = U\Sigma V^T$.
+           </p>
+           <pre><code class="language-python" id="code-ch1-eigensolvers"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Sparse Solvers</div>
+           <p style="color: var(--muted); font-size: 14px; margin-bottom: 16px;">
+             Sparse Laplacian assembly and conjugate gradient solver, avoiding $\mathcal{O}(N^3)$ dense inversion.
+           </p>
+           <pre><code class="language-python" id="code-ch1-sparse"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 2 -->
+      <section id="ch2">
+        <div class="sec-head">
+          <span class="kicker">Chapter 2</span>
+          <h2>Calculus — Multivariable & Vector Calculus</h2>
+        </div>
+        <p class="sec-sub">Partial derivatives, gradient/divergence/curl/Laplacian, chain rule for compositions, Taylor series, and integral theorems.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Automatic Differentiation</div>
+           <p style="color: var(--muted); font-size: 14px; margin-bottom: 16px;">
+             A mini forward-mode and reverse-mode automatic differentiation engine demonstrating the chain rule computationally.
+           </p>
+           <pre><code class="language-python" id="code-ch2-autodiff"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Vector Calculus on Grids</div>
+           <p style="color: var(--muted); font-size: 14px; margin-bottom: 16px;">
+             Numerical gradient $\nabla f$, divergence $\nabla \cdot \mathbf{F}$, curl, and Laplacian $\nabla^2 u$.
+           </p>
+           <pre><code class="language-python" id="code-ch2-vector"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 3 -->
+      <section id="ch3">
+        <div class="sec-head">
+          <span class="kicker">Chapter 3</span>
+          <h2>Partial Differential Equations</h2>
+        </div>
+        <p class="sec-sub">Classification, well-posedness, boundary conditions, and the big four PDE families (heat, wave, advection, Poisson).</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Heat Equation</div>
+           <p style="color: var(--muted); font-size: 14px; margin-bottom: 16px;">
+             Explicit and implicit (Crank-Nicolson) schemes for $\frac{\partial u}{\partial t} = \alpha \nabla^2 u$, including CFL stability analysis.
+           </p>
+           <pre><code class="language-python" id="code-ch3-heat"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Wave Equation</div>
+           <p style="color: var(--muted); font-size: 14px; margin-bottom: 16px;">
+             1D string vibration and reflection at boundaries for $\frac{\partial^2 u}{\partial t^2} = c^2 \nabla^2 u$.
+           </p>
+           <pre><code class="language-python" id="code-ch3-wave"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Poisson Solver</div>
+           <p style="color: var(--muted); font-size: 14px; margin-bottom: 16px;">
+             Iterative solvers (Jacobi, Gauss-Seidel, SOR) for $\nabla^2 u = f$.
+           </p>
+           <pre><code class="language-python" id="code-ch3-poisson"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 4 -->
+      <section id="ch4">
+        <div class="sec-head">
+          <span class="kicker">Chapter 4</span>
+          <h2>Numerical Methods</h2>
+        </div>
+        <p class="sec-sub">Finite differences, finite elements, time integration, spectral methods, and error analysis.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Finite Differences</div>
+           <pre><code class="language-python" id="code-ch4-fd"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Finite Element Method (1D)</div>
+           <pre><code class="language-python" id="code-ch4-fem"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Spectral Methods</div>
+           <pre><code class="language-python" id="code-ch4-spectral"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 5 -->
+      <section id="ch5">
+        <div class="sec-head">
+          <span class="kicker">Chapter 5</span>
+          <h2>Scientific Machine Learning</h2>
+        </div>
+        <p class="sec-sub">Universal approximation, differentiable programming, and learning operators vs functions.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Neural Surrogate</div>
+           <pre><code class="language-python" id="code-ch5-surrogate"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Differentiable Physics</div>
+           <pre><code class="language-python" id="code-ch5-diffphys"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 6 -->
+      <section id="ch6">
+        <div class="sec-head">
+          <span class="kicker">Chapter 6</span>
+          <h2>Physics-Informed Neural Networks (PINNs)</h2>
+        </div>
+        <p class="sec-sub">Residual-based loss, collocation point sampling, and solving inverse problems.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">PINN: 1D Heat Equation</div>
+           <pre><code class="language-python" id="code-ch6-heat"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">PINN: Burgers' Equation</div>
+           <pre><code class="language-python" id="code-ch6-burgers"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Inverse PINN</div>
+           <pre><code class="language-python" id="code-ch6-inverse"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 7 -->
+      <section id="ch7">
+        <div class="sec-head">
+          <span class="kicker">Chapter 7</span>
+          <h2>Neural Operators</h2>
+        </div>
+        <p class="sec-sub">Operator learning (mapping function → function), DeepONet architecture, and Fourier Neural Operator.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">DeepONet</div>
+           <pre><code class="language-python" id="code-ch7-deeponet"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Fourier Neural Operator (1D)</div>
+           <pre><code class="language-python" id="code-ch7-fno"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Resolution Transfer</div>
+           <pre><code class="language-python" id="code-ch7-res"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 8 -->
+      <section id="ch8">
+        <div class="sec-head">
+          <span class="kicker">Chapter 8</span>
+          <h2>Scientific Computing with Python</h2>
+        </div>
+        <p class="sec-sub">NumPy internals, SciPy ecosystem, profiling, and vectorization.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">NumPy Internals</div>
+           <pre><code class="language-python" id="code-ch8-numpy"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">SciPy Toolkit</div>
+           <pre><code class="language-python" id="code-ch8-scipy"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Profiling & Vectorization</div>
+           <pre><code class="language-python" id="code-ch8-profile"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 9 -->
+      <section id="ch9">
+        <div class="sec-head">
+          <span class="kicker">Chapter 9</span>
+          <h2>GPU Programming</h2>
+        </div>
+        <p class="sec-sub">GPU architecture, CUDA programming model, CuPy, and Numba CUDA.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">CuPy PDE Solver</div>
+           <pre><code class="language-python" id="code-ch9-cupy"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Numba CUDA Stencil</div>
+           <pre><code class="language-python" id="code-ch9-numba"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">PyTorch Custom Kernel</div>
+           <pre><code class="language-python" id="code-ch9-torch"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+
+      <!-- Chapter 10 -->
+      <section id="ch10">
+        <div class="sec-head">
+          <span class="kicker">Chapter 10</span>
+          <h2>Application Domain — Heat Transfer</h2>
+        </div>
+        <p class="sec-sub">Fourier's law, phase-change (Stefan problem), and materials science applications.</p>
+        
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Composite Heat Conduction</div>
+           <pre><code class="language-python" id="code-ch10-composite"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Stefan Problem</div>
+           <pre><code class="language-python" id="code-ch10-stefan"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">PINN for Materials</div>
+           <pre><code class="language-python" id="code-ch10-pinn-mat"># Code will be loaded here</code></pre>
+        </div>
+
+        <div class="card">
+           <div style="font-weight: 600; margin-bottom: 8px;">Neural Operator for Materials</div>
+           <pre><code class="language-python" id="code-ch10-op-mat"># Code will be loaded here</code></pre>
+        </div>
+      </section>
+      
+    </div>
+  </main>
+</div>
+
+<script>
+  // Navigation generation
+  const chapters = [
+    { id: 'ch1', name: 'Linear Algebra', num: '01' },
+    { id: 'ch2', name: 'Calculus', num: '02' },
+    { id: 'ch3', name: 'Partial Differential Equations', num: '03' },
+    { id: 'ch4', name: 'Numerical Methods', num: '04' },
+    { id: 'ch5', name: 'Scientific Machine Learning', num: '05' },
+    { id: 'ch6', name: 'PINNs', num: '06' },
+    { id: 'ch7', name: 'Neural Operators', num: '07' },
+    { id: 'ch8', name: 'Scientific Python', num: '08' },
+    { id: 'ch9', name: 'GPU Programming', num: '09' },
+    { id: 'ch10', name: 'Applications', num: '10' }
+  ];
+  
+  const nav = document.getElementById('nav');
+  chapters.forEach(ch => {
+    const a = document.createElement('a');
+    a.href = '#' + ch.id;
+    a.innerHTML = `<span class="num">${ch.num}</span> <span>${ch.name}</span>`;
+    nav.appendChild(a);
+  });
+
+  // Fetch code files and populate helper
+  async function loadFile(path, elemId) {
+    try {
+      const res = await fetch(path);
+      if (res.ok) {
+        document.getElementById(elemId).textContent = await res.text();
+        Prism.highlightElement(document.getElementById(elemId));
+      }
+    } catch(e) {}
+  }
+
+  async function loadCode() {
+    // Chapter 1
+    await loadFile('code/ch01_linear_algebra/matrix_ops.py', 'code-ch1-matrix-ops');
+    await loadFile('code/ch01_linear_algebra/eigensolvers.py', 'code-ch1-eigensolvers');
+    await loadFile('code/ch01_linear_algebra/sparse_solver.py', 'code-ch1-sparse');
+    
+    // Chapter 2
+    await loadFile('code/ch02_calculus/autodiff_engine.py', 'code-ch2-autodiff');
+    await loadFile('code/ch02_calculus/vector_calculus.py', 'code-ch2-vector');
+    
+    // Chapter 3
+    await loadFile('code/ch03_pdes/heat_equation.py', 'code-ch3-heat');
+    await loadFile('code/ch03_pdes/wave_equation.py', 'code-ch3-wave');
+    await loadFile('code/ch03_pdes/poisson_solver.py', 'code-ch3-poisson');
+    
+    // Chapter 4
+    await loadFile('code/ch04_numerical_methods/finite_differences.py', 'code-ch4-fd');
+    await loadFile('code/ch04_numerical_methods/fem_1d.py', 'code-ch4-fem');
+    await loadFile('code/ch04_numerical_methods/spectral_methods.py', 'code-ch4-spectral');
+    
+    // Chapter 5
+    await loadFile('code/ch05_sciml/neural_surrogate.py', 'code-ch5-surrogate');
+    await loadFile('code/ch05_sciml/differentiable_physics.py', 'code-ch5-diffphys');
+    
+    // Chapter 6
+    await loadFile('code/ch06_pinns/pinn_heat.py', 'code-ch6-heat');
+    await loadFile('code/ch06_pinns/pinn_burgers.py', 'code-ch6-burgers');
+    await loadFile('code/ch06_pinns/pinn_inverse.py', 'code-ch6-inverse');
+    
+    // Chapter 7
+    await loadFile('code/ch07_neural_operators/deeponet.py', 'code-ch7-deeponet');
+    await loadFile('code/ch07_neural_operators/fno_1d.py', 'code-ch7-fno');
+    await loadFile('code/ch07_neural_operators/resolution_transfer.py', 'code-ch7-res');
+    
+    // Chapter 8
+    await loadFile('code/ch08_scientific_python/numpy_internals.py', 'code-ch8-numpy');
+    await loadFile('code/ch08_scientific_python/scipy_toolkit.py', 'code-ch8-scipy');
+    await loadFile('code/ch08_scientific_python/profiling_demo.py', 'code-ch8-profile');
+    
+    // Chapter 9
+    await loadFile('code/ch09_gpu/cupy_pde.py', 'code-ch9-cupy');
+    await loadFile('code/ch09_gpu/numba_cuda_stencil.py', 'code-ch9-numba');
+    await loadFile('code/ch09_gpu/pytorch_custom_kernel.py', 'code-ch9-torch');
+    
+    // Chapter 10
+    await loadFile('code/ch10_applications/composite_heat.py', 'code-ch10-composite');
+    await loadFile('code/ch10_applications/stefan_problem.py', 'code-ch10-stefan');
+    await loadFile('code/ch10_applications/pinn_materials.py', 'code-ch10-pinn-mat');
+    await loadFile('code/ch10_applications/operator_materials.py', 'code-ch10-op-mat');
+  }
+  
+  // Render math once the DOM is loaded
+  document.addEventListener("DOMContentLoaded", function() {
+    renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false}
+      ],
+      throwOnError: false
+    });
+    loadCode();
+  });
+</script>
+<!-- KaTeX auto-render extension -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+</body>
+</html>
