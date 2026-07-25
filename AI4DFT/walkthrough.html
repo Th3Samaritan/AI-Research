@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI4DFT — Lesson Walkthrough</title>
+<meta name="description" content="Line-by-line walkthrough of every AI4DFT lesson: each equation symbol by symbol, each parameter's origin, and exactly what to expect when you run the code.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/theme.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true}]});"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* page-specific: shared tokens & components live in assets/theme.css */
+  .app{grid-template-columns:320px 1fr}
+  main{max-width:1000px}
+  nav a{font-size:12.5px;padding:6px 9px}
+  section{margin-top:54px;scroll-margin-top:30px;background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow)}
+  .sec-head{margin-bottom:2px}
+  .sec-head h2{font-size:22px}
+  .file-tag{margin:4px 0 14px}
+  h3{font-size:15.5px;margin:22px 0 8px;color:var(--accent);font-weight:600}
+  .body{color:var(--txt-2);font-size:14.5px;line-height:1.68;max-width:78ch;margin:0 0 10px}
+  .body b{color:var(--txt)}
+  .eq{padding:8px 4px 10px;font-size:16px}
+  table{font-size:13px;margin:8px 0 14px}
+  th,td{padding:7px 9px}
+  td.sym{color:var(--accent);font-family:"JetBrains Mono",monospace;font-size:11.5px;white-space:normal}
+  td.work{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--txt);
+    line-height:1.65;white-space:pre-wrap;overflow-x:auto}
+  /* in this page ".note" is a callout, not the sidebar footnote */
+  .note{border:1px solid var(--accent-line);background:var(--accent-tint);border-radius:9px;
+    padding:12px 15px;color:var(--txt-2);font-size:13.5px;line-height:1.6;margin:12px 0;
+    border-top:1px solid var(--accent-line);padding-top:12px}
+  .note b{color:var(--accent)}
+  .rail-cta{display:flex;flex-direction:column;gap:6px}
+  .rail-cta a{font-size:12.5px;text-decoration:none;display:flex;align-items:center;gap:8px;
+    padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--txt-2)}
+  .rail-cta a:hover{border-color:var(--accent);color:var(--accent)}
+  .rail-cta a .k{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--txt-3);letter-spacing:.12em}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div><div class="eyebrow">AI4DFT</div>
+      <div class="title">Lesson<br><span class="thin">Walkthrough</span></div></div>
+    <nav><a href="#wl0"><span class="num">01</span> Lesson 1 · Schrödinger as an eigenvalue problem</a>
+<a href="#wl1"><span class="num">02</span> Lesson 2 · The hydrogen atom</a>
+<a href="#wl2"><span class="num">03</span> Lesson 3 · Variational principle &amp; basis sets</a>
+<a href="#wl3"><span class="num">04</span> Lesson 4 · Helium and the SCF loop</a>
+<a href="#wl4"><span class="num">05</span> Lesson 5 · Build a toy Kohn–Sham code</a>
+<a href="#wl5"><span class="num">06</span> Lesson 6 · Bands from plane waves</a>
+<a href="#wl6"><span class="num">07</span> Lesson 7 · ASE workflow &amp; equation of state</a>
+<a href="#wl7"><span class="num">08</span> Lesson 8 · Machine-learned potentials</a>
+<a href="#wl8"><span class="num">09</span> Appendix · PDE track: the heat equation</a></nav>
+    <div class="rail-cta">
+      <a href="index.html"><span class="k">COURSE</span> Interactive course</a>
+      <a href="exam.html"><span class="k">TEST</span> Self-exam</a>
+    </div>
+    <div class="sidenote">Twin document: <code>lesson_walkthrough.pdf</code> (same content, printable).
+      Tasks: <code>CURRICULUM.md</code> &middot; gates: <code>ASSESSMENT.md</code>.<br><br>
+      Expected-output blocks are collapsed on purpose &mdash; predict before you peek.</div>
+  </aside>
+  <main>
+    <div class="hero">
+      <div class="eyebrow">Deep companion</div>
+      <h1>Every equation. Every symbol.<br><span class="grad">Every number's origin.</span></h1>
+      <p class="lede">For each lesson: the equation unpacked <b>symbol by symbol</b>, a table of
+      <b>every parameter</b> in the code &mdash; its value, its meaning, and <b>why that
+      specific value was chosen</b> &mdash; then the exact output you should see and how to read
+      each figure panel. Read here, run the file yourself, compare, then do the tasks in
+      CURRICULUM.md.</p>
+    </div>
+<section id="wl0">
+<div class="sec-head"><span class="kicker">Lesson 1</span><h2>The Schrödinger Equation as an Eigenvalue Problem</h2></div>
+<p class="file-tag"><code>lesson01_schrodinger_1d.py</code></p>
+<p class="body"><b>Goal:</b> see with your own eyes that 'solving quantum mechanics' means 'diagonalizing a matrix', and meet the three model potentials the whole course builds on. Everything in DFT &mdash; up to and including VASP runs on clusters &mdash; is this lesson scaled up.</p>
+<h3>The equation, symbol by symbol</h3>
+<div class="eq">$$-\tfrac{1}{2}\,\psi''(x) \;+\; V(x)\,\psi(x) \;=\; E\,\psi(x)$$</div>
+<table><tr><th>Symbol</th><th>Meaning</th></tr><tr><td class='sym'>psi(x)</td><td>the wavefunction. |psi(x)|<sup>2</sup> dx = probability of finding the electron between x and x+dx. It is the unknown we solve for.</td></tr><tr><td class='sym'>psi''(x)</td><td>its second derivative &mdash; curvature. The kinetic-energy term: the more a wavefunction wiggles, the more kinetic energy it carries.</td></tr><tr><td class='sym'>V(x)</td><td>the potential-energy landscape the electron lives in (chosen by us in each part).</td></tr><tr><td class='sym'>E</td><td>the energy eigenvalue. The equation has normalizable solutions only for special discrete values of E &mdash; that is where quantization comes from; nobody puts it in by hand.</td></tr><tr><td class='sym'>the 1/2</td><td>in SI units this term is hbar<sup>2</sup>/2m. We work in <b>atomic units</b>: hbar = 1, electron mass = 1, so the prefactor is 1/2. Energies then come out in <b>hartree</b> (1 hartree = 27.211 eV) and lengths in <b>bohr</b> (0.529 angstrom). Chosen purely to remove constant-juggling.</td></tr></table>
+<h3>How it becomes a matrix</h3>
+<p class="body">Put psi on a grid of points spaced dx apart and replace the derivative with the 3-point finite-difference stencil (identical to the PDE track's heat-equation stencil):</p>
+<div class="eq">$$\psi''(x_i) \approx \frac{\psi_{i+1} - 2\psi_i + \psi_{i-1}}{dx^2}$$</div>
+<p class="body">Substituting turns the equation into H psi = E psi with a <b>tridiagonal</b> matrix H. Multiply the stencil by the -1/2 out front and you get exactly what the code builds: diagonal entries 1/dx<sup>2</sup> + V(x<sub>i</sub>) (the -2 in the stencil times -1/2 gives +1/dx<sup>2</sup>), off-diagonal entries -1/(2 dx<sup>2</sup>). The grid endpoints are treated as infinite walls (psi = 0 there) simply by not having rows beyond them. <code>scipy.linalg.eigh_tridiagonal</code> then returns eigenvalues (energies) and eigenvectors (orbitals). Each eigenvector is divided by sqrt(dx) so that sum(psi<sup>2</sup>) dx = 1 &mdash; total probability one.</p>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>xA = linspace(0, 1, 800)</td><td>800 points on [0, 1]</td><td>the box grid; dx = 1/799 = 0.00125</td><td>the finite-difference error is O(dx<sup>2</sup>) and grows with the state's curvature (state n has n+1 half-waves, curvature ~ n<sup>2</sup>) &mdash; 800 points keeps even n = 3 to ~0.5%. Task 2 of the curriculum has you double it and measure the improvement.</td></tr><tr><td class=sym>VA = 0</td><td>zero inside the box</td><td>particle in a box: free inside, walls outside</td><td>chosen because it has EXACT answers E<sub>n</sub> = (n+1)<sup>2</sup> pi<sup>2</sup>/2 to validate the machinery &mdash; rule one of scientific computing: test on a problem whose answer you know.</td></tr><tr><td class=sym>xB = linspace(-8, 8, 1200)</td><td>domain [-8, 8]</td><td>harmonic-oscillator grid</td><td>the n = 3 state classically turns around at x = sqrt(2E) ~ 2.6 bohr; the walls must sit far inside the forbidden region so the artificial box does not disturb the answer. 8 is 'far' with margin; the task of shrinking it shows what happens when it is not.</td></tr><tr><td class=sym>VB = 0.5 * x**2</td><td>spring constant 1 (omega = 1)</td><td>the quantum spring &mdash; a vibrating bond, a phonon</td><td>with omega = 1 the exact levels are E<sub>n</sub> = n + 1/2: evenly spaced, easy to check. Even spacing of vibrational levels is real physics you will meet again in phonons.</td></tr><tr><td class=sym>VC = 10 * (x**2 - 1)**2</td><td>wells at x = +/-1, barrier height 10</td><td>double well: two 'atoms' side by side</td><td>the wells sit where (x<sup>2</sup>-1) = 0, i.e. x = +/-1. The factor 10 is the barrier height V(0) = 10 hartree, picked so the lowest pair of states (E ~ 4.1) lies BELOW the barrier &mdash; the tunneling regime where the bonding/antibonding splitting is small and clean. Lower the 10 and the doublet structure washes out.</td></tr></table>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>1 hartree in eV</td><td class='work'>E_h = 27.211 eV. Sanity anchor: hydrogen&#x27;s ionization energy is 13.606 eV = exactly 1/2 hartree -- the same -0.5 you will compute in Lesson 2.</td></tr><tr><td>Exact box energies E_n = (n+1)^2 pi^2 / (2 L^2), L = 1</td><td class='work'>n=0:  pi^2/2         = 9.8696/2   =  4.9348
+n=1:  4 pi^2/2       = 2^2*4.9348 = 19.7392
+n=2:  9 pi^2/2       = 3^2*4.9348 = 44.4132
+n=3: 16 pi^2/2       = 4^2*4.9348 = 78.9568   (matches the &#x27;exact&#x27; column)</td></tr><tr><td>Where the formula itself comes from</td><td class='work'>psi must vanish at both walls -&gt; fit a whole number of half-waves in L:
+wavelength lambda_n = 2L/(n+1)  -&gt;  wavevector k_n = 2 pi/lambda = (n+1) pi/L.
+For V = 0 the equation gives E = k^2/2  -&gt;  E_n = (n+1)^2 pi^2/(2 L^2).</td></tr><tr><td>Why the numeric value is 4.9102, not 4.9348</td><td class='work'>The grid puts unknowns AT x = 0 and x = 1; the tridiagonal &#x27;wall&#x27; (psi = 0) then
+sits one step OUTSIDE each end. Effective box: L_eff = 1 + 2 dx, dx = 1/799 = 0.0012516
+-&gt; L_eff = 1.0025.  E scales as 1/L^2:
+E_num ~ 4.9348 / 1.0025^2 = 4.9348 / 1.00501 = 4.9102   &lt;- EXACTLY the printed value.
+Check n=1: 19.7392 / 1.00501 = 19.6408 vs printed 19.6407. The &#x27;error&#x27; is understood
+to every digit -- it is boundary placement, O(dx), not the O(dx^2) stencil.</td></tr><tr><td>So what does doubling the grid points do? (curriculum Task 2)</td><td class='work'>dx halves -&gt; (L_eff - 1) halves -&gt; error roughly HALVES (factor ~2, not 4).
+Measuring ~2x tells you a first-order boundary effect dominates the second-order
+stencil -- a real lesson in reading convergence rates.</td></tr><tr><td>Harmonic oscillator check</td><td class='work'>Exact E_n = n + 1/2 (omega = 1). Numeric error is only 5.6e-6 here because the walls
+at +/-8 sit deep in the forbidden region (psi ~ e^(-x^2/2) ~ 1e-14 there), so ONLY
+the O(dx^2) stencil error remains. Same solver, two error regimes.</td></tr><tr><td>Double-well numbers</td><td class='work'>V(0) = 10*(0-1)^2 = 10 (barrier); V(+/-1) = 0 (well bottoms).
+Splitting: E1 - E0 = 4.23868 - 4.11356 = 0.12512 hartree = 0.12512*27.211 = 3.40 eV
+-- chemical-bond-sized, from pure tunneling.</td></tr></table>
+<h3>What you should see when you run it</h3>
+<details class="out"><summary>What you should see when you run it (predict first, then click!)</summary><pre>A) Particle in a box - numeric vs exact energies (hartree)
+   n   numeric      exact       error
+   0      4.9102      4.9348   2.46e-02
+   1     19.6407     19.7392   9.86e-02
+   2     44.1912     44.4132   2.22e-01
+   3     78.5614     78.9568   3.95e-01
+
+B) Harmonic oscillator - numeric vs exact (E_n = n + 1/2)
+   0      0.5000      0.5000   5.56e-06
+   1      1.5000      1.5000   2.78e-05
+
+C) Double well:
+   E0 = 4.11356  (even  = &#x27;bonding&#x27;)
+   E1 = 4.23868  (odd   = &#x27;antibonding&#x27;)
+   splitting E1 - E0 = 0.12512 hartree  &lt;-- tunneling!</pre></details>
+<p class="body">Read the error column of part A: it grows with n (higher states wiggle harder and the grid resolves them less well) &mdash; that is curriculum Task 1. Part B's lowest level is 0.5, not 0: <b>zero-point energy</b>, a quantum particle can never fully stop. Part C's two states differ by only 0.125 hartree: the even one piles amplitude between the wells (bonding), the odd one has a node there (antibonding).</p>
+<table><tr><th>Figure panel</th><th>How to read it</th></tr><tr><td class='sym'>Panel A</td><td>box wavefunctions drawn at the height of their energy level (textbook convention; the vertical offset is E<sub>n</sub>, the wiggle drawn on top is psi scaled by an arbitrary visual factor). Level spacing grows like n<sup>2</sup>.</td></tr><tr><td class='sym'>Panel B</td><td>oscillator levels: evenly spaced rungs &mdash; the fingerprint of any quadratic well. Note the wavefunctions leak slightly OUTSIDE the classical parabola: tunneling into the forbidden region.</td></tr><tr><td class='sym'>Panel C</td><td>the two lowest double-well states: even (no node at x = 0) vs odd (node at x = 0), nearly degenerate, split by tunneling through the barrier.</td></tr></table>
+<div class="note"><b>Why this matters downstream:</b> the double-well splitting IS the chemical bond in embryo (Lesson 5 computes a real one from density), and repeated over 10<sup>23</sup> wells it becomes the energy bands and band gaps of Lesson 6. One picture, three scales.</div>
+</section>
+<section id="wl1">
+<div class="sec-head"><span class="kicker">Lesson 2</span><h2>The Hydrogen Atom</h2></div>
+<p class="file-tag"><code>lesson02_hydrogen_atom.py</code></p>
+<p class="body"><b>Goal:</b> solve the one real atom with exact answers, understand the quantum numbers n and l, and see the 'accident' whose breakdown creates the periodic table.</p>
+<h3>From 3D to 1D: the radial equation</h3>
+<p class="body">The hydrogen potential V = -Z/r is spherically symmetric, so the 3D wavefunction factorizes as psi(r, theta, phi) = R(r) Y<sub>lm</sub>(theta, phi): a radial part times a spherical harmonic (the s/p/d angular shapes from chemistry class &mdash; those are universal, not hydrogen-specific). Substituting u(r) = r R(r) turns the 3D problem into a 1D one on the half-line r &gt; 0:</p>
+<div class="eq">$$-\tfrac{1}{2}u''(r) + \left[\frac{l(l+1)}{2r^2} - \frac{Z}{r}\right]u(r) = E\,u(r),\qquad u(0)=0$$</div>
+<table><tr><th>Symbol</th><th>Meaning</th></tr><tr><td class='sym'>u(r) = r R(r)</td><td>the reduced radial function. Handy because u(r)<sup>2</sup> dr is directly the probability of finding the electron at radius r (the r<sup>2</sup> from the spherical volume element is already absorbed).</td></tr><tr><td class='sym'>Z</td><td>nuclear charge: number of protons. 1 for hydrogen; set it to 2 for He<sup>+</sup> in the tasks.</td></tr><tr><td class='sym'>-Z/r</td><td>Coulomb attraction between electron (charge -1) and nucleus (charge +Z) &mdash; in atomic units the Coulomb constant is exactly 1.</td></tr><tr><td class='sym'>l</td><td>angular-momentum quantum number: l = 0, 1, 2 = s, p, d. Comes from the angular factorization &mdash; each l is an independent 1D problem.</td></tr><tr><td class='sym'>l(l+1)/(2r^2)</td><td>the <b>centrifugal barrier</b>: the angular part of the kinetic energy. An electron with angular momentum cannot sit at r = 0, so this term pushes high-l orbitals outward &mdash; the physical root of s-electron 'penetration'.</td></tr><tr><td class='sym'>u(0) = 0</td><td>boundary condition: R = u/r must stay finite at the origin.</td></tr></table>
+<p class="body">The exact spectrum is E<sub>n</sub> = -Z<sup>2</sup>/(2n<sup>2</sup>) hartree for n &gt; l &mdash; the same result Bohr guessed in 1913 and the ODE proves properly. Two things to notice: energies do not depend on l (the 'accidental degeneracy', special to a pure -1/r potential), and they scale as Z<sup>2</sup> (core electrons of heavy elements are ferociously bound &mdash; the reason Lesson/Chapter 4 freezes them into pseudopotentials).</p>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>Z = 1.0</td><td>hydrogen</td><td>nuclear charge</td><td>the one atom with exact answers; tasks change it.</td></tr><tr><td class=sym>rmax = 60</td><td>60 bohr</td><td>outer edge of the radial grid</td><td>orbital size scales as n<sup>2</sup>/Z: the n = 3 states reach ~9-13 bohr, and their exponential tails need several times that before truncation stops biasing the energy. 60 is comfortable; shrink it and watch 3s degrade first.</td></tr><tr><td class=sym>N = 3000</td><td>grid points; dr = 0.02 bohr</td><td>radial resolution</td><td>the -Z/r potential varies fastest near the nucleus, where the 1s state also has a sharp cusp; dr = 0.02 gets 1s to 4 decimal places (see output). Finer costs more; this is the resolution/cost dial of all grid methods.</td></tr><tr><td class=sym>r starts at dr, not 0</td><td>r in (0, 60]</td><td>grid excludes the origin</td><td>two reasons: -Z/r is singular at r = 0, and the boundary condition u(0) = 0 is enforced implicitly by the tridiagonal 'wall' just as the box walls were in Lesson 1.</td></tr><tr><td class=sym>select_range=(0, 2)</td><td>3 lowest states per l</td><td>which eigenpairs to compute</td><td>computing all 3000 eigenvectors would be wasted work; LAPACK can extract just the lowest few. Production DFT codes do exactly this (iterative eigensolvers).</td></tr></table>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>The exact spectrum, evaluated: E_n = -Z^2/(2 n^2), Z = 1</td><td class='work'>n=1: -1/2      = -0.50000
+n=2: -1/8      = -0.12500   (for BOTH 2s and 2p -- l does not appear in the formula)
+n=3: -1/18     = -0.05556   (3s = 3p = 3d)  -- matches the &#x27;exact&#x27; column exactly.</td></tr><tr><td>Connect to a number you already know</td><td class='work'>E_1s = -0.5 hartree * 27.211 eV/hartree = -13.61 eV.
+Hydrogen&#x27;s measured ionization energy: 13.606 eV. The code just re-derived a
+textbook constant from a 3000x3000 tridiagonal matrix.</td></tr><tr><td>The He+ task, predicted (Task 1)</td><td class='work'>Z = 2: E_1s = -Z^2/2 = -4/2 = -2.000 hartree = -54.4 eV.
+Z enters SQUARED: doubling the charge quadruples the binding. This is why core
+electrons of heavy elements are brutal (and why pseudopotentials exist).</td></tr><tr><td>Why rmax = 60 is enough</td><td class='work'>orbital size ~ n^2/Z bohr: n=3 -&gt; ~9 bohr. The tail decays like e^(-r/n) beyond,
+so at r = 60 the 3s amplitude is ~e^(-60/3+3) ~ 1e-7 of peak: truncation is far
+below the 1e-5 accuracy we see.</td></tr><tr><td>Why the 1s error (5e-5) is bigger than 2s's (<1e-5)</td><td class='work'>1s has a CUSP at r = 0 (slope jumps because -Z/r diverges); the 3-point stencil
+approximates smooth curvature, so the sharpest state pays the biggest price.
+dr = 0.02 makes that price 5e-5 hartree ~ 1.4 meV -- negligible here, but &#x27;cusps
+cost grid points&#x27; is exactly why chemistry codes use analytic basis functions.</td></tr></table>
+<h3>What you should see</h3>
+<details class="out"><summary>What you should see when you run it (predict first, then click!)</summary><pre> state   numeric      exact
+  1s    -0.49995    -0.50000
+  2s    -0.12500    -0.12500
+  2p    -0.12500    -0.12500   &lt;- same as 2s: degenerate!
+  3s    -0.05555    -0.05556
+  3p    -0.05556    -0.05556
+  3d    -0.05556    -0.05556   &lt;- 3s = 3p = 3d</pre></details>
+<table><tr><th>Figure panel</th><th>How to read it</th></tr><tr><td class='sym'>Left panel</td><td>u(r) for 1s, 2s, 2p, 3d. Count radial nodes: 1s none, 2s one, 2p none &mdash; nodes cost kinetic energy and track (n - l - 1).</td></tr><tr><td class='sym'>Right panel</td><td>effective potentials for l = 0, 1, 2: the Coulomb funnel plus an ever taller centrifugal wall. This is WHY s-electrons penetrate close to the nucleus and p/d-electrons do not.</td></tr></table>
+<div class="note"><b>The periodic-table punchline:</b> in a many-electron atom, inner electrons screen the nucleus. Penetrating s-orbitals feel more of the true charge and drop; high-l orbitals feel less and rise. The l-degeneracy breaks, 4s dips below 3d, and the whole structure of the d-block &mdash; the transition metals you alloy with &mdash; follows.</div>
+</section>
+<section id="wl2">
+<div class="sec-head"><span class="kicker">Lesson 3</span><h2>The Variational Principle and Basis Sets</h2></div>
+<p class="file-tag"><code>lesson03_variational_basis_sets.py</code></p>
+<p class="body"><b>Goal:</b> the theorem that makes guessing rigorous, and the 'basis set' idea that turns quantum mechanics into linear algebra of small matrices. This is the load-bearing wall under Hartree-Fock, DFT, and all of quantum chemistry.</p>
+<h3>The theorem</h3>
+<div class="eq">$$E[\psi_{\rm trial}] \;=\; \frac{\langle\psi_{\rm trial}|H|\psi_{\rm trial}\rangle}{\langle\psi_{\rm trial}|\psi_{\rm trial}\rangle} \;\ge\; E_0$$</div>
+<p class="body"><b>Why it is true</b> (worth internalizing): expand any trial function in the exact eigenstates, psi = sum c<sub>n</sub> phi<sub>n</sub>. Then E[psi] = sum |c<sub>n</sub>|<sup>2</sup> E<sub>n</sub> / sum |c<sub>n</sub>|<sup>2</sup> &mdash; a weighted average of the exact energies. No average can be below the smallest term. Equality holds only if the guess IS the ground state. Consequence: <b>lower energy = strictly better wavefunction</b>, so 'guess and minimize' is not a hack, it is a rigorous algorithm with a built-in compass.</p>
+<h3>Part A &mdash; one Gaussian, one knob</h3>
+<p class="body">Trial function psi = exp(-alpha r<sup>2</sup>). The parameter alpha (units bohr<sup>-2</sup>) controls width: large alpha = narrow and spiky, small alpha = wide and flat. Plugging into E[psi] and doing the (standard) Gaussian integrals gives a closed form:</p>
+<div class="eq">$$E(\alpha) = \frac{3\alpha}{2} \;-\; 2\sqrt{\frac{2\alpha}{\pi}}$$</div>
+<p class="body">Read the two terms physically: the first is <b>kinetic energy</b> &mdash; it grows with alpha because narrower means curvier. The second is the <b>Coulomb attraction</b> won by huddling near the nucleus. The competition has an optimum: set dE/d alpha = 0 and you get alpha* = 8/(9 pi) = 0.2829 and E* = -4/(3 pi) = -0.4244 hartree. The exact answer is -0.5, so the BEST possible single Gaussian is off by 15%. The reason is shape: the true 1s orbital e<sup>-Zr</sup> has a sharp <b>cusp</b> at the nucleus and a slow exponential tail; a Gaussian is flat at the origin and dies too fast at range. No amount of width-tuning fixes the wrong shape.</p>
+<h3>Part B &mdash; basis sets: fix the shape with a team</h3>
+<p class="body">Write psi = sum c<sub>i</sub> g<sub>i</sub> with several Gaussians of different widths. Minimizing E over the coefficients c<sub>i</sub> (linear algebra, no calculus of variations needed) leads to the <b>generalized eigenvalue problem</b></p>
+<div class="eq">$$H\,\mathbf{c} = E\,S\,\mathbf{c}$$</div>
+<p class="body">where S is the <b>overlap matrix</b> S<sub>ij</sub> = integral of g<sub>i</sub> g<sub>j</sub> &mdash; it appears because Gaussians are not orthogonal to each other, and it is exactly what <code>scipy.linalg.eigh(H, S)</code> solves. The matrix elements have closed forms (this is WHY the industry adopted Gaussians: every needed integral is analytic &mdash; Szabo &amp; Ostrund's appendix lists them):</p>
+<div class="eq">$$S_{ij}=\Big(\tfrac{\pi}{a_i+a_j}\Big)^{3/2},\quad T_{ij}=\frac{3\,a_i a_j\,\pi^{3/2}}{(a_i+a_j)^{5/2}},\quad V_{ij}=\frac{-2\pi Z}{a_i+a_j}$$</div>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>alphas = linspace(0.02, 2, 400)</td><td>scan range for Part A</td><td>widths to try</td><td>brackets the known optimum 0.283 with plenty of margin so you SEE the minimum, not just land on it.</td></tr><tr><td class=sym>2-Gaussian exponents [0.201, 1.33]</td><td>one wide + one narrow</td><td>a minimal 'team'</td><td>chosen near-optimal for two Gaussians: the narrow one (1.33) patches the cusp region, the wide one (0.201) carries the tail. Geometric spacing of exponents is exactly how real basis sets ('even-tempered') are constructed.</td></tr><tr><td class=sym>STO-3G exponents [3.4253, 0.6239, 0.1689]</td><td>a historical standard</td><td>3-Gaussian basis</td><td>these numbers were obtained by Hehre, Stewart &amp; Pople (1969) by least-squares fitting three Gaussians to a Slater 1s function e<sup>-r</sup> &mdash; that fit, done once in 1969, became the named standard 'STO-3G' still shipped in every quantum chemistry package. That is literally 'where the values came from'.</td></tr></table>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>Minimizing E(alpha) = (3/2) alpha - 2 sqrt(2 alpha/pi), step by step</td><td class='work'>dE/d alpha = 3/2 - sqrt(2/(pi alpha))          (differentiate the sqrt term)
+set = 0:     sqrt(2/(pi alpha)) = 3/2
+square:      2/(pi alpha) = 9/4
+solve:       alpha* = 8/(9 pi) = 8/28.274 = 0.28294   &lt;- the printed &#x27;best exponent&#x27;</td></tr><tr><td>Plugging alpha* back in</td><td class='work'>kinetic:   T = (3/2)(0.28294)            = +0.42441
+potential: V = -2 sqrt(2*0.28294/pi)     = -2 sqrt(0.18013) = -0.84882
+total:     E = 0.42441 - 0.84882         = -0.42441 = -4/(3 pi)   &lt;- printed value</td></tr><tr><td>A free consistency check: the virial theorem</td><td class='work'>For Coulomb systems the exact ground state obeys T = -E and V = 2E.
+Ours: T = 0.42441 = -E (yes), V = -0.84882 = 2E (yes).
+The variational optimum inherits the virial relation -- if your own modified run
+breaks it, your minimization is off. A professional-grade sanity check for free.</td></tr><tr><td>The error budget of the output table</td><td class='work'>1 Gaussian:  -0.5 - (-0.42441) = 0.07559  (15.1% -- wrong SHAPE, unfixable by width)
+2 Gaussians: -0.5 - (-0.48581) = 0.01419  (2.8%)
+3 (STO-3G):  -0.5 - (-0.49574) = 0.00426  (0.9%)
+Each added width scale buys roughly a factor 3-5 -- typical basis-set convergence.</td></tr></table>
+<h3>What you should see</h3>
+<details class="out"><summary>What you should see when you run it (predict first, then click!)</summary><pre>Part A - one Gaussian for hydrogen:
+  best exponent alpha = 0.2829  (analytic: 8/9pi = 0.2829)
+  best energy   E     = -0.4244 (analytic: -4/3pi = -0.4244)
+  exact               = -0.5000
+
+Part B - basis-set convergence (exact = -0.5):
+  1 Gaussian             E = -0.42441   error = 0.07559
+  2 Gaussians            E = -0.48581   error = 0.01419
+  3 Gaussians (STO-3G)   E = -0.49574   error = 0.00426</pre></details>
+<table><tr><th>Figure panel</th><th>How to read it</th></tr><tr><td class='sym'>Panel A</td><td>E(alpha): a clean single minimum sitting ABOVE the dashed exact line &mdash; the variational principle made visible.</td></tr><tr><td class='sym'>Panel B</td><td>bars marching down toward -0.5 as Gaussians are added, never crossing it.</td></tr></table>
+<div class="note"><b>Downstream:</b> 'which basis set?' in chemistry and 'which plane-wave cutoff?' in materials codes are THIS trade-off &mdash; completeness vs cost &mdash; wearing different clothes. Lesson 6's task makes you break a plane-wave basis deliberately.</div>
+</section>
+<section id="wl3">
+<div class="sec-head"><span class="kicker">Lesson 4</span><h2>Helium and the Self-Consistent Field Loop</h2></div>
+<p class="file-tag"><code>lesson04_hartree_helium_scf.py</code></p>
+<p class="body"><b>Goal:</b> meet electron-electron repulsion, solve it with the mean-field trick, and run the SCF loop &mdash; the algorithm that beats at the heart of every DFT code. Also: measure the correlation energy, the error DFT was invented to capture cheaply.</p>
+<h3>The equation each electron obeys</h3>
+<div class="eq">$$-\tfrac{1}{2}u''(r) + \Big[-\frac{Z}{r} + V_H(r)\Big]u(r) = \varepsilon\,u(r)$$</div>
+<table><tr><th>Symbol</th><th>Meaning</th></tr><tr><td class='sym'>Z = 2</td><td>helium's nuclear charge (two protons).</td></tr><tr><td class='sym'>V_H(r)</td><td>the <b>Hartree potential</b>: the classical electrostatic repulsion from the OTHER electron's charge cloud. This is the new term relative to hydrogen.</td></tr><tr><td class='sym'>eps</td><td>the orbital energy of one electron moving in nucleus + partner-cloud.</td></tr><tr><td class='sym'>u(r)</td><td>the shared 1s radial orbital &mdash; both electrons occupy it with opposite spins, which the Pauli principle allows.</td></tr></table>
+<p class="body">For a spherical cloud, V<sub>H</sub> has a beautiful closed form via the shell theorem you know from electrostatics: charge INSIDE radius r acts like a point charge at the center, and every shell OUTSIDE r contributes a constant potential equal to its charge over its radius:</p>
+<div class="eq">$$V_H(r) \;=\; \frac{1}{r}\int_0^r n(r')\,dr' \;+\; \int_r^\infty \frac{n(r')}{r'}\,dr'$$</div>
+<p class="body">with n = u<sup>2</sup> the partner's density (one electron's worth, normalized to 1). In the code both integrals are running sums: <code>np.cumsum(n)*dr</code> for the inner charge and a reversed cumsum for the outer shells. Cheap, exact to grid accuracy.</p>
+<h3>The chicken-and-egg, and the loop that solves it</h3>
+<p class="body">V<sub>H</sub> depends on the orbital, which depends on V<sub>H</sub>. The resolution is iteration: <b>guess the density &rarr; build V<sub>H</sub> &rarr; solve for the orbital &rarr; make the new density &rarr; mix &rarr; repeat until nothing changes.</b> The 'mix' step is load-bearing: taking the new density whole can overshoot and oscillate, so we blend n &larr; (1-beta) n + beta n<sub>new</sub>. When the density stops changing, the field the electrons feel is the field they generate: <b>self-consistent</b>.</p>
+<h3>Total energy: the double-counting subtlety</h3>
+<div class="eq">$$E_{\rm total} = 2\varepsilon - E_{ee},\qquad E_{ee}=\int n(r)\,V_H(r)\,dr$$</div>
+<p class="body">Why subtract? Each orbital energy eps already contains that electron's repulsion with its partner. Adding two eps's therefore counts the one pair interaction TWICE; subtracting E<sub>ee</sub> once fixes it. Every electronic-structure code carries corrections of exactly this shape (you will see them again, itemized, in Lesson 5).</p>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>rmax = 20, N = 4000</td><td>dr = 0.005 bohr</td><td>radial grid</td><td>helium's 1s is roughly TWICE as compact as hydrogen's (size ~ 1/Z), so the grid is finer than Lesson 2's (0.005 vs 0.02) and can stop sooner (20 vs 60 bohr).</td></tr><tr><td class=sym>mix = 0.5</td><td>half old, half new</td><td>density mixing weight</td><td>an empirical middle ground: converges helium in ~23 iterations. The curriculum task has you try 1.0 (risk oscillation) and 0.1 (safe crawl) &mdash; the same dial called mixing_beta in Quantum ESPRESSO.</td></tr><tr><td class=sym>tol: dn < 1e-8</td><td>integrated |density change|</td><td>convergence criterion</td><td>'converged' must be DEFINED. We integrate |n_new - n| dr and stop below 10<sup>-8</sup> &mdash; tight enough that the energy is stable to ~5 decimals.</td></tr><tr><td class=sym>start: bare -Z/r orbital</td><td>hydrogen-like guess with Z = 2</td><td>SCF starting point</td><td>any reasonable guess works (that is the beauty of a fixed-point iteration); starting from the no-repulsion orbital makes iteration 1's jump show screening vividly.</td></tr></table>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>How big is the electron-electron repulsion? (from your own output)</td><td class='work'>E_total = 2 eps - E_ee  -&gt;  E_ee = 2 eps - E_total
+E_ee = 2(-0.91395) - (-2.85652) = -1.82790 + 2.85652 = 1.02862 hartree
+     = 1.02862 * 27.211 = 28.0 eV of raw repulsion inside one small atom.</td></tr><tr><td>How much did repulsion shift the orbital level?</td><td class='work'>Bare-nucleus 1s of He (Lesson 2&#x27;s formula, Z=2, n=1): eps_bare = -Z^2/2 = -2.000
+Converged: eps = -0.91395.  Shift = +1.086 hartree ~ E_ee -- each electron&#x27;s level
+is raised by (roughly) its repulsion with the partner cloud. Screening, quantified.</td></tr><tr><td>The three-line scoreboard, derived</td><td class='work'>naive:      2 * (-Z^2/2) = 2*(-2.0) = -4.000       (repulsion ignored)
+mean field: -2.8565  (textbook Hartree-Fock limit: -2.8617; our 0.005 offset is
+            the dr = 0.005 grid -- refine the grid, watch it shrink)
+exact:      -2.9037  (experiment)</td></tr><tr><td>The correlation energy, in both units</td><td class='work'>E_corr = -2.9037 - (-2.8565) = -0.0472 hartree
+       = 0.0472 * 27.211 = 1.28 eV   &lt;- the printed &#x27;~1.28 eV&#x27;.
+1.6% of the total energy, yet chemical-bond sized. Getting the last 1.6% is the
+entire DFT project.</td></tr><tr><td>Reading the convergence panel quantitatively</td><td class='work'>A fixed-point iteration with mixing converges geometrically: residual ~ C * q^k.
+Straight line on the log plot -&gt; constant ratio q per iteration; steeper = smaller q.
+Your beta = 1.0 and beta = 0.1 task runs will change the SLOPE (and can flip its sign).</td></tr></table>
+<h3>What you should see</h3>
+<details class="out"><summary>What you should see when you run it (predict first, then click!)</summary><pre>  iter   eps (hartree)   E_total     change in density
+    1     -0.75377      -2.49363     6.5e-01   (first shock of repulsion)
+   ...
+   23     -0.91395      -2.85652     5.84e-09
+  CONVERGED: the field is self-consistent.
+
+  naive (no repulsion): -4.000
+  this (mean field):    -2.8565
+  exact (experiment):   -2.9037
+  ==&gt; correlation energy missed: 0.0472 hartree (~1.28 eV)</pre></details>
+<p class="body">Three numbers to memorize as a scoreboard: <b>-4.0</b> (ignore repulsion: absurd), <b>-2.86</b> (mean field; the textbook Hartree-Fock limit is -2.8617 &mdash; our small offset is grid resolution), <b>-2.9037</b> (exact). The missing ~0.045 hartree is the <b>correlation energy</b>: electrons actively dodge each other, which no averaged cloud can describe. It looks tiny (1.6% of the total) but it is ~1.2 eV &mdash; chemical-bond sized. Capturing it at mean-field cost is DFT's entire sales pitch.</p>
+<table><tr><th>Figure panel</th><th>How to read it</th></tr><tr><td class='sym'>Left panel</td><td>density change per iteration on a log axis: a straight line = geometric (linear-rate) convergence, the signature of a well-damped fixed-point iteration.</td></tr><tr><td class='sym'>Right panel</td><td>final density vs the bare-nucleus density: repulsion pushes the cloud outward &mdash; each electron partially SCREENS the nucleus for the other, the same screening that built the periodic table in Lesson 2.</td></tr></table>
+</section>
+<section id="wl4">
+<div class="sec-head"><span class="kicker">Lesson 5</span><h2>Build a Toy Kohn-Sham DFT Code</h2></div>
+<p class="file-tag"><code>lesson05_kohn_sham_1d.py</code></p>
+<p class="body"><b>Goal:</b> assemble every moving part of an actual DFT calculation &mdash; external, Hartree and exchange-correlation potentials, the SCF loop, the total-energy bookkeeping &mdash; in ~100 lines of numpy, and watch it predict a chemical bond. This is the centerpiece of the course: after this, production DFT is 'the same machine, bigger'.</p>
+<h3>The Kohn-Sham equations</h3>
+<div class="eq">$$\Big[-\tfrac{1}{2}\frac{d^2}{dx^2} + v_{\rm ext}(x) + v_H[n](x) + v_{x}[n](x)\Big]\varphi_i = \varepsilon_i \varphi_i, \qquad n(x) = \sum_i^{\rm occ} 2\,|\varphi_i(x)|^2$$</div>
+<table><tr><th>Symbol</th><th>Meaning</th></tr><tr><td class='sym'>phi_i</td><td>the Kohn-Sham orbitals &mdash; orbitals of the FICTITIOUS non-interacting electrons. Individually they are mathematical scaffolding; their summed density is the physical object.</td></tr><tr><td class='sym'>the factor 2</td><td>spin: each spatial orbital holds one spin-up and one spin-down electron. With N_ELEC = 2, one doubly-occupied orbital carries everything.</td></tr><tr><td class='sym'>v_ext</td><td>the nuclei's pull &mdash; here two softened nuclei of charge +1 at x = +/- d/2.</td></tr><tr><td class='sym'>v_H[n]</td><td>Hartree: classical repulsion of the whole cloud, v_H(x) = integral K(x,x') n(x') dx'.</td></tr><tr><td class='sym'>v_x[n]</td><td>exchange-correlation &mdash; the quarantine zone for all remaining many-body physics. Here: a simple LDA-style exchange (below).</td></tr></table>
+<h3>The two model choices, stated honestly</h3>
+<p class="body"><b>Soft Coulomb.</b> In 1D the true 1/|x| interaction is pathological (its integrals diverge), so the standard 1D-atom literature softens it to 1/sqrt(x<sup>2</sup> + 1). The '+1' removes the singularity and sets a length scale of about one bohr. Both electron-nucleus attraction, electron-electron repulsion, AND the nucleus-nucleus term use the same softened kernel &mdash; consistency matters more than the particular smoothing.</p>
+<p class="body"><b>The exchange functional.</b> We use the Dirac/Slater local-density exchange, derived in 1930 for the 3D uniform electron gas:</p>
+<div class="eq">$$E_x[n] = -\tfrac{3}{4}\Big(\tfrac{3}{\pi}\Big)^{1/3}\!\!\int n^{4/3}dx\;\;\Rightarrow\;\; v_x(x) = \frac{\delta E_x}{\delta n} = -\Big(\tfrac{3\,n(x)}{\pi}\Big)^{1/3}$$</div>
+<p class="body">'Local density approximation' means exactly this: at each point, pretend the material is a uniform gas of that local density and use the gas's known exchange energy. Honest caveat, also printed in the code: that formula belongs to 3D; in our 1D toy it plays the ROLE of an xc functional so you experience the machinery. The numbers are illustrative, not publishable &mdash; which is itself a real DFT lesson: <b>the functional is a modeling choice you must declare.</b></p>
+<h3>Total energy: every correction itemized</h3>
+<div class="eq">$$E = \sum_i^{\rm occ}\varepsilon_i \;-\; E_H \;-\; \int n\,v_x\,dx \;+\; E_x \;+\; E_{nn}$$</div>
+<p class="body">Why each term: the eigenvalue sum contains the full Hartree interaction TWICE (each orbital feels the whole cloud, Lesson 4's double counting), so subtract E<sub>H</sub> = (1/2) integral n v<sub>H</sub> once. The eigenvalues also contain integral n v<sub>x</sub>, but the true functional contributes E<sub>x</sub> &mdash; so remove the one and add the other. Finally E<sub>nn</sub> = 1/sqrt(d<sup>2</sup>+1) is the nuclei repelling each other (softened, consistently). This exact bookkeeping, term for term, appears in every DFT code's total-energy output block &mdash; open a Quantum ESPRESSO log later and you will recognize the lines.</p>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>L = 16, N = 400</td><td>x in [-8, 8], dx = 0.04</td><td>simulation box</td><td>must hold nuclei up to d = 8 apart PLUS decaying density tails; 400 points keeps the 400 x 400 interaction matrix trivially cheap while dx = 0.04 resolves the orbitals.</td></tr><tr><td class=sym>K = 1/sqrt((x-x')^2+1)</td><td>400 x 400 matrix</td><td>soft-Coulomb kernel</td><td>precomputed once; then v_H = K @ n * dx is one matrix-vector product per iteration.</td></tr><tr><td class=sym>N_ELEC = 2</td><td>one doubly-occupied orbital</td><td>electron count</td><td>the minimal molecule (an H2 analogue). The task raising it to 4 shows why 'He2' does not bond: you are forced to occupy the antibonding orbital too.</td></tr><tr><td class=sym>mix = 0.4</td><td>SCF damping</td><td>density mixing</td><td>0.4 converges all 29 bond-length points without drama; the task pushing it to 0.9 reproduces Lesson 4's oscillation warning at small d, where the density is stiffest.</td></tr><tr><td class=sym>tol = 1e-8, max_iter = 200</td><td>convergence guard</td><td>loop control</td><td>1e-8 in integrated density change makes E stable to ~1e-5 hartree, well below the features of the binding curve (~0.1 hartree).</td></tr><tr><td class=sym>ds = linspace(1, 8, 29)</td><td>bond lengths scanned, spacing 0.25</td><td>the E(d) scan</td><td>must bracket the minimum (near 1.25) and reach quasi-separated atoms (8) to measure binding; 0.25 spacing resolves the curve's curvature near the minimum.</td></tr></table>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>Deriving v_x from E_x (the functional-derivative step, made concrete)</td><td class='work'>E_x[n] = C * integral n^(4/3) dx,  with C = -(3/4)(3/pi)^(1/3).
+Vary n at one point: delta E_x/delta n = (4/3) C n^(1/3)
+  = (4/3) * (-(3/4)) * (3/pi)^(1/3) * n^(1/3)   -- the 4/3 and 3/4 cancel --
+  = -(3 n/pi)^(1/3)   &lt;- exactly the v_x line in the code. No magic constants:
+every factor is accounted for.</td></tr><tr><td>The total energy at d = 2, assembled term by term (real run values)</td><td class='work'>sum of eigenvalues: 2 eps  = 2*(-0.68149) = -1.36299
+Hartree double-count:  - E_H              = -1.31767
+remove eigenvalue xc:  - int n v_x        = +1.49084   (that integral = -1.49084)
+add true functional:   + E_x              = -1.11813
+nuclei repel:          + E_nn             = +0.44721
+----------------------------------------------------
+E_total = -1.36299 -1.31767 +1.49084 -1.11813 +0.44721 = -1.86074  &lt;- printed value.
+Every DFT code&#x27;s output block is this same ledger with more rows.</td></tr><tr><td>E_nn checked by hand</td><td class='work'>E_nn = 1/sqrt(d^2+1) at d=2: 1/sqrt(5) = 1/2.23607 = 0.44721  (matches the ledger)</td></tr><tr><td>The binding energy, in familiar units</td><td class='work'>E(d=8) - E(d_eq) = 0.1146 hartree * 27.211 = 3.12 eV.
+Real H2: bond 1.40 bohr, binding 4.75 eV. Toy: 1.25 bohr, 3.12 eV -- right ballpark,
+wrong in detail, exactly what an honestly-declared toy functional should give.</td></tr></table>
+<h3>What you should see</h3>
+<details class="out"><summary>What you should see when you run it (predict first, then click!)</summary><pre>Part A - Kohn-Sham SCF at d = 2.0:
+    iter   1  eps =  -0.78826   |dn| = 4.9e-01
+    ...
+    iter  38  eps =  -0.68149   |dn| = 7.15e-09
+  converged: E_total = -1.86074 hartree
+
+Part B - scanning bond length:
+  equilibrium bond length d_eq = 1.25 bohr
+  binding energy vs d=8:  0.1146 hartree</pre></details>
+<p class="body">Sanity anchor: real H<sub>2</sub> has bond length 1.40 bohr (0.74 angstrom) and binding energy 4.75 eV; our toy gives 1.25 bohr and 0.1146 hartree = 3.1 eV. A softened 1D cartoon landing in the physical ballpark is encouraging &mdash; but the transferable point is the SHAPE: a minimum in E(d) IS the chemical bond, and its gradients are the forces that drive geometry optimization and molecular dynamics in every real study.</p>
+<table><tr><th>Figure panel</th><th>How to read it</th></tr><tr><td class='sym'>Panel A</td><td>E(d): steep wall at small d (nuclei repel), minimum at d_eq (the bond), plateau at large d (two separate atoms). This curve is a 1D potential energy surface.</td></tr><tr><td class='sym'>Panel B</td><td>density at d_eq vs d = 8: at the bond length, charge piles up BETWEEN the nuclei &mdash; the covalent bond, visible as density. That pile-up lowering the energy is Lesson 1's 'bonding state has amplitude between the wells', now self-consistent.</td></tr></table>
+</section>
+<section id="wl5">
+<div class="sec-head"><span class="kicker">Lesson 6</span><h2>Crystals: Band Structures from Plane Waves</h2></div>
+<p class="file-tag"><code>lesson06_bands_planewaves.py</code></p>
+<p class="body"><b>Goal:</b> go from one atom to 10<sup>23</sup>: Bloch's theorem, the plane-wave basis every big materials code uses, band gaps opening, and the counting rule that separates metals from semiconductors.</p>
+<h3>Bloch's theorem and the basis</h3>
+<p class="body">In a periodic potential V(x + a) = V(x), eigenstates are labeled by a wavevector k confined to the <b>Brillouin zone</b> k in [-pi/a, +pi/a], and each state is a sum of plane waves whose wavevectors differ from k by reciprocal-lattice vectors G = 2 pi m / a (integer m) &mdash; only those keep the required periodicity:</p>
+<div class="eq">$$\psi_k(x) = \sum_G c_G\, e^{i(k+G)x}, \qquad G = \frac{2\pi m}{a}$$</div>
+<p class="body">In this basis the Hamiltonian is a small matrix per k. Kinetic energy is diagonal: (1/2)(k+G)<sup>2</sup>. The potential enters through its Fourier components; for V = V<sub>0</sub> cos(2 pi x/a) the only components are V<sub>0</sub>/2 at G' - G = +/- 2 pi/a, so the matrix couples each plane wave to its immediate neighbors:</p>
+<div class="eq">$$H_{GG'}(k) = \tfrac{1}{2}(k+G)^2\,\delta_{GG'} + \tfrac{V_0}{2}\,\delta_{|G-G'|,\,2\pi/a}$$</div>
+<p class="body">Diagonalize at each k, plot eigenvalues vs k: that IS a band structure, produced by the same recipe as VASP's, minus self-consistency and dimensions.</p>
+<h3>Why the gap equals V0</h3>
+<p class="body">At the zone edge k = pi/a, two free-electron states &mdash; e<sup>ikx</sup> and e<sup>i(k - 2pi/a)x</sup> &mdash; have exactly equal kinetic energy. The potential mixes this degenerate pair; 2x2 degenerate perturbation theory splits them by twice the coupling, i.e. gap = 2 |V<sub>G</sub>| = 2 (V<sub>0</sub>/2) = <b>V<sub>0</sub></b>. Your run confirms it numerically: gap 3.990 for V<sub>0</sub> = 4 (the tiny deficit is higher-order repulsion from farther bands; at V<sub>0</sub> = 12 the deviation grows &mdash; perturbation theory is a small-V story).</p>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>a = 1.0</td><td>lattice constant</td><td>unit of length</td><td>sets the scale; the Brillouin zone is then [-pi, pi] and energies come out in units where comparisons are easy.</td></tr><tr><td class=sym>M = 7  (15 plane waves)</td><td>G = 2 pi m, m = -7..7</td><td>basis size</td><td>the highest band we plot (4th) lives at energies ~ 300; the largest kinetic energy in the basis is (2 pi times 7)<sup>2</sup>/2 ~ 970, comfortably above &mdash; the variational rule of Lesson 3 again. THIS knob is the plane-wave energy cutoff ('ecutwfc') of real codes; the curriculum task shrinking M to 2 and 1 shows convergence failure live.</td></tr><tr><td class=sym>nk = 121</td><td>k-points across the zone</td><td>sampling density</td><td>purely for smooth plots here; in real codes the k-mesh is a convergence parameter (integrals over the zone), the second thing you always test.</td></tr><tr><td class=sym>V0 = 0, 4, 12</td><td>the three panels</td><td>crystal potential strength</td><td>0 gives the free-electron reference (folded parabola, no gaps); 4 shows a clean textbook gap ~ V0; 12 shows strong coupling where bands flatten (electrons localizing toward atomic levels &mdash; the tight-binding limit).</td></tr></table>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>The gap at the zone edge, from a 2x2 matrix you can do on paper</td><td class='work'>At k = pi/a (a=1, so k = pi), two plane waves have EQUAL kinetic energy:
+  m=0:  (1/2)(pi + 0)^2      = (1/2)(3.1416)^2 = 4.9348
+  m=-1: (1/2)(pi - 2 pi)^2   = (1/2)(-3.1416)^2 = 4.9348   (degenerate!)
+V0 = 4 couples them with V0/2 = 2. The 2x2 Hamiltonian:
+  [[4.9348, 2], [2, 4.9348]]  -&gt;  eigenvalues 4.9348 +/- 2 = 2.9348 and 6.9348
+  gap = 2 * (V0/2) = V0 = 4.000 exactly, in the 2x2 world.</td></tr><tr><td>Why the full code prints 3.990, not 4.000</td><td class='work'>The 15-plane-wave matrix also couples these states (via second order) to higher
+bands, which pushes both levels and shaves the gap: 4.000 - 3.990 = 0.010.
+At V0 = 12 the same effect is larger: 2x2 predicts 12, full matrix gives 11.731
+(deficit 0.269) -- perturbation theory is a small-V0 story, and now you can SEE
+its breakdown as a number.</td></tr><tr><td>Verifying the basis is big enough (the 'cutoff' check)</td><td class='work'>Largest kinetic energy in the basis: (1/2)(2 pi * 7)^2 = (1/2)(43.98)^2 = 967.
+Highest energy plotted: ~60. Ratio ~16x headroom -&gt; the plotted bands are converged.
+Shrink M to 2: max KE = (1/2)(12.57)^2 = 79 -- barely above the plot window, and
+the task shows you exactly which bands go wrong first.</td></tr></table>
+<h3>What you should see</h3>
+<details class="out"><summary>What you should see when you run it (predict first, then click!)</summary><pre>First band gap at the zone boundary:
+  V0 = 4  : gap = 3.990  (nearly-free-electron theory predicts ~V0 = 4)
+  V0 = 12 : gap = 11.731
+
+Band filling logic (2 electrons per k-state, spin up+down):
+  1 electron / cell  -&gt; band 1 HALF full        -&gt; METAL
+  2 electrons / cell -&gt; band 1 FULL, gap above  -&gt; INSULATOR/SEMICONDUCTOR</pre></details>
+<table><tr><th>Figure panel</th><th>How to read it</th></tr><tr><td class='sym'>Left panel (V0 = 0)</td><td>the free-electron parabola E = k<sup>2</sup>/2 'folded' back into the zone &mdash; band structure before chemistry happens.</td></tr><tr><td class='sym'>Middle (V0 = 4)</td><td>gaps open exactly at the zone boundary where free states were degenerate; elsewhere bands barely move.</td></tr><tr><td class='sym'>Right (V0 = 12)</td><td>the shaded region is the first gap (~V0). Note the lowest band flattening: flat bands = localized electrons = large effective mass.</td></tr></table>
+<div class="note"><b>The counting rule to keep forever:</b> each band holds 2 electrons per unit cell (spin). Odd valence count &rarr; a partly filled band &rarr; metal (Na). Even count filling bands exactly, with a gap above &rarr; semiconductor/insulator (Si, diamond). One integer decides a material class. (Real life adds band overlap in 3D &mdash; Mg is a metal despite 2 valence electrons &mdash; but the rule is the right starting point.)</div>
+</section>
+<section id="wl6">
+<div class="sec-head"><span class="kicker">Lesson 7</span><h2>The Professional Workflow: ASE and Equations of State</h2></div>
+<p class="file-tag"><code>lesson07_ase_workflow_eos.py</code></p>
+<p class="body"><b>Goal:</b> the workflow layer. Build crystals in code, attach an interchangeable physics engine, and produce two numbers a materials engineer can check against handbooks: the equilibrium lattice constant and the bulk modulus. <b>Install first:</b> <code>pip install ase</code>.</p>
+<h3>The idea: Calculator as a swappable engine</h3>
+<p class="body">ASE's central design: an <code>Atoms</code> object holds the structure; a <b>Calculator</b> attached to it answers get_potential_energy() and get_forces(). Your script is IDENTICAL whether the engine is EMT (a fast 1990s classical potential, used here so everything runs in seconds on Windows), a real DFT code (GPAW/Quantum ESPRESSO in Phase 3, via WSL), or a neural network (Lesson 8). Prototype cheap, swap one line later &mdash; that is professional practice, not a shortcut.</p>
+<h3>The physics task: E(V) and the equation of state</h3>
+<p class="body">Squeeze and stretch the crystal, record energy vs volume, and fit the <b>Birch-Murnaghan equation of state</b> &mdash; the standard functional form for a solid near equilibrium, with four fitted parameters: E<sub>0</sub> (minimum energy), V<sub>0</sub> (equilibrium volume), B<sub>0</sub> (bulk modulus), and B<sub>0</sub>' (its pressure derivative, typically ~4 for metals). The two you report:</p>
+<div class="eq">$$V_0:\;\; a_0 = (4V_0)^{1/3} \quad\text{(fcc)}, \qquad B \;=\; V\,\frac{d^2E}{dV^2}\Big|_{V_0}$$</div>
+<table><tr><th>Symbol</th><th>Meaning</th></tr><tr><td class='sym'>a0</td><td>equilibrium lattice constant &mdash; directly comparable to X-ray diffraction.</td></tr><tr><td class='sym'>B</td><td>bulk modulus: stiffness against uniform compression, the curvature of E(V). Comparable to ultrasonic / DAC measurements. Units: the fit gives eV/angstrom<sup>3</sup>; dividing by ase.units.GPa converts (1 eV/angstrom<sup>3</sup> = 160.2 GPa).</td></tr><tr><td class='sym'>the 4 in (4V0)^(1/3)</td><td>ase.build.bulk('Al','fcc') returns the 1-atom PRIMITIVE cell, whose volume is a<sup>3</sup>/4 &mdash; the conventional fcc cube of edge a contains 4 atoms. Forgetting this factor is the classic beginner bug; the code comments flag it.</td></tr></table>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>scale in linspace(0.94, 1.06, 9)</td><td>lattice constant +/- 6%</td><td>strain range</td><td>+/-6% in a is roughly +/-19% in volume: wide enough to resolve curvature (B) cleanly, narrow enough that a 3rd-order Birch-Murnaghan form is valid. The curriculum task widening it to +/-20% shows the fit degrading &mdash; every fit form has a validity window.</td></tr><tr><td class=sym>9 points</td><td>odd count centered on experiment</td><td>sampling</td><td>an odd, symmetric scan brackets the minimum and gives the 4-parameter fit comfortable redundancy.</td></tr><tr><td class=sym>EXPT dict: Al 4.05 / 76, Cu 3.615 / 140</td><td>experimental a0 (angstrom) and B (GPa)</td><td>reference values</td><td>room-temperature handbook values &mdash; the validation anchors. Note a subtlety you will meet in papers: DFT is a 0 K theory; comparing to room-temperature experiment carries ~1% thermal-expansion slack.</td></tr><tr><td class=sym>EMT()</td><td>effective-medium theory calculator</td><td>the cheap engine</td><td>a semi-empirical metal potential fitted (in the 1990s) to bulk properties of fcc metals; ships inside ASE, needs no external code, runs in milliseconds. Decent for Cu, rougher for Al &mdash; and finding out HOW rough, against the experimental row, is part of the lesson.</td></tr></table>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>Volume of the cell ASE builds (fcc, Al example)</td><td class='work'>Conventional fcc cube of edge a holds 4 atoms; ase.build.bulk returns the 1-atom
+primitive cell: V = a^3/4.
+Al: V0 = 4.05^3/4 = 66.43/4 = 16.61 A^3.  Inverting after the fit: a0 = (4 V0)^(1/3).</td></tr><tr><td>What the +/-6% scale range does to volume</td><td class='work'>V ~ a^3, so: 0.94^3 = 0.830 (-17%) and 1.06^3 = 1.191 (+19%).
+A ~+/-18% volume window: wide enough to pin the curvature B, narrow enough for the
+3rd-order Birch-Murnaghan form to hold. (Your +/-20%-in-a task pushes V by +/-73%
+-- far outside the form&#x27;s comfort zone; watch the fit degrade.)</td></tr><tr><td>Where the 160.2 GPa conversion factor comes from</td><td class='work'>B from the fit has units eV/A^3. Convert by first principles:
+1 eV/A^3 = 1.602e-19 J / 1e-30 m^3 = 1.602e11 J/m^3 = 1.602e11 Pa = 160.2 GPa.
+So Al&#x27;s experimental B = 76 GPa corresponds to 76/160.2 = 0.474 eV/A^3 -- the
+curvature your nine E(V) points must resolve.</td></tr></table>
+<h3>What you should see</h3>
+<p class="body">A printed table of calculated vs experimental a<sub>0</sub> and B for Al and Cu (record your numbers &mdash; the walkthrough deliberately does not print them for you, because reading a fit you ran yourself against experiment is the exercise), plus ASE's own E(V) plot with the Birch-Murnaghan curve through your nine points. Expect Cu within a few percent; expect Al's bulk modulus to be visibly off &mdash; a cheap potential showing its limits is a feature of this lesson, not a bug: it is exactly the gap real DFT (Phase 3) closes.</p>
+<div class="note"><b>Downstream:</b> in Phase 3 you rerun THIS script with a DFT calculator in WSL and watch Si land within ~1% of experiment; in Lesson 8 the same interface drives a neural network. One workflow, three physics engines &mdash; that is the point.</div>
+</section>
+<section id="wl7">
+<div class="sec-head"><span class="kicker">Lesson 8</span><h2>Machine-Learned Interatomic Potentials (CHGNet)</h2></div>
+<p class="file-tag"><code>lesson08_chgnet_mlip.py</code></p>
+<p class="body"><b>Goal:</b> run AI4DFT for real: a graph neural network trained on ~1.5 million DFT results predicts energies and forces in milliseconds, relaxes a damaged crystal, and you time the speedup that reshaped the field. <b>Install first:</b> <code>pip install chgnet</code> (pulls PyTorch extras, takes minutes; first run downloads ~30 MB of weights).</p>
+<h3>What CHGNet is</h3>
+<p class="body">CHGNet (Deng et al., Nature Machine Intelligence 2023) is a <b>graph neural network</b>: atoms are nodes carrying learned element embeddings, neighbors within a cutoff are edges carrying distances, and several message-passing layers let each atom 'feel' its chemical environment before per-atom energies are summed. It was trained on energies, forces, stresses and magnetic moments from ~1.5 million DFT calculations in the Materials Project (89 elements). Forces come from automatic differentiation of the energy &mdash; the same autodiff you built in the PDE track. Because it wraps itself in an ASE Calculator, Lesson 7's workflow drives it unchanged.</p>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>bulk('MgO', 'rocksalt', a=4.21)</td><td>rocksalt MgO, a = 4.21 angstrom</td><td>test crystal</td><td>4.21 angstrom is MgO's experimental lattice constant; rocksalt is its real structure. MgO is squarely inside CHGNet's training distribution &mdash; deliberately: this lesson shows the tool at its best, the tasks then push it off-distribution.</td></tr><tr><td class=sym>* (2, 2, 2)</td><td>16-atom supercell</td><td>system size</td><td>the rocksalt primitive cell has 2 atoms; a 2x2x2 repeat gives 16. Supercells matter because a rattled primitive cell can only distort in lockstep &mdash; local disorder needs room.</td></tr><tr><td class=sym>rng.normal(0, 0.12, ...)</td><td>Gaussian nudge, sigma = 0.12 angstrom</td><td>the 'damage'</td><td>0.12 angstrom is ~6% of the Mg-O bond (worked out below): large enough to store real strain energy and forces, small enough to stay in the perfect crystal's basin so relaxation should walk home. The task raising it to 0.5 finds the breaking point.</td></tr><tr><td class=sym>seed=42</td><td>fixed RNG seed</td><td>reproducibility</td><td>so your run and this walkthrough describe the same damaged structure &mdash; a habit worth keeping in every stochastic experiment.</td></tr><tr><td class=sym>BFGS(atoms)</td><td>quasi-Newton optimizer</td><td>the relaxer</td><td>BFGS builds an approximate Hessian from force history &mdash; the default geometry optimizer of computational materials science, here fed ML forces instead of DFT ones.</td></tr><tr><td class=sym>fmax=0.02</td><td>stop when max force < 0.02 eV/angstrom</td><td>convergence criterion</td><td>the community-standard threshold quoted in countless papers; tight enough that energies are meaningful, loose enough not to chase noise.</td></tr><tr><td class=sym>20 evaluations, +0.001 nudge</td><td>timing loop</td><td>speed measurement</td><td>the tiny position nudge defeats result caching so you time honest evaluations; 20 repeats average out startup jitter.</td></tr></table>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>How violent is a 0.12-angstrom rattle? Work it out</td><td class='work'>Rocksalt nearest-neighbor (Mg-O) distance = a/2 = 4.21/2 = 2.105 A.
+Per-coordinate sigma: 0.12/2.105 = 5.7% of the bond.
+Typical 3D displacement magnitude: sqrt(3) * 0.12 = 0.208 A ~ 10% of the bond --
+a hard shake (comparable to thermal motion well above room temperature), which is
+why several eV of strain energy appears.</td></tr><tr><td>System size bookkeeping</td><td class='work'>rocksalt primitive cell = 2 atoms (1 Mg + 1 O); supercell (2,2,2) = 2 * 2*2*2 = 16.</td></tr><tr><td>The speedup, quantified (fill in your own timing)</td><td class='work'>DFT on ~16 atoms: ~10 min = 600 s per energy+forces evaluation (cluster-class).
+CHGNet on your CPU: ~0.06 s (you will measure the true number).
+ratio = 600/0.06 = 1.0e4. A 200-step relaxation: DFT ~ 33 h; CHGNet ~ 12 s.
+A 1e6-structure screening: DFT ~ 19 CPU-years; CHGNet ~ 17 hours. That asymmetry
+is the entire economic case for AI4DFT -- now derived, not asserted.</td></tr></table>
+<h3>What you should see (qualitatively — your hardware sets the numbers)</h3>
+<p class="body">The rattled cell sits several eV above the perfect crystal with maximum forces of a few eV/angstrom; BFGS walks it back down, recovering nearly all the strain energy; single-point evaluations land in the tens-of-milliseconds range on your CPU. Then do the arithmetic the lesson prints: at ~10 minutes per DFT step on a cluster, your relaxation trajectory would have taken days &mdash; you just did it between sips of coffee, at accuracy inherited from DFT.</p>
+<div class="note"><b>The trust lesson (do not skip):</b> an MLIP is an interpolation of its training set. Inside the distribution it is superb; outside &mdash; exotic compositions, extreme pressures, broken bonds &mdash; it can be confidently, silently wrong. Professional practice: spot-check against real DFT, especially anything surprising. The curriculum tasks (rattle 0.5, NaCl swap, the years-vs-minutes estimate) are built to make both the power and the failure mode visceral.</div>
+</section>
+<section id="wl8">
+<div class="sec-head"><span class="kicker">Appendix</span><h2>PDE Track Lesson 1: The Heat Equation, Fully Unpacked</h2></div>
+<p class="file-tag"><code>AI4Science-PDE/lessons/lesson01_heat_equation.py</code></p>
+<p class="body"><b>Goal:</b> the PDE track's opening lesson, given the same deep treatment: every symbol, every chosen number, and the stability theory behind the explosion you watched.</p>
+<h3>The equation</h3>
+<div class="eq">$$\frac{\partial u}{\partial t} = \alpha\,\frac{\partial^2 u}{\partial x^2}$$</div>
+<table><tr><th>Symbol</th><th>Meaning</th></tr><tr><td class='sym'>u(x, t)</td><td>temperature (degrees C) at position x along the rod, at time t. The unknown is the whole temperature FIELD, evolving in time.</td></tr><tr><td class='sym'>d2u/dx2</td><td>spatial curvature of the temperature profile. Positive curvature = 'colder than my neighbors' average' = heat flows in and u rises. This one sentence IS the heat equation.</td></tr><tr><td class='sym'>alpha</td><td>thermal diffusivity, units m<sup>2</sup>/s. Physically alpha = k/(rho c_p): conductivity over (density times heat capacity) &mdash; how fast a material equalizes temperature. Steel ~ 1.2e-5, copper ~ 1.1e-4 m<sup>2</sup>/s.</td></tr></table>
+<h3>Every parameter and where it came from</h3>
+<table class="params"><tr><th>In the code</th><th>Value</th><th>What it is</th><th>Why this value</th></tr><tr><td class=sym>alpha = 0.1</td><td>deliberately unphysical</td><td>diffusivity used in the demo</td><td>real steel (1.2e-5) on a 1 m rod takes HOURS to evolve (diffusion time ~ L<sup>2</sup>/alpha). 0.1 compresses the movie to ~2 seconds. Legitimate because the equation can be nondimensionalized: only the combination alpha t / L<sup>2</sup> matters, so this is a rescaled clock, not different physics.</td></tr><tr><td class=sym>nx = 50, dx ~ 0.0204</td><td>grid resolution</td><td>the chopped-up rod</td><td>coarse enough to run instantly, fine enough that profiles look smooth. Halving dx quarters the FD error (O(dx<sup>2</sup>)) &mdash; but see how it TIGHTENS the stability limit below: resolution is never free.</td></tr><tr><td class=sym>u0 = 100 exp(-((x-0.5)/0.1)^2)</td><td>Gaussian bump</td><td>initial condition</td><td>100 = peak temperature (deg C); 0.5 = torch aimed at the rod's middle; 0.1 = the heated patch's width, ~10 cm. Endpoints forced to 0: ends clamped in ice (Dirichlet boundary conditions).</td></tr><tr><td class=sym>dt_stable = 1e-3</td><td>r = 0.24</td><td>stable explicit step</td><td>chosen at roughly HALF the stability limit (below) &mdash; a factor-2 safety margin, standard engineering habit.</td></tr><tr><td class=sym>dt_bad = 2.5e-3</td><td>r = 0.60</td><td>deliberately illegal step</td><td>just 20% over the limit &mdash; close enough to look innocent, wrong enough to explode. The worst error mode grows by |1 - 4r| = 1.4 PER STEP: after 100 steps that is 1.4<sup>100</sup> ~ 10<sup>14</sup>, matching panel B's cliff.</td></tr><tr><td class=sym>dt_big = 0.05 (implicit)</td><td>r = 12</td><td>the implicit scheme's step</td><td>fifty times the explicit limit, to make the point unmissable: BTCS is stable at ANY step size. Its cost: solving a sparse linear system (I - r D2) u_new = u_old each step &mdash; scipy.sparse.spsolve on a tridiagonal matrix, cheap in 1D.</td></tr></table>
+<h3>Where the CFL limit r <= 1/2 comes from (the missing derivation)</h3>
+<p class="body">The explicit update is u<sub>i</sub> &larr; u<sub>i</sub> + r (u<sub>i+1</sub> - 2u<sub>i</sub> + u<sub>i-1</sub>) with r = alpha dt / dx<sup>2</sup>. Von Neumann stability analysis asks: what does one step do to a pure error wave u<sub>j</sub> = e<sup>i k x_j</sup>? Substituting gives an amplification factor</p>
+<div class="eq">$$g(k) = 1 - 4r\,\sin^2\!\Big(\frac{k\,dx}{2}\Big)$$</div>
+<p class="body">Every mode must satisfy |g| &lt;= 1 or it grows each step. The worst case is the zigzag mode (sin<sup>2</sup> = 1, the checkerboard pattern you see in blow-ups), where g = 1 - 4r. Requiring 1 - 4r &gt;= -1 gives <b>r &lt;= 1/2</b>. That is the CFL condition &mdash; not a rule of thumb but a theorem about this scheme. Note the cruel scaling: halve dx for accuracy and you must QUARTER dt for stability &mdash; 8x the work in 1D. This cost spiral is a big part of why neural surrogates (the AI part of the track) are interesting at all.</p>
+<h3>The numbers, worked out — deriving every printed value</h3><table class="mathtab"><tr><th>Quantity</th><th>Worked computation</th></tr><tr><td>Every printed number, recomputed by hand</td><td class='work'>dx = 1/(nx-1) = 1/49 = 0.020408 m  -&gt;  dx^2 = 4.1649e-4 m^2
+dt_limit = 0.5 dx^2/alpha = 0.5 * 4.1649e-4 / 0.1 = 2.082e-3 s  &lt;- printed &#x27;2.08e-03&#x27;
+r(dt=1e-3)   = 0.1 * 1.0e-3 / 4.1649e-4 = 0.2401   &lt;- the legend&#x27;s &#x27;r = 0.24&#x27;
+r(dt=2.5e-3) = 0.1 * 2.5e-3 / 4.1649e-4 = 0.6002   &lt;- the code&#x27;s warning, digit for digit
+r(dt=0.05, implicit) = 0.1 * 0.05 / 4.1649e-4 = 12.0 &lt;- the &#x27;r = 12 (!)&#x27; comment</td></tr><tr><td>Predicting WHEN the explosion becomes visible (panel B's takeoff)</td><td class='work'>Worst-mode growth factor per step: g = 1 - 4r = 1 - 4(0.6002) = -1.4008 -&gt; |g| = 1.4.
+The zigzag mode starts at roundoff, ~1e-16 of the 100-degree scale. It reaches O(100)
+when 1.4^n ~ 1e16:  n = ln(1e16)/ln(1.4008) = 36.84/0.3371 ~ 109 steps.
+t = 109 * 2.5e-3 ~ 0.27 s -- look at panel B: the red curve lifts off at ~0.25 s.
+The &#x27;silent then sudden&#x27; behavior is not mysterious; it is 1.4^n racing up from 1e-16.</td></tr><tr><td>The cost spiral that motivates AI surrogates</td><td class='work'>Halve dx (accuracy) -&gt; dt_limit = 0.5 dx^2/alpha QUARTERS -&gt; 2x the points times
+4x the steps = 8x work in 1D (16x in 2D, 32x in 3D). This scaling wall is why
+&#x27;solve once, reuse everywhere&#x27; neural operators (PDE track Phase 3) exist.</td></tr><tr><td>The accuracy check in the final print line</td><td class='work'>Explicit (r=0.24, 2000 steps) vs implicit (r=12, 40 steps) at t=2: max gap 0.237 degC
+on a ~5 degC profile ~ 5%. Both schemes are O(dt) accurate in time; the implicit one
+trades a little accuracy (bigger dt) for unconditional stability -- quantified here.</td></tr></table>
+<h3>What you should see</h3>
+<details class="out"><summary>What you should see when you run it (predict first, then click!)</summary><pre>Grid spacing dx = 0.0204 m
+CFL limit: explicit scheme is stable only for dt &lt;= 2.08e-03 s
+Warning: r = 0.6002... &gt; 0.5. Scheme may be unstable (CFL violated).
+Max disagreement between explicit and implicit at t=2s: 0.237 degC</pre></details>
+<table><tr><th>Figure panel</th><th>How to read it</th></tr><tr><td class='sym'>Panel A</td><td>profiles at six times, darker blue = later: the bump spreads (diffusion smooths), then drains out the icy ends toward the flat steady state.</td></tr><tr><td class='sym'>Panel B</td><td>max |temperature| on a log axis: the stable run decays gently; the r = 0.6 run looks FINE for ~0.2 s, then climbs a straight line on the log plot &mdash; exponential blow-up, slope set by 1.4 per step. Silent-then-sudden is the signature of instability.</td></tr><tr><td class='sym'>Panel C</td><td>explicit (2000 tiny steps) vs implicit (40 huge steps) at t = 2 s: curves on top of each other, max difference 0.237 degC &mdash; the accuracy/stability trade-off in one picture.</td></tr></table>
+</section>
+  </main>
+</div>
+</body>
+</html>

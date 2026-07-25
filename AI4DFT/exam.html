@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI4DFT — Self-exam</title>
+<meta name="description" content="Forty-two graded questions on density functional theory: recall, reasoning, numeric estimates and failure diagnosis, with a full explanation after every answer.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/theme.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  main{max-width:880px;margin:0 auto;padding:40px clamp(18px,4vw,40px) 120px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+  .chip{border:1px solid var(--line);background:var(--surface);color:var(--txt-2);border-radius:999px;
+    padding:7px 13px;font-size:12.8px;cursor:pointer;font-family:inherit;transition:.15s}
+  .chip:hover{border-color:var(--accent);color:var(--accent)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip .sc{font-family:"JetBrains Mono",monospace;font-size:10.5px;opacity:.75;margin-left:6px}
+  .bar{height:5px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin:22px 0 18px;
+    border:1px solid var(--line)}
+  .bar span{display:block;height:100%;background:var(--accent);width:0;transition:width .25s ease}
+  .meta{display:flex;justify-content:space-between;align-items:center;font-family:"JetBrains Mono",monospace;
+    font-size:11.5px;color:var(--txt-3);letter-spacing:.06em;text-transform:uppercase}
+  .qcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:26px;box-shadow:var(--shadow-lg)}
+  .qmeta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .lv{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+    border-radius:5px;padding:3px 7px;border:1px solid var(--line);color:var(--txt-3)}
+  .lv.recall{color:var(--cool);border-color:var(--cool)}
+  .lv.apply{color:var(--accent);border-color:var(--accent-line)}
+  .lv.diagnose{color:var(--warm);border-color:var(--warm-line)}
+  .qtext{font-size:19px;line-height:1.55;color:var(--txt);font-weight:500;margin:0 0 20px}
+  .opts{display:flex;flex-direction:column;gap:9px}
+  .opt{display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;
+    border:1px solid var(--line);background:var(--surface);color:var(--txt-2);border-radius:10px;
+    padding:13px 15px;font-family:inherit;font-size:14.5px;line-height:1.5;cursor:pointer;transition:.13s}
+  .opt:hover:not(:disabled){border-color:var(--accent);background:var(--accent-tint)}
+  .opt .key{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--txt-3);
+    border:1px solid var(--line);border-radius:5px;padding:1px 6px;flex:none;margin-top:1px}
+  .opt.right{border-color:var(--good);background:var(--accent-tint);color:var(--txt)}
+  .opt.right .key{color:var(--good);border-color:var(--good)}
+  .opt.wrong{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 8%,transparent);color:var(--txt)}
+  .opt.wrong .key{color:var(--bad);border-color:var(--bad)}
+  .opt:disabled{cursor:default;opacity:.92}
+  .numrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .numrow input{font-family:"JetBrains Mono",monospace;font-size:15px;padding:11px 13px;width:170px;
+    border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--txt)}
+  .numrow input:focus{outline:none;border-color:var(--accent)}
+  .unit{font-size:13.5px;color:var(--txt-3)}
+  .verdict{margin-top:20px;border-top:1px solid var(--line);padding-top:18px}
+  .vhead{font-weight:700;font-size:15px;margin:0 0 8px}
+  .vhead.ok{color:var(--good)} .vhead.no{color:var(--bad)}
+  .why{font-size:14.5px;line-height:1.7;color:var(--txt-2);margin:0}
+  .why b{color:var(--txt)}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;align-items:center}
+  .hint{font-size:12.5px;color:var(--txt-3);font-family:"JetBrains Mono",monospace}
+  .result h2{font-size:34px;margin:0 0 6px;letter-spacing:-.02em}
+  .score{font-family:"JetBrains Mono",monospace;font-size:56px;font-weight:700;color:var(--accent);line-height:1}
+  .modrow{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line-soft);font-size:14px}
+  .modrow .nm{flex:1;color:var(--txt)}
+  .modrow .track{width:120px;height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden;border:1px solid var(--line)}
+  .modrow .track i{display:block;height:100%;background:var(--accent)}
+  .modrow .pc{font-family:"JetBrains Mono",monospace;font-size:12.5px;width:52px;text-align:right;color:var(--txt-2)}
+  .modrow.fail .track i{background:var(--bad)} .modrow.fail .pc{color:var(--bad)}
+  .backlink{font-size:13px;text-decoration:none;color:var(--txt-3)}
+  .backlink:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <a class="backlink" href="index.html">← back to the course</a>
+  <div class="hero" style="margin:16px 0 0">
+    <div class="eyebrow">Self-exam</div>
+    <h1 style="font-size:clamp(28px,4.6vw,40px)">Forty-two questions.<br><span class="grad">No credit for recognising the words.</span></h1>
+    <p class="lede" style="font-size:16px">Answer from memory — no scrolling back to the course.
+    Every item comes with the full reasoning afterwards, so a wrong answer is worth as much as a
+    right one <em>if you read the explanation</em>. Pass bar per module: <b>80 %</b>. Below 70 %,
+    go re-read that section before retrying.</p>
+  </div>
+
+  <div id="setup">
+    <div class="meta" style="margin-top:30px">Choose your modules</div>
+    <div class="chips" id="chips"></div>
+    <div class="actions">
+      <button class="btn primary" id="start">Start exam</button>
+      <button class="btn" id="allmods">Select all</button>
+      <button class="btn" id="clearsc">Clear saved scores</button>
+      <span class="hint" id="count"></span>
+    </div>
+  </div>
+
+  <div id="quiz" style="display:none">
+    <div class="bar"><span id="prog"></span></div>
+    <div class="meta"><span id="qcount"></span><span id="running"></span></div>
+    <div class="qcard" id="qcard"></div>
+  </div>
+
+  <div id="done" style="display:none"></div>
+</main>
+
+<script>
+/* ============================================================
+   The bank. m = module, lv = recall | apply | diagnose
+   type "mc": a = index of correct option.  type "num": a = value, tol = allowed |relative| error
+   ============================================================ */
+const MODULES = [
+  "1 · Quantum minimum", "2 · The wall", "3 · Mean field & SCF", "4 · HK & Kohn–Sham",
+  "5 · Functionals", "6 · Crystals & bands", "7 · Production DFT", "8 · AI4DFT"
+];
+
+const BANK = [
+/* ---------------- 1 · Quantum minimum ---------------- */
+{m:0,lv:"apply",type:"mc",q:"You halve the width of a 1D box. What happens to every energy level?",
+ opts:["Each level is multiplied by 4","Each level is halved","Each level doubles","Levels are unchanged — only the wavefunctions shrink"],a:0,
+ why:"\\(E_n = n^2\\pi^2/2L^2\\) in atomic units: energy scales as \\(1/L^2\\), so halving \\(L\\) multiplies every level by 4. This is quantum confinement, and it is why a 3 nm CdSe dot glows a different colour from a 6 nm one — the same physics an engineer sells as a quantum-dot display."},
+
+{m:0,lv:"recall",type:"mc",q:"On a computer, \"solving the Schrödinger equation\" for a 1D potential means:",
+ opts:["Integrating the wavefunction forward in time","Diagonalising a matrix built from a kinetic-energy stencil plus the potential on the diagonal","Minimising the potential energy over positions of the nuclei","Running a Monte-Carlo random walk"],a:1,
+ why:"Discretise \\(x\\) on a grid, replace \\(\\psi''\\) by a finite-difference stencil, and \\(\\hat H\\psi = E\\psi\\) becomes \\(H\\mathbf{c} = E\\mathbf{c}\\) — a symmetric eigenvalue problem. <b>Eigenvalue = energy level, eigenvector = the wavefunction sampled on the grid.</b> Every code in the field, up to VASP, is doing a bigger version of exactly this."},
+
+{m:0,lv:"recall",type:"mc",q:"What is the physical meaning of \\(|\\psi(x)|^2\\)?",
+ opts:["The energy stored at point x","The probability density of finding the electron at x","The force on the electron at x","The charge of the electron at x, in coulombs"],a:1,
+ why:"Born's rule: \\(|\\psi|^2\\,dx\\) is the probability of finding the particle in \\(dx\\). For an N-electron system, summing \\(|\\psi_i|^2\\) over occupied orbitals gives the <b>electron density</b> \\(n(x)\\) — the central object of this whole course."},
+
+{m:0,lv:"apply",type:"num",q:"Ground-state energy of a particle in a box of width L = 1 (atomic units, so \\(E_1 = \\pi^2/2L^2\\)). Give E₁ to two decimals.",
+ a:4.9348,tol:0.02,unit:"hartree",
+ why:"\\(\\pi^2/2 = 4.93\\) hartree. Worth knowing as a sanity check: when your lesson-1 script prints a number near 4.93 for the n=1 box state, the grid is behaving. Numerical answers that don't reproduce an analytic limit are the earliest bug detector you have."},
+
+{m:0,lv:"diagnose",type:"mc",q:"In the double well, you move the two wells further apart. The bonding–antibonding splitting:",
+ opts:["Grows, because the wells are deeper","Shrinks, because tunnelling between the wells gets weaker","Stays the same — splitting depends only on well depth","Inverts, so the antibonding state drops below the bonding one"],a:1,
+ why:"Splitting is set by the <b>overlap</b> of the two localised states — i.e. by tunnelling through the barrier, which decays roughly exponentially with barrier width. That is the entire origin of the chemical bond: bring atoms close, levels split, electrons drop into the lower (bonding) one and the system gains energy. Far apart ⇒ degenerate ⇒ no bond."},
+
+{m:0,lv:"recall",type:"mc",q:"The variational principle guarantees that:",
+ opts:["Any trial wavefunction gives an energy ≥ the true ground-state energy","Any trial wavefunction gives an energy within 1 % of truth","Adding basis functions eventually makes the energy oscillate about the true value","The lowest eigenvalue of any matrix is the true ground-state energy"],a:0,
+ why:"\\(E[\\psi_{\\text{trial}}] \\ge E_{\\text{exact}}\\), always. This makes energy a <b>one-sided ruler</b>: lower is strictly better, so 'minimise the energy' is a rigorous method rather than a hope. It's also why enlarging a basis set can only push the energy down, never below truth."},
+
+/* ---------------- 2 · The wall ---------------- */
+{m:1,lv:"apply",type:"num",q:"Silicon has 14 electrons. Storing the full many-electron wavefunction on a crude 10-points-per-axis grid needs 10^p numbers. What is p?",
+ a:42,tol:0.001,unit:"exponent",
+ why:"\\(\\Psi\\) lives in \\(3N = 42\\) dimensions, so \\(10^{42}\\) numbers — for <b>one silicon atom</b>. The observable universe holds ~10⁸⁰ atoms. Meanwhile \\(n(\\mathbf r)\\) on the same grid needs 10³ numbers whatever N is. That gap is the entire commercial case for DFT."},
+
+{m:1,lv:"recall",type:"mc",q:"The Born–Oppenheimer approximation is justified because:",
+ opts:["Nuclei are ~1836× heavier than electrons, so they move far more slowly","Nuclei are classical objects and electrons are quantum","Nuclear motion is irrelevant to bonding","Nuclear charge is much larger than electron charge"],a:0,
+ why:"The mass ratio lets you freeze the nuclei and solve the electron problem in their static field; the electrons respond essentially instantaneously. That decoupling is what makes 'the energy of a structure' a meaningful function of atomic positions — the potential energy surface every relaxation, phonon and MD run walks on."},
+
+{m:1,lv:"diagnose",type:"mc",q:"What does DFT actually give up in exchange for escaping the 3N-dimensional wall?",
+ opts:["Nothing — DFT is exact and cheap","Direct access to the many-body wavefunction, and exactness: the xc functional must be approximated","The ability to compute forces","Applicability to solids"],a:1,
+ why:"The Hohenberg–Kohn theorems prove the density is <em>sufficient</em>, but not how to use it: the exchange–correlation functional exists and is unknown. So DFT is exact in principle, approximate in every practice. <b>Every DFT error you will ever debug traces back to that one term</b> (plus your numerical settings)."},
+
+{m:1,lv:"recall",type:"mc",q:"How do the costs of exact wavefunction methods (full CI) and Kohn–Sham DFT scale with the number of electrons N?",
+ opts:["Both scale exponentially","Full CI scales exponentially; KS-DFT scales roughly as N³","Both scale as N³","Full CI scales as N³; DFT scales exponentially"],a:1,
+ why:"Exponential means 'impossible past a handful of electrons, forever'. Polynomial means 'wait for better hardware, or use better algorithms' — and modern linear-scaling variants push it further still. Converting an exponential problem into a cubic one is the single most valuable move in computational science, and it is what earned Kohn the 1998 Nobel."},
+
+{m:1,lv:"recall",type:"mc",q:"How many numbers describe the electron density of a 26-electron iron atom on a 10×10×10 grid?",
+ opts:["10⁷⁸","10³ — the count is independent of the number of electrons","26 × 10³","10²⁶"],a:1,
+ why:"That's the whole trick. \\(n(\\mathbf r)\\) is a function of three coordinates no matter how many electrons there are, so the cost of <em>describing</em> the system stops exploding. The remaining cost is solving for it — which scales like N³ in standard DFT, not exponentially."},
+
+/* ---------------- 3 · Mean field & SCF ---------------- */
+{m:2,lv:"recall",type:"mc",q:"In a Hartree (mean-field) treatment, each electron feels:",
+ opts:["The instantaneous positions of all other electrons","The time-averaged charge cloud of all the electrons","Only the nucleus","A random potential resampled each iteration"],a:1,
+ why:"Mean field = replace 'the other electrons' by their average density. It is what makes the problem one-electron-at-a-time and therefore solvable — and what discards <b>correlation</b>: real electrons dodge each other in real time, and averaging deletes that dodging."},
+
+{m:2,lv:"diagnose",type:"mc",q:"Your SCF cycle oscillates: the total energy jumps between two values and never settles. The first knob to reach for is:",
+ opts:["Increase the plane-wave cutoff","Reduce the density mixing parameter β","Increase the k-point mesh","Switch to a hybrid functional"],a:1,
+ why:"Oscillation between iterates is the signature of over-correcting the density: \\(n \\leftarrow (1-\\beta)n + \\beta n_{\\text{new}}\\) with β too large. Lowering β damps it (slower but stable). Cutoff and k-points affect accuracy, not usually this instability. In Quantum ESPRESSO this is <code>mixing_beta</code>; charge sloshing in big metallic cells is the classic cause."},
+
+{m:2,lv:"recall",type:"mc",q:"Correlation energy is conventionally defined as:",
+ opts:["The exact energy minus the Hartree–Fock energy (in a complete basis)","The energy of electron–electron repulsion","The exchange energy with the sign flipped","The difference between LDA and PBE energies"],a:0,
+ why:"\\(E_c = E_{\\text{exact}} - E_{\\text{HF}}\\). It's small in absolute terms (helium: ~0.04 of 2.90 hartree, about 1.5 %) but comparable to chemical bond energies — which is exactly why 1.5 % errors in total energy decide whether your predicted phase is stable."},
+
+{m:2,lv:"diagnose",type:"mc",q:"The Hartree term computes the electrostatic energy of the density with itself. What pathology does that introduce?",
+ opts:["Double counting of the nuclear charge","Self-interaction: each electron partly repels itself","Loss of translational invariance","Violation of the Pauli principle"],a:1,
+ why:"\\(\\tfrac12\\iint n(\\mathbf r)n(\\mathbf r')/|\\mathbf r-\\mathbf r'|\\) includes an electron interacting with its own charge. Exact exchange cancels it exactly in Hartree–Fock; approximate xc functionals cancel it only partly. <b>Self-interaction error</b> is behind DFT's too-small gaps, over-delocalised charge, and bad barrier heights."},
+
+{m:2,lv:"apply",type:"mc",q:"Put the SCF loop in order.",
+ opts:["Guess n → build v_eff[n] → solve KS equations → new n from orbitals → mix → check convergence","Solve KS equations → guess n → mix → build v_eff → check convergence","Build v_eff → check convergence → guess n → solve → mix","Guess orbitals → compute forces → move atoms → recompute density"],a:0,
+ why:"The potential depends on the density, and the density comes from solving with that potential — chicken and egg, broken by iteration. Being able to draw this loop from memory is the checkpoint for this module; it is the engine inside every electronic-structure code ever written."},
+
+/* ---------------- 4 · HK & Kohn–Sham ---------------- */
+{m:3,lv:"recall",type:"mc",q:"The first Hohenberg–Kohn theorem states that:",
+ opts:["The ground-state density determines the external potential (up to a constant), hence the Hamiltonian and everything else","The density minimises the kinetic energy","Any density can be represented by non-interacting electrons","The ground state is always non-degenerate"],a:0,
+ why:"Density → potential → Hamiltonian → all ground-state properties. It's an existence proof that the density is <em>enough information</em>, which is astonishing: a function of 3 variables replacing one of 3N. It says nothing about how to extract those properties — that gap is why DFT needed Kohn–Sham a year later."},
+
+{m:3,lv:"recall",type:"mc",q:"The second HK theorem provides:",
+ opts:["A variational principle in the density: the true ground-state density minimises the energy functional","A recipe for the exchange–correlation functional","The proof that Kohn–Sham orbitals are physical","The scaling of DFT with system size"],a:0,
+ why:"It converts the existence statement into a working method: define \\(E[n]\\), minimise over densities, and the minimiser is the true density with the true energy. Same logic as the wavefunction variational principle from module 1, transplanted onto a much smaller object."},
+
+{m:3,lv:"diagnose",type:"mc",q:"A colleague says \"the Kohn–Sham orbitals are the real electron orbitals of the material.\" The precise correction is:",
+ opts:["They are orbitals of a fictitious non-interacting system chosen to reproduce the true density; only the density (and total energy) is guaranteed physical","They are physical, but only for metals","They are physical only if you use a hybrid functional","They have no relation whatsoever to the material and should never be plotted"],a:0,
+ why:"KS orbitals are auxiliary. In practice they are extremely useful — band structures and DOS plots are made from them and often agree well with experiment — but that is a <em>pragmatic</em> success, not a theorem. The formal exception: for the exact functional the highest occupied eigenvalue equals minus the ionisation potential."},
+
+{m:3,lv:"recall",type:"mc",q:"The Kohn–Sham effective potential is:",
+ opts:["v_ext + v_H + v_xc","v_ext + v_xc only","v_H + v_xc only","v_ext + v_H − v_xc"],a:0,
+ why:"External (the nuclei) + Hartree (classical repulsion of the density cloud) + exchange–correlation (everything that isn't classical: the Pauli hole, correlation, the kinetic-energy difference between the real and fictitious systems). <b>Naming those three terms unprompted is this module's gate.</b>"},
+
+{m:3,lv:"apply",type:"mc",q:"Is DFT an approximate theory?",
+ opts:["Yes — the Hohenberg–Kohn theorems are only approximate","No: it is exact in principle for the ground-state density and energy; only the xc functional is approximated in practice","Yes — it neglects electron–electron interaction entirely","No — it is exact including all excited states"],a:1,
+ why:"The framework is exact; the input is not. And note what is <em>not</em> covered even in principle: excited states, which need TDDFT or many-body methods like GW/BSE. Confusing 'DFT gets gaps wrong' with 'DFT is a crude theory' is the most common misreading in the field."},
+
+{m:3,lv:"diagnose",type:"mc",q:"Why is the Kohn–Sham kinetic energy \\(T_s\\) used instead of the true kinetic energy \\(T\\)?",
+ opts:["Because \\(T_s\\) can be computed exactly from the orbitals, and the small remainder \\(T-T_s\\) is dumped into the xc term","Because kinetic energy is negligible for solids","Because \\(T\\) diverges for periodic systems","Because \\(T_s = T\\) exactly"],a:0,
+ why:"Pure density functionals for kinetic energy (Thomas–Fermi) are far too crude to give bonding. Kohn and Sham's move: reintroduce orbitals to capture the bulk of T exactly, and hide the residual error — along with exchange and correlation — inside \\(E_{xc}\\). That is why DFT costs orbitals at all rather than being pure density-only."},
+
+/* ---------------- 5 · Functionals ---------------- */
+{m:4,lv:"recall",type:"mc",q:"LDA approximates the xc energy density at each point by:",
+ opts:["That of a uniform electron gas of the same local density","A fit to hydrogen atom data","An average over the whole crystal","The Hartree–Fock exchange of the local orbitals"],a:0,
+ why:"Absurd for atoms — a real atomic density is nothing like a uniform gas — yet excellent for metals and surprisingly serviceable for many solids, thanks to error cancellation and the fact that it satisfies exact sum rules. It's the bottom rung of Jacob's ladder and the base layer of everything above it."},
+
+{m:4,lv:"recall",type:"mc",q:"Order Jacob's ladder from cheapest to most expensive.",
+ opts:["LDA → GGA (PBE) → meta-GGA (SCAN) → hybrid (HSE06)","GGA → LDA → hybrid → meta-GGA","LDA → hybrid → GGA → meta-GGA","meta-GGA → GGA → LDA → hybrid"],a:0,
+ why:"Each rung uses more information: density → plus its gradient → plus kinetic-energy density → plus a fraction of exact exchange. More ingredients, more cost, usually (not always) more accuracy. PBE is the workhorse of materials science; r²SCAN is the rising default for databases."},
+
+{m:4,lv:"diagnose",type:"mc",q:"PBE predicts a band gap of ~0.6 eV for silicon; experiment says 1.17 eV. The main reason is:",
+ opts:["Insufficient k-points","The derivative discontinuity of the xc functional is missing, so the KS gap underestimates the quasiparticle gap","Silicon's lattice constant is wrong in the calculation","Spin–orbit coupling"],a:1,
+ why:"This is structural, not sloppy: even the <em>exact</em> KS gap differs from the true quasiparticle gap by the derivative discontinuity Δxc, and approximate functionals also suffer self-interaction error. Fixes: hybrids (HSE06 gives ~1.2 eV) or many-body GW. Reporting a bare PBE gap as 'the predicted gap' is the classic beginner's error."},
+
+{m:4,lv:"apply",type:"mc",q:"LDA and PBE differ systematically in equilibrium lattice constants. The usual pattern is:",
+ opts:["LDA overbinds (too small a₀); PBE underbinds slightly (a₀ a bit too large)","Both are systematically too large","LDA is too large, PBE too small","Neither shows a systematic trend"],a:0,
+ why:"LDA typically lands ~1–2 % under experiment, PBE ~1 % over — so the pair often <em>brackets</em> the truth, which experienced practitioners use as a cheap error bar. Knowing the sign of your functional's bias is the difference between quoting a number and understanding it."},
+
+{m:4,lv:"recall",type:"mc",q:"Hybrid functionals like HSE06 are 10–100× more expensive in plane-wave codes because:",
+ opts:["They need far more k-points","Evaluating exact (Fock) exchange couples every pair of occupied orbitals, a non-local operation","They require much larger supercells","They must be run at finite temperature"],a:1,
+ why:"Exact exchange is non-local: each orbital's exchange contribution involves an integral against every other occupied orbital, which in plane waves means many FFTs per SCF step. That cost is why hybrids are used for targeted gap calculations rather than routine high-throughput screening."},
+
+/* ---------------- 6 · Crystals & bands ---------------- */
+{m:5,lv:"recall",type:"mc",q:"Bloch's theorem says the eigenstates of a periodic potential can be written as:",
+ opts:["A plane wave times a function with the periodicity of the lattice","A sum of atomic orbitals only","A single plane wave","A Gaussian centred on each atom"],a:0,
+ why:"\\(\\psi_{n\\mathbf k}(\\mathbf r)=e^{i\\mathbf k\\cdot\\mathbf r}u_{n\\mathbf k}(\\mathbf r)\\). It reduces an infinite crystal to one unit cell plus a label \\(\\mathbf k\\) — which is why solid-state DFT is tractable at all, and why plane waves are the natural basis for VASP and Quantum ESPRESSO."},
+
+{m:5,lv:"apply",type:"mc",q:"In the nearly-free-electron model with \\(V(x)=V_0\\cos(2\\pi x/a)\\), the gap that opens at the zone boundary has magnitude:",
+ opts:["≈ V₀","≈ V₀²","≈ 2πV₀/a","Zero — gaps require a non-sinusoidal potential"],a:0,
+ why:"The cosine has Fourier components \\(V_0/2\\) at \\(\\pm G\\); degenerate perturbation theory between the two states coupled by G gives a splitting of \\(2\\times V_0/2 = V_0\\). The lesson-6 widget lets you verify it: set V₀ = 8 and read the gap. <b>Gaps come from the crystal potential coupling degenerate plane waves</b> — no more mystery than that."},
+
+{m:5,lv:"apply",type:"mc",q:"Sodium has one valence electron per primitive cell. It must be:",
+ opts:["A metal — the band is half filled, so states are available immediately above the Fermi level","An insulator — one electron cannot conduct","A semiconductor with a small gap","Undecidable without knowing the functional"],a:0,
+ why:"Each band holds 2 electrons per cell (spin ↑↓). An odd count leaves the top band partly filled ⇒ metal. Even counts <em>can</em> give an insulator if a gap sits above the last filled band (Si, diamond). Electron counting is the fastest sanity check in solid-state physics — and if your DFT run disagrees with it, suspect your run."},
+
+{m:5,lv:"diagnose",type:"mc",q:"You are converging a calculation on aluminium (a metal) and one on silicon. Which needs a denser k-mesh, and why?",
+ opts:["Aluminium — the occupation changes abruptly across the Fermi surface, so the Brillouin-zone integrals converge slowly","Silicon — because it has a band gap","Both need identical meshes; the mesh depends only on cell size","Neither — k-points only matter for magnetic systems"],a:0,
+ why:"In an insulator every band is either full or empty everywhere, so the integrand is smooth and few k-points suffice. In a metal the occupation jumps at the Fermi surface, so you need a dense mesh plus smearing (Methfessel–Paxton, Marzari–Vanderbilt) to integrate it. Under-converged metal k-meshes are one of the most common causes of nonsense energies."},
+
+{m:5,lv:"recall",type:"mc",q:"How many electrons does one band hold per primitive cell?",
+ opts:["1","2 — one per spin","4","It depends on the atom"],a:1,
+ why:"Spin degeneracy, in a non-spin-polarised calculation. This single fact drives the metal/insulator classification you just used for sodium and silicon."},
+
+/* ---------------- 7 · Production DFT ---------------- */
+{m:6,lv:"recall",type:"mc",q:"The plane-wave cutoff (ecutwfc) controls:",
+ opts:["How many plane waves are in the basis — i.e. the spatial resolution of the wavefunctions","How many k-points are sampled","The SCF convergence threshold","The smearing width"],a:0,
+ why:"All \\(\\mathbf G\\) with \\(\\tfrac12|\\mathbf k+\\mathbf G|^2 <\\) cutoff are kept. Because it's a basis-set size, the energy is <b>variational</b> in it: raising the cutoff can only lower the total energy, monotonically — a signature you should recognise in a convergence plot."},
+
+{m:6,lv:"recall",type:"mc",q:"Pseudopotentials exist mainly to:",
+ opts:["Replace chemically inert core electrons and remove the sharp nodal structure near the nucleus, so far fewer plane waves are needed","Speed up the SCF mixing","Add relativistic corrections only","Make the calculation exact"],a:0,
+ why:"Valence electrons do the chemistry; core states are deep, frozen, and force wildly oscillating wavefunctions near the nucleus that a plane-wave basis can only resolve at ruinous cutoff. Pseudise them away and cutoffs drop by an order of magnitude. The cost: transferability — you must use a pseudopotential validated for your element and functional."},
+
+{m:6,lv:"diagnose",type:"mc",q:"You compute the formation energy of a compound by subtracting the energies of the elemental phases, but each run used a different plane-wave cutoff. What is wrong?",
+ opts:["Nothing, as long as each run was individually converged","Basis-set errors no longer cancel between the runs, so the difference is unreliable","The absolute energies are wrong, but differences are always safe","Cutoffs only matter for metals"],a:1,
+ why:"Absolute DFT total energies are meaningless in isolation; only differences carry physics, and those differences rely on <b>systematic error cancellation</b>. Cancellation requires the same cutoff, same pseudopotentials, same functional, and comparable k-point density across all runs in the comparison. This mistake silently corrupts convex hulls."},
+
+{m:6,lv:"apply",type:"mc",q:"Fitting E(V) to a Birch–Murnaghan equation of state gives you:",
+ opts:["Equilibrium volume (hence lattice constant) and bulk modulus","Band gap and effective mass","Elastic tensor and phonon frequencies","Formation energy and convex hull"],a:0,
+ why:"The minimum of the fit gives \\(V_0 \\to a_0\\); the curvature gives \\(B_0 = -V\\,\\partial P/\\partial V\\). Keep the strain range modest (±5–8 %): the fit assumes you're near equilibrium, so a huge range makes the fit <em>worse</em>, not better — the trap you can reproduce yourself in lesson 7."},
+
+{m:6,lv:"diagnose",type:"mc",q:"What is the field's iron rule for reporting any DFT number?",
+ opts:["It must come from a hybrid functional","It must be accompanied by convergence tests (cutoff, k-mesh) — an unconverged number is not a result","It must match experiment to within 1 %","It must be published with the input files"],a:1,
+ why:"Convergence is a claim about numerics, not physics, and it's the referee's first question. Standard protocol: converge total-energy <em>differences</em> to a stated tolerance (e.g. 1 meV/atom) against cutoff and k-mesh separately, then use the converged settings for every structure in the comparison."},
+
+/* ---------------- 8 · AI4DFT ---------------- */
+{m:7,lv:"diagnose",type:"mc",q:"An MLIP such as CHGNet is trained on PBE data from the Materials Project. Its best achievable accuracy against experiment is:",
+ opts:["Better than PBE, because neural networks generalise","At best PBE's own accuracy — it can only learn the theory that generated its labels","Exact, given enough data","Unrelated to the training theory"],a:1,
+ why:"A surrogate inherits its teacher's bias. If PBE underestimates a gap or overestimates a lattice constant, a perfectly trained MLIP reproduces that error faithfully. <b>MLIPs buy speed, not accuracy</b> — the accuracy ceiling is set by the reference theory, which is why databases moving to r²SCAN matters."},
+
+{m:7,lv:"diagnose",type:"mc",q:"The most dangerous failure mode of an MLIP in production is:",
+ opts:["It crashes on unseen elements","It silently extrapolates off-distribution and returns a confident, wrong energy","It runs too slowly for long trajectories","It cannot compute forces"],a:1,
+ why:"Failure without an error message is the expensive kind. Off-distribution geometries — extreme pressure, broken bonds, exotic stoichiometries, transition states — are exactly where the training set is thin. Professional practice: <b>spot-check with real DFT</b> on a sample of the trajectory, and watch ensemble/uncertainty estimates where the model provides them."},
+
+{m:7,lv:"apply",type:"num",q:"You need to evaluate 100,000 structures. DFT takes 10 minutes each. How many years of serial compute is that? (1 year ≈ 365.25 days; give it to one decimal.)",
+ a:1.9,tol:0.12,unit:"years",
+ why:"10⁵ × 600 s = 6×10⁷ s ≈ 1.9 years. The same job with a 60 ms MLIP call takes 100 minutes. <b>That single ratio is the entire AI4DFT pitch</b> — it's what let GNoME screen millions of candidate crystals, with DFT kept in reserve to verify the shortlist."},
+
+{m:7,lv:"recall",type:"mc",q:"DM21 (DeepMind, 2021) is significant because it puts machine learning:",
+ opts:["Inside DFT itself — a neural network as the exchange–correlation functional","In place of DFT, as a force field","In the structure-generation step only","In the k-point sampling"],a:0,
+ why:"Two distinct places AI enters this field: as a <em>surrogate</em> for the whole calculation (MLIPs: CHGNet, MACE, M3GNet) or as a <em>component</em> inside it (ML functionals: DM21, trained partly on fractional-charge/fractional-spin constraints to attack self-interaction error). Knowing which is which keeps you honest when reading papers."},
+
+{m:7,lv:"recall",type:"mc",q:"In the GNoME workflow, what role did DFT play?",
+ opts:["None — the model replaced it","Ground truth: candidate structures proposed by ML were verified with DFT, and the verified results fed back into training","Only for generating the initial crystal prototypes","It was used only to compute band gaps"],a:1,
+ why:"Generate cheaply, verify expensively, retrain on the verified data — an active-learning loop. DFT did not get replaced; it got promoted to referee. That relationship is the honest one-line answer to 'will ML replace DFT?', and it's the position you're asked to defend in the capstone task."}
+];
+
+/* ============================================================ */
+const $=id=>document.getElementById(id);
+const KEY="ai4dft-exam-scores";
+let picked=new Set(MODULES.map((_,i)=>i));
+let queue=[],idx=0,right=0,answered=false,perMod={},wrongIds=[];
+
+function saved(){try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}}
+function save(o){try{localStorage.setItem(KEY,JSON.stringify(o))}catch(e){}}
+
+function renderChips(){
+  const sc=saved();
+  $("chips").innerHTML=MODULES.map((m,i)=>{
+    const s=sc[i];
+    return `<button class="chip ${picked.has(i)?"on":""}" data-m="${i}">${m}`+
+      (s!==undefined?`<span class="sc">${s}%</span>`:"")+`</button>`;
+  }).join("");
+  $("chips").querySelectorAll(".chip").forEach(c=>c.onclick=()=>{
+    const i=+c.dataset.m; picked.has(i)?picked.delete(i):picked.add(i); renderChips();
+  });
+  const n=BANK.filter(q=>picked.has(q.m)).length;
+  $("count").textContent=n+" question"+(n===1?"":"s")+" selected";
+}
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+function mathify(el){if(window.renderMathInElement)renderMathInElement(el,{delimiters:[
+  {left:"$$",right:"$$",display:true},{left:"\\(",right:"\\)",display:false}],throwOnError:false});}
+
+function startExam(list){
+  queue=list; idx=0; right=0; wrongIds=[]; perMod={};
+  queue.forEach(q=>{perMod[q.m]=perMod[q.m]||{n:0,ok:0}; perMod[q.m].n++;});
+  $("setup").style.display="none"; $("done").style.display="none"; $("quiz").style.display="";
+  showQ();
+}
+
+function showQ(){
+  const q=queue[idx]; answered=false;
+  $("prog").style.width=(idx/queue.length*100)+"%";
+  $("qcount").textContent="Question "+(idx+1)+" / "+queue.length;
+  $("running").textContent=right+" correct";
+  const body = q.type==="mc"
+    ? `<div class="opts">`+q.opts.map((o,i)=>
+        `<button class="opt" data-i="${i}"><span class="key">${"ABCD"[i]}</span><span>${o}</span></button>`).join("")+`</div>`
+    : `<div class="numrow"><input id="numin" type="text" inputmode="decimal" placeholder="your answer" autocomplete="off">
+         <span class="unit">${q.unit||""}</span>
+         <button class="btn primary" id="numgo">Check</button></div>`;
+  $("qcard").innerHTML=
+    `<div class="qmeta"><span class="lv ${q.lv}">${q.lv}</span>
+       <span class="lv">${MODULES[q.m]}</span></div>
+     <p class="qtext">${q.q}</p>${body}<div id="verdict"></div>`;
+  mathify($("qcard"));
+  if(q.type==="mc"){
+    $("qcard").querySelectorAll(".opt").forEach(b=>b.onclick=()=>grade(+b.dataset.i));
+  }else{
+    $("numgo").onclick=()=>grade(parseFloat($("numin").value.replace(",",".")));
+    $("numin").onkeydown=e=>{if(e.key==="Enter")$("numgo").click();};
+    $("numin").focus();
+  }
+}
+
+function grade(ans){
+  if(answered)return; answered=true;
+  const q=queue[idx];
+  let ok;
+  if(q.type==="mc"){
+    ok = ans===q.a;
+    $("qcard").querySelectorAll(".opt").forEach(b=>{
+      const i=+b.dataset.i; b.disabled=true;
+      if(i===q.a)b.classList.add("right");
+      else if(i===ans)b.classList.add("wrong");
+    });
+  }else{
+    ok = isFinite(ans) && Math.abs(ans-q.a) <= Math.max(q.tol*Math.abs(q.a),q.tol);
+    const inp=$("numin"); inp.disabled=true; $("numgo").disabled=true;
+    inp.style.borderColor= ok? "var(--good)":"var(--bad)";
+  }
+  if(ok){right++;perMod[q.m].ok++;} else wrongIds.push(q);
+  const exact = q.type==="num" ? ` Correct value: <b>${q.a} ${q.unit||""}</b>.` : "";
+  $("verdict").innerHTML=
+    `<div class="verdict"><p class="vhead ${ok?"ok":"no"}">${ok?"✓ Correct":"✗ Not quite"}</p>
+       <p class="why">${q.why}${exact}</p>
+       <div class="actions"><button class="btn primary" id="next">${idx+1<queue.length?"Next question →":"See results →"}</button>
+       <span class="hint">enter</span></div></div>`;
+  mathify($("verdict"));
+  $("next").onclick=next; $("next").focus();
+  document.onkeydown=e=>{if(e.key==="Enter"&&answered){e.preventDefault();next();}};
+}
+
+function next(){
+  document.onkeydown=null;
+  if(idx+1<queue.length){idx++;showQ();} else finish();
+}
+
+function finish(){
+  $("quiz").style.display="none"; $("done").style.display="";
+  const pct=Math.round(right/queue.length*100);
+  const sc=saved();
+  Object.keys(perMod).forEach(m=>{
+    const p=Math.round(perMod[m].ok/perMod[m].n*100);
+    if(sc[m]===undefined||p>sc[m])sc[m]=p;
+  });
+  save(sc);
+  const rows=Object.keys(perMod).map(m=>{
+    const p=Math.round(perMod[m].ok/perMod[m].n*100);
+    return `<div class="modrow ${p<80?"fail":""}"><span class="nm">${MODULES[m]}</span>
+      <span class="track"><i style="width:${p}%"></i></span><span class="pc">${p}%</span></div>`;
+  }).join("");
+  const verdict = pct>=80
+    ? "Gate passed. Move to the next module — and go do the code-surgery task, which is the part a quiz cannot check."
+    : pct>=70
+      ? "Borderline. Re-read the explanations you got wrong, then retake only those modules."
+      : "Below the bar. Don't retake yet — go back to the course section and the walkthrough for the weak modules first, then return.";
+  $("done").innerHTML=
+    `<div class="card result" style="margin-top:34px">
+       <div class="eyebrow">Result</div>
+       <div class="score">${pct}%</div>
+       <h2 style="margin-top:10px">${right} / ${queue.length} correct</h2>
+       <p class="why" style="max-width:64ch">${verdict}</p>
+       <div style="margin-top:22px">${rows}</div>
+       <div class="actions">
+         <button class="btn primary" id="again">Retake these modules</button>
+         ${wrongIds.length?'<button class="btn" id="onlywrong">Drill the '+wrongIds.length+' I missed</button>':""}
+         <button class="btn" id="back">Change modules</button>
+         <a class="btn" href="index.html" style="text-decoration:none">Back to the course</a>
+       </div>
+       <p class="hint" style="margin-top:16px">Best score per module is kept in this browser and shown on the module chips.
+       Log the result in <code>PROGRESS.md</code>, then run <code>/dft-tutor</code> for the oral defence.</p>
+     </div>`;
+  $("again").onclick=()=>startExam(shuffle(BANK.filter(q=>picked.has(q.m))));
+  $("back").onclick=()=>{$("done").style.display="none";$("setup").style.display="";renderChips();};
+  if(wrongIds.length)$("onlywrong").onclick=()=>startExam(shuffle(wrongIds.slice()));
+}
+
+$("start").onclick=()=>{
+  const list=BANK.filter(q=>picked.has(q.m));
+  if(!list.length){alert("Pick at least one module.");return;}
+  startExam(shuffle(list));
+};
+$("allmods").onclick=()=>{picked=new Set(MODULES.map((_,i)=>i));renderChips();};
+$("clearsc").onclick=()=>{save({});renderChips();};
+renderChips();
+</script>
+</body>
+</html>

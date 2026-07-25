@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI4DFT — Density Functional Theory, from Zero to AI</title>
+<meta name="description" content="An interactive beginner-to-advanced course on Density Functional Theory for materials engineers: quantum principles, the Kohn-Sham machinery, real calculations, and machine-learned potentials.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/theme.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]});"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  /* page-specific: everything shared lives in assets/theme.css */
+  .rail-cta{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+  .rail-cta a{font-size:12.8px;text-decoration:none;display:flex;align-items:center;gap:8px;
+    padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--txt-2)}
+  .rail-cta a:hover{border-color:var(--accent);color:var(--accent)}
+  .rail-cta a .k{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--txt-3);letter-spacing:.12em}
+  .ladder{display:flex;flex-direction:column-reverse;gap:6px;margin-top:12px}
+  .rung{border:1px solid var(--line);border-radius:9px;padding:11px 14px;cursor:pointer;
+    transition:.15s;background:var(--surface-2)}
+  .rung:hover{border-color:var(--accent)}
+  .rung .rname{font-weight:600;font-size:14px;color:var(--txt)}
+  .rung .rdesc{display:none;color:var(--txt-2);font-size:13px;line-height:1.6;margin-top:7px}
+  .rung.open{border-color:var(--accent);background:var(--accent-tint)}
+  .rung.open .rdesc{display:block}
+  .pill{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--txt-3);float:right}
+  .cta-card{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:space-between;
+    background:var(--accent-tint);border:1px solid var(--accent-line)}
+  .cta-card .t{font-size:18px;font-weight:700;color:var(--txt);margin:0 0 6px}
+  .btn-lg{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;
+    border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;white-space:nowrap;border:1px solid var(--accent)}
+  .btn-lg:hover{background:var(--accent-2);color:#fff}
+  .checklist{list-style:none;padding:0;margin:12px 0 0}
+  .checklist li{border-top:1px solid var(--line-soft);padding:9px 0 9px 26px;position:relative;
+    font-size:14px;color:var(--txt-2);line-height:1.6}
+  .checklist li:before{content:"→";position:absolute;left:0;color:var(--accent);font-family:"JetBrains Mono",monospace}
+  .checklist li b{color:var(--txt)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <div class="eyebrow">AI4Science</div>
+      <div class="title">AI4DFT<br><span class="thin">Zero → Advanced</span></div>
+    </div>
+    <nav>
+      <a href="#s0"><span class="num">00</span> Why DFT exists</a>
+      <a href="#s1"><span class="num">01</span> Quantum minimum</a>
+      <a href="#s2"><span class="num">02</span> The Wall</a>
+      <a href="#s3"><span class="num">03</span> DFT: the two miracles</a>
+      <a href="#s4"><span class="num">04</span> The xc zoo</a>
+      <a href="#s5"><span class="num">05</span> Crystals &amp; bands</a>
+      <a href="#s6"><span class="num">06</span> Real calculations</a>
+      <a href="#s7"><span class="num">07</span> AI4DFT</a>
+      <a href="#s8"><span class="num">08</span> Course map</a>
+      <a href="#s9"><span class="num">09</span> Prove you know it</a>
+    </nav>
+    <div class="rail-cta">
+      <a href="exam.html"><span class="k">TEST</span> Self-exam — 42 questions</a>
+      <a href="walkthrough.html"><span class="k">DEEP</span> Lesson walkthrough</a>
+      <a href="ASSESSMENT.md"><span class="k">PLAN</span> Mastery ladder</a>
+    </div>
+    <div class="note">Also in this folder: <code>dft_course.pdf</code> (full prose) ·
+      <code>CURRICULUM.md</code> (run order + tasks) · <code>PROGRESS.md</code> (your ledger) ·
+      <code>lessons/*.py</code> (you run these). Tutor mode: run <code>/dft-tutor</code> in Claude Code.</div>
+  </aside>
+
+  <main>
+    <div class="hero">
+      <div class="eyebrow">Interactive course</div>
+      <h1>Density Functional Theory,<br><span class="grad">from first principles to AI</span></h1>
+      <p class="lede">You're a materials engineer. Every number you've ever looked up — a modulus,
+      a band gap, a phase diagram — is set by <b>electrons</b> obeying quantum mechanics.
+      The exact equations are unsolvable for real materials. <b>DFT is the 1998-Nobel-winning
+      workaround</b> that made electrons computable, and it now underpins ~40,000 papers a year
+      and every major materials database. This course takes you from "what is a wavefunction?"
+      to running machine-learned DFT surrogates — with code you run yourself at every step.</p>
+    </div>
+
+    <!-- 00 -->
+    <section id="s0">
+      <div class="sec-head"><span class="kicker">00</span><h2>Why DFT exists</h2></div>
+      <p class="sec-sub">One sentence per era: quantum mechanics (1926) gave us the exact equation
+      for matter; it proved unsolvable beyond a few electrons; DFT (1964–65) replaced the unsolvable
+      object with a solvable one — the electron <b>density</b> — at the price of one unknown term we
+      approximate; computers made it routine; and AI (2020s) is now learning from DFT's outputs to go
+      10,000× faster.</p>
+      <div class="card">
+        <h3>The object swap that defines the field</h3>
+        <p>Exact quantum mechanics tracks the many-electron wavefunction
+        \(\Psi(\mathbf{r}_1,\dots,\mathbf{r}_N)\) — a function of \(3N\) coordinates.
+        DFT tracks the density \(n(\mathbf{r})\) — a function of <b>3</b> coordinates, no matter
+        how many electrons. Everything in this course is the story of why that swap is legal and
+        what it costs.</p>
+        <div class="eq">$$\Psi(\mathbf{r}_1,\dots,\mathbf{r}_N)\;\longrightarrow\;n(\mathbf{r})$$</div>
+      </div>
+    </section>
+
+    <!-- 01 -->
+    <section id="s1">
+      <div class="sec-head"><span class="kicker">01</span><h2>The quantum minimum</h2></div>
+      <p class="sec-sub">Three ideas carry the whole course: (1) electrons are described by a
+      <b>wavefunction</b> whose square is a probability; (2) confinement makes energy come in
+      discrete <b>levels</b>; (3) on a computer, finding those levels is a <b>matrix eigenvalue
+      problem</b> — the same one, from this toy box all the way up to VASP.</p>
+
+      <div class="card">
+        <span class="tag">Interactive</span>
+        <h3>Particle in a box — squeeze it and watch the levels</h3>
+        <p>The Schrödinger equation \( -\tfrac{1}{2}\psi'' + V\psi = E\psi \) in a box of width
+        \(L\) allows only \(E_n = \dfrac{n^2\pi^2}{2L^2}\). Drag the width: <b>smaller box ⇒
+        higher, more widely spaced levels</b>. This is why nano-materials have different colors
+        and gaps than bulk — quantum confinement is real engineering.</p>
+        <div class="widget">
+          <canvas id="boxCanvas" width="900" height="360"></canvas>
+          <div class="controls">
+            <label>box width L <input type="range" id="boxL" min="0.5" max="2" step="0.01" value="1">
+              <span class="val" id="boxLv">1.00</span></label>
+            <span>levels shown: n = 1…5 · wavefunctions drawn at their energy height</span>
+          </div>
+        </div>
+        <p style="margin-top:12px"><span class="tag run">You run</span>
+        <code>lessons/lesson01_schrodinger_1d.py</code> — box, harmonic oscillator, and the double
+        well whose level splitting is the origin of the chemical bond. Then do the Section 1 tasks
+        in <code>CURRICULUM.md</code>.</p>
+      </div>
+
+      <div class="card">
+        <h3>Hydrogen &amp; the variational principle</h3>
+        <p>Hydrogen is the exactly solvable calibration atom: \(E_n = -\tfrac{1}{2n^2}\) hartree,
+        with s, p, d states degenerate — an "accident" of the pure \(-1/r\) potential. Screening in
+        many-electron atoms breaks the accident and orders the periodic table.
+        The <b>variational principle</b> then gives us a rigorous strategy for everything harder
+        than hydrogen:</p>
+        <div class="eq">$$E[\psi_{\text{trial}}]\;\ge\;E_{\text{exact}}\quad\text{— guesses can only err upward.}$$</div>
+        <p>Expand the guess in a <b>basis set</b> (Gaussians in chemistry, plane waves in solids)
+        and minimizing energy becomes solving \(H\mathbf{c}=ES\mathbf{c}\). More basis functions ⇒
+        lower ⇒ better, never below truth.</p>
+        <p><span class="tag run">You run</span> <code>lesson02_hydrogen_atom.py</code> ·
+        <code>lesson03_variational_basis_sets.py</code></p>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="s2">
+      <div class="sec-head"><span class="kicker">02</span><h2>The Wall — why exact QM dies</h2></div>
+      <p class="sec-sub">The many-electron wavefunction lives in \(3N\) dimensions. Storing it on
+      even a pathetic 10-point-per-axis grid needs \(10^{3N}\) numbers. Slide N and watch the
+      universe run out of atoms.</p>
+      <div class="card">
+        <span class="tag">Interactive</span>
+        <h3>The curse of dimensionality</h3>
+        <div class="widget">
+          <div class="controls" style="margin-top:0">
+            <label>electrons N <input type="range" id="wallN" min="1" max="40" step="1" value="14">
+              <span class="val" id="wallNv">14</span></label>
+          </div>
+          <p style="font-size:14.5px;color:var(--muted);margin:14px 0 4px">
+            Numbers needed for Ψ: <span class="big" id="wallOut">10<sup>42</sup></span></p>
+          <p id="wallMsg" style="font-size:13.5px;color:var(--muted);margin:4px 0 0"></p>
+        </div>
+        <p style="margin-top:12px">Meanwhile the density \(n(\mathbf r)\) on the same grid needs
+        <b>1,000 numbers regardless of N</b>. If physics lets us use it, the wall vanishes.
+        Two theorems say it does — next section.</p>
+        <p><span class="tag run">You run</span> <code>lesson04_hartree_helium_scf.py</code> — the
+        mean-field workaround for helium, and the <b>self-consistent field (SCF) loop</b>, the
+        engine inside every electronic-structure code ever written.</p>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section id="s3">
+      <div class="sec-head"><span class="kicker">03</span><h2>DFT — the two miracles</h2></div>
+      <p class="sec-sub"><b>Hohenberg–Kohn (1964):</b> the ground-state density determines
+      everything — energy, structure, all of it. <b>Kohn–Sham (1965):</b> you can get the true
+      density from a <em>fictitious</em> set of non-interacting electrons feeling an effective
+      potential. All remaining many-body hardness is quarantined into one term.</p>
+      <div class="card">
+        <h3>The Kohn–Sham equations</h3>
+        <div class="eq">$$\Big[-\tfrac{1}{2}\nabla^2 + \underbrace{v_{\text{ext}}(\mathbf r)}_{\text{nuclei}}
+          + \underbrace{v_{H}[n](\mathbf r)}_{\text{cloud repulsion}}
+          + \underbrace{v_{xc}[n](\mathbf r)}_{\text{everything else}}\Big]\,\varphi_i = \varepsilon_i\,\varphi_i,
+          \qquad n(\mathbf r)=\sum_i^{occ}|\varphi_i|^2$$</div>
+        <p>The potential depends on the density; the density comes from solving with that
+        potential. Chicken and egg ⇒ iterate to <b>self-consistency</b>. DFT in one line:
+        <b>Kohn–Sham equations + SCF loop + an approximation for \(v_{xc}\)</b>.</p>
+      </div>
+      <div class="card">
+        <span class="tag">Interactive</span>
+        <h3>The SCF loop — and why "mixing" exists</h3>
+        <p>Each iteration you blend new density into old: \(n \leftarrow (1-\beta)\,n + \beta\,
+        n_{\text{new}}\). Step the loop at different mixing β. Small β: slow but safe. β near 1:
+        fast. Push β past 1 (over-shooting): oscillation — and beyond 2, divergence. Real codes
+        expose this knob (<code>mixing_beta</code> in Quantum ESPRESSO) and yes, real calculations
+        die from it.</p>
+        <div class="widget">
+          <canvas id="scfCanvas" width="900" height="300"></canvas>
+          <div class="controls">
+            <label>mixing β <input type="range" id="scfBeta" min="0.1" max="2.2" step="0.05" value="0.5">
+              <span class="val" id="scfBetaV">0.50</span></label>
+            <button class="btn" id="scfStep">step ▸</button>
+            <button class="btn" id="scfAuto">auto-run</button>
+            <button class="btn" id="scfReset">reset</button>
+            <span id="scfIter" style="font-family:'JetBrains Mono',monospace;color:var(--signal)">iter 0</span>
+          </div>
+        </div>
+        <p style="margin-top:12px"><span class="tag run">You run</span>
+        <code>lesson05_kohn_sham_1d.py</code> — <b>a complete toy DFT code</b>. It predicts a
+        chemical bond and an equilibrium bond length from nothing but the density. The most
+        important run of the course.</p>
+      </div>
+    </section>
+
+    <!-- 04 -->
+    <section id="s4">
+      <div class="sec-head"><span class="kicker">04</span><h2>The xc zoo — Jacob's ladder</h2></div>
+      <p class="sec-sub">All of DFT's error hides in \(v_{xc}\). Approximations are ranked on
+      "Jacob's ladder" — each rung uses more information about the density, costs more, and is
+      (usually) more accurate. Click the rungs.</p>
+      <div class="card">
+        <div class="ladder" id="ladder">
+          <div class="rung" data-open="1"><span class="rname">LDA — Local Density Approximation</span><span class="pill">1965 · cheapest</span>
+            <div class="rdesc">Pretend each point of the material is a uniform electron gas of that density.
+            Absurdly simple, weirdly effective for solids. Overbinds: lattice constants ~1–2% too small,
+            atomization energies poor. Still the base layer of everything.</div></div>
+          <div class="rung"><span class="rname">GGA — e.g. PBE</span><span class="pill">1996 · the workhorse</span>
+            <div class="rdesc">Adds the density's <em>gradient</em>. PBE is the default of computational
+            materials science and of the Materials Project. Good geometries and formation energies;
+            still underestimates band gaps by ~40–50%.</div></div>
+          <div class="rung"><span class="rname">meta-GGA — e.g. SCAN</span><span class="pill">2015</span>
+            <div class="rdesc">Adds kinetic-energy density. Notably better formation energies and
+            diversely bonded systems; moderate extra cost. Increasingly the new default for materials
+            databases (Materials Project now runs r²SCAN).</div></div>
+          <div class="rung"><span class="rname">Hybrids — e.g. HSE06</span><span class="pill">10–100× cost</span>
+            <div class="rdesc">Mix in a fraction of exact Hartree–Fock exchange. Band gaps become
+            respectable (Si: ~1.2 eV vs experiment 1.17). The standard for semiconductor gaps —
+            at a painful price in plane-wave codes.</div></div>
+          <div class="rung"><span class="rname">Beyond — RPA, GW, ML functionals</span><span class="pill">frontier</span>
+            <div class="rdesc">Many-body perturbation theory (GW) for true quasiparticle gaps;
+            and machine-learned functionals (DeepMind's DM21, 2021) — a neural network as
+            \(v_{xc}\) — the first place AI entered DFT's inner machinery.</div></div>
+        </div>
+        <p style="margin-top:14px">The one failure to memorize: <b>LDA/PBE underestimate band
+        gaps</b> (Si: ≈0.6 eV predicted vs 1.17 eV real) — a structural issue (the "derivative
+        discontinuity"), not sloppiness. Every band-structure paper you read will dance around it.</p>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section id="s5">
+      <div class="sec-head"><span class="kicker">05</span><h2>Crystals &amp; bands</h2></div>
+      <p class="sec-sub">A crystal is a periodic potential. Bloch's theorem labels states by
+      \(k\) in the Brillouin zone; the natural basis is <b>plane waves</b> — exactly what VASP and
+      Quantum ESPRESSO use. Levels smear into <b>bands</b>; gaps open at the zone boundary; filling
+      decides metal vs semiconductor.</p>
+      <div class="card">
+        <span class="tag">Interactive</span>
+        <h3>Watch a band gap open</h3>
+        <p>Bands of \(V(x)=V_0\cos(2\pi x/a)\), computed live in your browser by diagonalizing the
+        plane-wave Hamiltonian (7 plane waves, Jacobi eigensolver). At \(V_0=0\): folded
+        free-electron parabola, no gap — metal-like. Turn up the crystal potential and a gap of
+        width ≈ \(V_0\) opens at the zone edge.</p>
+        <div class="widget">
+          <canvas id="bandCanvas" width="900" height="380"></canvas>
+          <div class="controls">
+            <label>crystal potential V₀ <input type="range" id="bandV0" min="0" max="15" step="0.25" value="0">
+              <span class="val" id="bandV0v">0.0</span></label>
+            <span>gap at zone edge: <span class="val" id="bandGap">0.00</span></span>
+          </div>
+        </div>
+        <p style="margin-top:12px">Filling rule (2 electrons per k-state): 1 valence electron per
+        cell ⇒ half-filled band ⇒ <b>metal</b> (Na). Even count filling bands completely, with a gap
+        above ⇒ <b>semiconductor/insulator</b> (Si, diamond). One counting rule, whole material classes.</p>
+        <p><span class="tag run">You run</span> <code>lesson06_bands_planewaves.py</code> — includes
+        discovering the plane-wave cutoff by breaking it.</p>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section id="s6">
+      <div class="sec-head"><span class="kicker">06</span><h2>Real calculations</h2></div>
+      <p class="sec-sub">Production DFT adds three practicalities: a <b>plane-wave cutoff</b>
+      (basis size — converge it), a <b>k-point mesh</b> (Brillouin-zone sampling — converge it),
+      and <b>pseudopotentials</b> (replace inert core electrons with an effective potential so the
+      basis stays sane). The workflow around the physics is Python: ASE.</p>
+      <div class="card">
+        <h3>The pipeline you'll actually use</h3>
+        <table>
+          <tr><th>Step</th><th>Tool</th><th>You practice it in</th></tr>
+          <tr><td>Build the crystal</td><td><code>ase.build.bulk(...)</code></td><td>lesson07</td></tr>
+          <tr><td>Attach a physics engine</td><td><code>atoms.calc = EMT()</code> → later GPAW/QE → later CHGNet</td><td>lessons 07 &amp; 08</td></tr>
+          <tr><td>Compute E(V), fit EOS</td><td><code>ase.eos</code> (Birch–Murnaghan)</td><td>lesson07</td></tr>
+          <tr><td>Extract a₀, bulk modulus</td><td>fit results vs experiment</td><td>lesson07</td></tr>
+          <tr><td>Converge &amp; validate</td><td>cutoff / k-mesh scans</td><td>Phase 3 (WSL + GPAW)</td></tr>
+        </table>
+        <p style="margin-top:12px">The deep design idea: the <b>Calculator interface</b>. Your
+        script is identical whether energies come from a 1990s classical potential, real DFT, or a
+        neural network. Learn the workflow cheap, swap the engine later — one line.</p>
+        <p><span class="tag run">You run</span> <code>pip install ase</code> then
+        <code>lesson07_ase_workflow_eos.py</code>. Iron rule of the field: <b>a DFT number without
+        convergence tests is not a result.</b></p>
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section id="s7">
+      <div class="sec-head"><span class="kicker">07</span><h2>AI4DFT</h2></div>
+      <p class="sec-sub">DFT's accuracy made it the <b>data factory</b>: millions of computed
+      structures in the Materials Project, OQMD, AFLOW. Graph neural networks trained on that data
+      (CHGNet, MACE, M3GNet) now predict energies and forces at DFT accuracy in milliseconds —
+      unlocking long dynamics and discovery at the scale of GNoME's 2.2 million candidate crystals.</p>
+      <div class="card">
+        <span class="tag">Interactive</span>
+        <h3>What a 10,000× speedup buys</h3>
+        <div class="widget">
+          <div class="controls" style="margin-top:0">
+            <label>structures to evaluate <input type="range" id="spN" min="2" max="7" step="0.05" value="4">
+              <span class="val" id="spNv">10⁴</span></label>
+          </div>
+          <p style="font-size:14.5px;color:var(--muted);margin:12px 0 0">
+            DFT (~10 min each): <span class="big" id="spDFT"></span></p>
+          <p style="font-size:14.5px;color:var(--muted);margin:8px 0 0">
+            MLIP (~60 ms each): <span class="big" id="spML"></span></p>
+          <p id="spMsg" style="font-size:13.5px;color:var(--muted-2);margin:10px 0 0"></p>
+        </div>
+        <p style="margin-top:14px">The fine print, which is the actual lesson: an MLIP is an
+        <b>interpolation of its training set</b>. Off-distribution — weird stoichiometries, extreme
+        pressure, broken bonds — it can fail <em>silently</em>. Professional practice:
+        <b>spot-check against real DFT</b>, always. AI didn't replace DFT; it made DFT the ground
+        truth everything else is trained on.</p>
+        <p><span class="tag run">You run</span> <code>pip install chgnet</code> then
+        <code>lesson08_chgnet_mlip.py</code> — relax a damaged crystal with a neural network and
+        time the speedup yourself.</p>
+      </div>
+      <div class="card">
+        <h3>The frontier map</h3>
+        <table>
+          <tr><th>Direction</th><th>Exemplars</th><th>Idea</th></tr>
+          <tr><td>Universal MLIPs</td><td>CHGNet, MACE-MP, M3GNet</td><td>one potential, whole periodic table</td></tr>
+          <tr><td>ML functionals</td><td>DM21 (DeepMind)</td><td>neural network as \(v_{xc}\) inside DFT itself</td></tr>
+          <tr><td>Generative discovery</td><td>GNoME, MatterGen</td><td>propose new crystals, verify with DFT</td></tr>
+          <tr><td>Delta learning</td><td>many</td><td>learn only the correction: cheap theory + ML = expensive theory</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- 08 -->
+    <section id="s8">
+      <div class="sec-head"><span class="kicker">08</span><h2>Course map — what you run, in order</h2></div>
+      <p class="sec-sub">Full task lists with checkpoints live in <code>CURRICULUM.md</code>;
+      long-form explanations in <code>dft_course.pdf</code>. The spine:</p>
+      <div class="card">
+        <table>
+          <tr><th>#</th><th>File</th><th>You build / see</th><th>Extra install</th></tr>
+          <tr><td>1</td><td><code>lesson01_schrodinger_1d.py</code></td><td>quantization; bonding from a double well</td><td>—</td></tr>
+          <tr><td>2</td><td><code>lesson02_hydrogen_atom.py</code></td><td>the exact atom; periodic-table logic</td><td>—</td></tr>
+          <tr><td>3</td><td><code>lesson03_variational_basis_sets.py</code></td><td>variational principle; basis sets</td><td>—</td></tr>
+          <tr><td>4</td><td><code>lesson04_hartree_helium_scf.py</code></td><td>the SCF loop; correlation energy</td><td>—</td></tr>
+          <tr><td>5</td><td><code>lesson05_kohn_sham_1d.py</code></td><td><b>your own DFT code</b>; a bond from density</td><td>—</td></tr>
+          <tr><td>6</td><td><code>lesson06_bands_planewaves.py</code></td><td>band structures; gaps; metal vs insulator</td><td>—</td></tr>
+          <tr><td>7</td><td><code>lesson07_ase_workflow_eos.py</code></td><td>pro workflow; lattice constant &amp; bulk modulus</td><td><code>pip install ase</code></td></tr>
+          <tr><td>8</td><td><code>lesson08_chgnet_mlip.py</code></td><td>neural-network DFT surrogate; the speedup</td><td><code>pip install chgnet</code></td></tr>
+        </table>
+        <p style="margin-top:12px">Then Phase 3 (real DFT in WSL with GPAW/Quantum ESPRESSO) and the
+        capstone — Section 6 of <code>CURRICULUM.md</code>.</p>
+      </div>
+    </section>
+
+    <!-- 09 -->
+    <section id="s9">
+      <div class="sec-head"><span class="kicker">09</span><h2>Prove you know it</h2></div>
+      <p class="sec-sub">Reading a course is not the same as owning it. This track is built around
+      one rule: <b>every module ends with a test you can fail</b>. Three instruments, in increasing
+      order of difficulty — and you should meet all three for each of the eight modules.</p>
+
+      <div class="card cta-card">
+        <div>
+          <p class="t">Self-exam — 42 questions, instant grading</p>
+          <p style="margin:0">Multiple choice, numeric estimates and "diagnose the failure" items,
+          filtered by module, each with a full explanation after you answer. Your scores are kept in
+          the browser so you can see what still isn't solid.</p>
+        </div>
+        <a class="btn-lg" href="exam.html">Open the exam →</a>
+      </div>
+
+      <div class="card">
+        <h3>The three instruments</h3>
+        <ul class="checklist">
+          <li><b>1 · Recall &amp; reasoning</b> — <code>exam.html</code>. Pass bar: <b>80 %</b> on a
+          module's questions, from memory, no scrolling back. Below 70 % means re-read, not re-guess.</li>
+          <li><b>2 · Code surgery</b> — the modification tasks in <code>CURRICULUM.md</code>. You
+          change a line, predict the outcome <em>before</em> running, then explain the difference.
+          A prediction you write down is a test; one you make silently is a memory.</li>
+          <li><b>3 · Oral defence</b> — run <code>/dft-tutor</code> in Claude Code. It asks the
+          question, refuses to accept a vague answer, pushes on the weak spot, then grades you
+          against a rubric and writes the result into <code>PROGRESS.md</code>.</li>
+        </ul>
+        <p style="margin-top:14px">Full ladder — the eight modules, what each exam gate demands, and
+        the four "prove it" deliverables — is in <code>ASSESSMENT.md</code>.</p>
+      </div>
+
+      <div class="card">
+        <h3>The eight gates</h3>
+        <table>
+          <tr><th>#</th><th>Module</th><th>Gate — you can do this unaided</th></tr>
+          <tr><td>1</td><td>Quantum minimum</td><td>Turn a 1D potential into a Hamiltonian matrix and say what the eigenvalues/eigenvectors <em>are</em></td></tr>
+          <tr><td>2</td><td>The wall</td><td>Derive the 10<sup>3N</sup> scaling and name what DFT trades away to escape it</td></tr>
+          <tr><td>3</td><td>Mean field &amp; SCF</td><td>Draw the SCF loop from memory; explain mixing, and what correlation energy <em>is</em></td></tr>
+          <tr><td>4</td><td>Hohenberg–Kohn &amp; Kohn–Sham</td><td>State both theorems, write \(v_{\text{eff}}\), and say precisely what is fictitious about KS orbitals</td></tr>
+          <tr><td>5</td><td>Functionals</td><td>Place LDA/PBE/SCAN/HSE06 on the ladder with one success and one failure each</td></tr>
+          <tr><td>6</td><td>Crystals &amp; bands</td><td>Predict metal vs semiconductor by electron counting; explain the gap at the zone edge</td></tr>
+          <tr><td>7</td><td>Production DFT</td><td>Write a convergence-test protocol for a paper-grade number, cutoff and k-mesh</td></tr>
+          <tr><td>8</td><td>AI4DFT</td><td>Explain where an MLIP's accuracy comes from — and construct a case where it lies</td></tr>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const C = () => window.AI4DFT.colors();
+function frame(ctx,W,H){const c=C();ctx.clearRect(0,0,W,H);ctx.fillStyle=c.bg;ctx.fillRect(0,0,W,H);}
+function onTheme(fn){addEventListener('themechange',fn);}
+
+// ---------- 01: particle in a box ----------
+(function(){
+  const cv=$('boxCanvas'),ctx=cv.getContext('2d');
+  function draw(){
+    const c=C();
+    const L=parseFloat($('boxL').value); $('boxLv').textContent=L.toFixed(2);
+    const W=cv.width,H=cv.height; frame(ctx,W,H);
+    const x0=W/2-(L*280)/2, x1=W/2+(L*280)/2, Emax=5*5*Math.PI*Math.PI/(2*0.5*0.5);
+    ctx.strokeStyle=c.muted;ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(x0,20);ctx.lineTo(x0,H-30);ctx.lineTo(x1,H-30);ctx.lineTo(x1,20);ctx.stroke();
+    for(let n=1;n<=5;n++){
+      const E=n*n*Math.PI*Math.PI/(2*L*L), y=H-30-(E/Emax)*(H-70);
+      if(y<15)continue;
+      ctx.strokeStyle=c.grid;ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+      ctx.strokeStyle=c.accent;ctx.lineWidth=2;ctx.beginPath();
+      for(let i=0;i<=120;i++){const xx=x0+(x1-x0)*i/120;
+        ctx.lineTo(xx,y-26*Math.sin(n*Math.PI*i/120));}
+      ctx.stroke();
+      ctx.fillStyle=c.accent2;ctx.font='12px JetBrains Mono';
+      ctx.fillText('n='+n+'  E='+E.toFixed(1),x1+10,y+4);
+    }
+    ctx.fillStyle=c.faint;ctx.font='12px JetBrains Mono';
+    ctx.fillText('energy →  (levels scale as n²/L²)',20,30);
+  }
+  $('boxL').addEventListener('input',draw); onTheme(draw); draw();
+})();
+
+// ---------- 02: the wall ----------
+(function(){
+  function upd(){
+    const N=parseInt($('wallN').value); $('wallNv').textContent=N;
+    const p=3*N; $('wallOut').innerHTML='10<sup>'+p+'</sup>';
+    $('wallMsg').textContent = p<=80
+      ? 'Atoms in the observable universe: ~10⁸⁰. You are '+(80-p)+' orders of magnitude below the universe... for now.'
+      : 'That exceeds the ~10⁸⁰ atoms in the observable universe by 10^'+(p-80)+'. No computer will ever store this. The density needs 10³ numbers — always.';
+  }
+  $('wallN').addEventListener('input',upd); upd();
+})();
+
+// ---------- 03: SCF mixing ----------
+(function(){
+  const cv=$('scfCanvas'),ctx=cv.getContext('2d');
+  let iter=0,timer=null;
+  const target=x=>Math.exp(-((x-0.35)**2)/0.008)+Math.exp(-((x-0.65)**2)/0.008);
+  const start=x=>2.2*Math.exp(-((x-0.5)**2)/0.02);
+  function density(k,b){const f=Math.pow(1-b,k);return x=>target(x)+(start(x)-target(x))*f;}
+  function draw(){
+    const c=C();
+    const b=parseFloat($('scfBeta').value); $('scfBetaV').textContent=b.toFixed(2);
+    $('scfIter').textContent='iter '+iter;
+    const W=cv.width,H=cv.height; frame(ctx,W,H);
+    ctx.strokeStyle=c.cool;ctx.setLineDash([5,4]);ctx.lineWidth=1.5;ctx.beginPath();
+    for(let i=0;i<=200;i++){const x=i/200;ctx.lineTo(40+x*(W-80),H-25-target(x)*95);}ctx.stroke();
+    ctx.setLineDash([]);
+    for(let k=Math.max(0,iter-4);k<=iter;k++){
+      const n=density(k,b),cur=(k===iter);
+      ctx.globalAlpha=cur?1:0.18+0.45*(k-(iter-4))/4;
+      ctx.strokeStyle=c.accent;ctx.lineWidth=cur?2.5:1.2;ctx.beginPath();
+      for(let i=0;i<=200;i++){const x=i/200;ctx.lineTo(40+x*(W-80),H-25-n(x)*95);}ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+    ctx.fillStyle=c.faint;ctx.font='12px JetBrains Mono';
+    ctx.fillText('dashed = self-consistent target density · solid = current iterate',40,20);
+    const f=Math.abs(Math.pow(1-b,iter));
+    ctx.fillStyle=f>3?c.bad:c.muted;
+    ctx.fillText('residual factor (1-β)^k = '+(Math.pow(1-b,iter)).toExponential(2)+(b>2?'  ← DIVERGING':b>1?'  (oscillating)':''),40,38);
+  }
+  $('scfStep').addEventListener('click',()=>{iter++;draw();});
+  $('scfReset').addEventListener('click',()=>{iter=0;if(timer){clearInterval(timer);timer=null;$('scfAuto').textContent='auto-run';}draw();});
+  $('scfBeta').addEventListener('input',draw);
+  $('scfAuto').addEventListener('click',()=>{
+    if(timer){clearInterval(timer);timer=null;$('scfAuto').textContent='auto-run';return;}
+    $('scfAuto').textContent='stop';timer=setInterval(()=>{iter++;draw();if(iter>40){clearInterval(timer);timer=null;$('scfAuto').textContent='auto-run';}},350);
+  });
+  onTheme(draw); draw();
+})();
+
+// ---------- 05: bands (real diagonalization, Jacobi) ----------
+(function(){
+  const cv=$('bandCanvas'),ctx=cv.getContext('2d');
+  const M=3,nG=2*M+1,G=[];for(let m=-M;m<=M;m++)G.push(2*Math.PI*m);
+  function jacobiEigs(A){ // symmetric nG x nG -> sorted eigenvalues
+    const n=A.length,a=A.map(r=>r.slice());
+    for(let sweep=0;sweep<30;sweep++){
+      let off=0;for(let p=0;p<n;p++)for(let q=p+1;q<n;q++)off+=a[p][q]*a[p][q];
+      if(off<1e-14)break;
+      for(let p=0;p<n;p++)for(let q=p+1;q<n;q++){
+        if(Math.abs(a[p][q])<1e-15)continue;
+        const th=0.5*(a[q][q]-a[p][p])/a[p][q];
+        const t=Math.sign(th||1)/(Math.abs(th)+Math.sqrt(th*th+1));
+        const c=1/Math.sqrt(t*t+1),s=t*c;
+        for(let k=0;k<n;k++){const akp=a[k][p],akq=a[k][q];
+          a[k][p]=c*akp-s*akq;a[k][q]=s*akp+c*akq;}
+        for(let k=0;k<n;k++){const apk=a[p][k],aqk=a[q][k];
+          a[p][k]=c*apk-s*aqk;a[q][k]=s*apk+c*aqk;}
+      }
+    }
+    return a.map((r,i)=>r[i]).sort((x,y)=>x-y);
+  }
+  function bands(V0){
+    const nk=61,out=[];
+    for(let i=0;i<nk;i++){
+      const k=-Math.PI+2*Math.PI*i/(nk-1);
+      const H=Array.from({length:nG},()=>new Array(nG).fill(0));
+      for(let m=0;m<nG;m++){H[m][m]=0.5*(k+G[m])**2;
+        if(m<nG-1){H[m][m+1]+=V0/2;H[m+1][m]+=V0/2;}}
+      out.push(jacobiEigs(H).slice(0,3));
+    }
+    return out;
+  }
+  function draw(){
+    const c=C();
+    const V0=parseFloat($('bandV0').value); $('bandV0v').textContent=V0.toFixed(1);
+    const B=bands(V0),W=cv.width,H=cv.height,Emax=60;
+    frame(ctx,W,H);
+    $('bandGap').textContent=(B[0][1]-B[0][0]).toFixed(2);
+    if(V0>0){ // shade first gap
+      const y1=H-30-(B[0][0]/Emax)*(H-60),y2=H-30-(B[0][1]/Emax)*(H-60);
+      ctx.globalAlpha=0.12;ctx.fillStyle=c.bad;ctx.fillRect(40,y2,W-80,y1-y2);ctx.globalAlpha=1;
+    }
+    const cols=[c.accent,c.cool,c.violet];
+    for(let b=0;b<3;b++){ctx.strokeStyle=cols[b];ctx.lineWidth=2.2;ctx.beginPath();
+      B.forEach((row,i)=>{const x=40+(W-80)*i/(B.length-1),y=H-30-(row[b]/Emax)*(H-60);
+        i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();}
+    ctx.strokeStyle=c.grid;ctx.lineWidth=1;
+    ctx.strokeRect(40,20,W-80,H-50);
+    ctx.fillStyle=c.faint;ctx.font='12px JetBrains Mono';
+    ctx.fillText('-π/a',34,H-12);ctx.fillText('0',W/2-4,H-12);ctx.fillText('+π/a',W-66,H-12);
+    ctx.fillText('E',18,30);
+    if(V0>0){ctx.fillStyle=c.bad;ctx.fillText('gap ≈ V₀ opens at zone edge',W/2-90,34);}
+  }
+  $('bandV0').addEventListener('input',draw); onTheme(draw); draw();
+})();
+
+// ---------- 07: speedup ----------
+(function(){
+  function fmt(sec){
+    if(sec<60)return sec.toFixed(1)+' s';
+    if(sec<3600)return (sec/60).toFixed(1)+' min';
+    if(sec<86400)return (sec/3600).toFixed(1)+' h';
+    if(sec<31557600)return (sec/86400).toFixed(1)+' days';
+    return (sec/31557600).toFixed(1)+' years';
+  }
+  function upd(){
+    const p=parseFloat($('spN').value),n=Math.pow(10,p);
+    $('spNv').textContent='10^'+p.toFixed(1).replace('.0','');
+    $('spDFT').textContent=fmt(n*600);
+    $('spML').textContent=fmt(n*0.06);
+    $('spMsg').textContent = n*600>31557600*3
+      ? 'The DFT version is a research program; the MLIP version is a lunch break. This asymmetry is why GNoME could screen millions of crystals.'
+      : 'Both feasible here — MLIPs win when the structure count explodes.';
+  }
+  $('spN').addEventListener('input',upd); upd();
+})();
+
+// ladder
+document.querySelectorAll('.rung').forEach(r=>r.addEventListener('click',()=>r.classList.toggle('open')));
+</script>
+</body>
+</html>

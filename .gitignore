@@ -1,5 +1,7 @@
 # local dev / tooling
 .claude/
+# ...except the AI4DFT tutor skill, which is part of the course itself
+!AI4DFT/.claude/
 
 # python
 __pycache__/
