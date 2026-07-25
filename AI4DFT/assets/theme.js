@@ -6,7 +6,7 @@
    - fires a "themechange" event on window so canvases can redraw
    ============================================================ */
 (function () {
-  var KEY = "ai4dft-theme";
+  var KEY = "site-theme";
   var root = document.documentElement;
 
   function preferred() {
