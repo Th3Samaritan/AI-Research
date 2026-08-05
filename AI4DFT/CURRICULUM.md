@@ -6,7 +6,7 @@
 2. If a formula feels like it was handed to you rather than derived, open
    **`derivations.html`** — notation dictionary, the hydrogen radial equation and every Gaussian
    integral derived from scratch, and the matrices worked out by hand so you can produce the
-   printed numbers on paper before running anything (covers lessons 2-3 in full).
+   printed numbers on paper before running anything (covers lessons 2-6 in full).
 3. Before running a lesson, open its chapter in **`walkthrough.html`** (or
    `lesson_walkthrough.pdf` — same content): it unpacks every equation symbol by symbol,
    explains where every parameter value came from, and tells you exactly what output to

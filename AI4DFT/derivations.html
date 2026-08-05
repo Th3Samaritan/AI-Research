@@ -40,6 +40,9 @@
   .warn{border:1px solid var(--warm-line);background:var(--warm-tint);border-radius:9px;
     padding:12px 15px;color:var(--txt-2);font-size:13.6px;line-height:1.65;margin:14px 0}
   .warn b{color:var(--warm)}
+  .navsep{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--txt-3);margin:14px 0 4px 10px}
+  #p2 .sec-head h2{font-size:28px}
 </style>
 </head>
 <body>
@@ -50,6 +53,7 @@
       <div class="title">Derivations<br><span class="thin">nothing asserted</span></div>
     </div>
     <nav>
+      <div class="navsep">Part I · lessons 2–3</div>
       <a href="#d0"><span class="num">00</span> How to read the maths</a>
       <a href="#d1"><span class="num">01</span> Atomic units</a>
       <a href="#d2"><span class="num">02</span> Hydrogen: 3D → radial</a>
@@ -60,6 +64,17 @@
       <a href="#d7"><span class="num">07</span> Why <em>H</em>c = <em>E</em>Sc</a>
       <a href="#d8"><span class="num">08</span> The 2×2, worked by hand</a>
       <a href="#d9"><span class="num">09</span> Predict, then run</a>
+      <div class="navsep">Part II · lessons 4–6</div>
+      <a href="#d10"><span class="num">10</span> The Hartree potential</a>
+      <a href="#d11"><span class="num">11</span> Energy ≠ sum of eigenvalues</a>
+      <a href="#d12"><span class="num">12</span> SCF as a fixed point</a>
+      <a href="#d13"><span class="num">13</span> Correlation, honestly</a>
+      <a href="#d14"><span class="num">14</span> The soft-Coulomb model</a>
+      <a href="#d15"><span class="num">15</span> Exchange &amp; functional derivatives</a>
+      <a href="#d16"><span class="num">16</span> Total energy, line by line</a>
+      <a href="#d17"><span class="num">17</span> Bloch &amp; plane waves</a>
+      <a href="#d18"><span class="num">18</span> The gap, and the cutoff</a>
+      <a href="#d19"><span class="num">19</span> Predict, then run (4-6)</a>
     </nav>
     <div class="rail-cta">
       <a href="index.html"><span class="k">COURSE</span> Interactive course</a>
@@ -72,7 +87,7 @@
 
   <main>
     <div class="hero">
-      <div class="eyebrow">Grounding layer · lessons 2 &amp; 3</div>
+      <div class="eyebrow">Grounding layer · lessons 2 – 6</div>
       <h1>Every symbol defined.<br><span class="grad">Every integral derived.</span></h1>
       <p class="lede">The course pages state results; the walkthrough lists parameters. This page
       does the part in between — <b>where each formula comes from, what every letter in it means,
@@ -85,8 +100,8 @@
     <section id="d0">
       <div class="sec-head"><span class="kicker">00</span><h2>How to read the maths</h2></div>
       <p class="sec-sub">Most of the "vagueness" in quantum mechanics texts is unexplained
-      <em>notation</em>, not unexplained physics. Here is the entire vocabulary used in lessons 2
-      and 3. Nothing else appears.</p>
+      <em>notation</em>, not unexplained physics. Here is the entire vocabulary used throughout
+      the course. Nothing else appears.</p>
       <div class="card">
         <table class="dict">
           <tr><th>Symbol</th><th>Read it as</th><th>What it actually is</th></tr>
@@ -653,6 +668,588 @@ basis-set convergence, and it is why papers quote a basis set at all.</pre>
         rounding is a gap in the derivation, not a slip — come back to the section that produced it
         rather than moving on. Or run <code>/dft-tutor</code> and choose <em>mark</em>, paste your
         predictions and the real output, and have them graded against the rubric.</div>
+      </div>
+    </section>
+    <!-- ================= PART II ================= -->
+    <section id="p2">
+      <div class="sec-head"><span class="kicker">Part II</span><h2>Lessons 4, 5 &amp; 6</h2></div>
+      <p class="sec-sub">Same contract as Part I: nothing quoted, nothing "standard". The three
+      formulas that carry this half of the course are the <b>Hartree potential</b>, the
+      <b>double-counting correction</b> in the total energy, and the <b>plane-wave matrix
+      element</b> — and all three are usually presented as facts to accept. Here they are as
+      derivations to follow.</p>
+    </section>
+
+    <!-- 10 -->
+    <section id="d10">
+      <div class="sec-head"><span class="kicker">10</span><h2>The Hartree potential — it's just Gauss's law</h2></div>
+      <p class="sec-sub">The one new object in lesson 4. The general definition looks like an
+      obstacle; for a spherical density it collapses into two integrals you already know from
+      first-year electrostatics.</p>
+
+      <div class="card">
+        <h3>From the definition to the code</h3>
+        <div class="step"><span class="n">Step 1 — what it is</span>
+          <p>Treat the other electron as a smeared-out cloud of charge with density
+          \(\rho(\mathbf r)\). The electrostatic potential that cloud creates at point
+          \(\mathbf r\) is the sum of Coulomb contributions from every piece of it:</p>
+          <div class="eq">$$v_H(\mathbf r)=\int\frac{\rho(\mathbf r')}{|\mathbf r-\mathbf r'|}\,d^3r'$$</div>
+          <p><b>This is not quantum mechanics.</b> It is the same integral you would write for a
+          charged dielectric or a space-charge region in a semiconductor. The quantum content is
+          only in <em>where the density came from</em>.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 2 — exploit spherical symmetry (the shell theorem)</span>
+          <p>For a spherically symmetric cloud, split the charge into the part inside radius
+          \(r\) and the part outside:</p>
+          <ul style="color:var(--txt-2);font-size:14.4px;line-height:1.75;max-width:76ch">
+            <li><b>Inside:</b> by Gauss's law a spherical shell of charge acts, from outside it, as
+            if all its charge sat at the centre. So everything within \(r\) contributes
+            \(Q_{\text{in}}(r)/r\).</li>
+            <li><b>Outside:</b> the potential <em>inside</em> a uniform shell of radius \(r'\) is
+            constant and equal to \(dq/r'\) — it does not depend on where inside you stand. So each
+            outer shell contributes its own charge divided by <em>its</em> radius.</li>
+          </ul>
+          <p>Writing the radial density as \(n(r)\) — defined so that \(n(r)dr\) is the charge in
+          the shell \([r,r+dr]\), i.e. \(n=4\pi r^2\rho\) and \(\int_0^\infty n\,dr=1\) for one
+          electron:</p>
+          <div class="eq">$$v_H(r)=\underbrace{\frac{1}{r}\int_0^{r}n(r')\,dr'}_{\text{charge inside, seen from outside}}
+          \;+\;\underbrace{\int_r^{\infty}\frac{n(r')}{r'}\,dr'}_{\text{shells outside}}$$</div>
+        </div>
+
+        <div class="step"><span class="n">Step 3 — the two lines of code</span>
+          <pre class="work">inner = np.cumsum(n) * dr                    # ∫₀^r n dr'   — running total outward
+outer = np.cumsum((n / r)[::-1])[::-1] * dr  # ∫_r^∞ n/r' dr' — running total inward
+return inner / r + outer</pre>
+          <p>The reversed <code>cumsum</code> is the only trick: flip the array, accumulate, flip
+          back — that computes "sum of everything from here to the end" in one pass. Both integrals
+          together cost \(O(N)\), not \(O(N^2)\), which is why this is done in radial form rather
+          than as a double integral.</p>
+        </div>
+
+        <div class="note-box"><b>Two limits to check the formula with, in your head:</b>
+        far outside the cloud (\(r\to\infty\)) the first term becomes \(1/r\) and the second dies —
+        the electron looks like a point charge of 1, correct. At the origin the first term vanishes
+        (no charge inside) and the second is finite — <b>no singularity</b>, which is why the
+        Hartree potential never blows up even though \(1/|\mathbf r-\mathbf r'|\) does.</div>
+
+        <div class="warn"><b>The self-interaction footnote that matters later:</b> in this lesson
+        \(n\) is normalised to <em>one</em> electron — the <em>other</em> one — so no electron feels
+        its own field. The general Hartree term used in DFT (lesson 5) instead uses the <b>total</b>
+        density, so each electron does partly repel itself. That deliberate error is
+        <b>self-interaction</b>, and cancelling it is what exchange is for. Watch for the
+        difference between the two lessons; it is not sloppiness, it is the pivot of the whole story.</div>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="d11">
+      <div class="sec-head"><span class="kicker">11</span><h2>Why the total energy is not the sum of eigenvalues</h2></div>
+      <p class="sec-sub">The line <code>E_tot = 2*eps - E_ee</code> is the most quietly important
+      formula in lesson 4, and the same logic reappears — with two more terms — in lesson 5. Derive
+      it once and both are yours.</p>
+
+      <div class="card">
+        <div class="step"><span class="n">Step 1 — what one eigenvalue contains</span>
+          <p>The orbital \(u\) satisfies \(\left[-\tfrac12\partial_r^2-\frac{Z}{r}+v_H\right]u=\varepsilon u\).
+          Multiply by \(u\) and integrate (that is, take the expectation value):</p>
+          <div class="eq">$$\varepsilon = \underbrace{\langle u|-\tfrac12\partial_r^2|u\rangle}_{t}
+          + \underbrace{\langle u|-Z/r|u\rangle}_{v_{ne}}
+          + \underbrace{\langle u|v_H|u\rangle}_{J}$$</div>
+          <p>So an eigenvalue is <b>one electron's kinetic energy + its attraction to the nucleus +
+          its repulsion from the other electron</b>.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 2 — add the two electrons up naively</span>
+          <div class="eq">$$2\varepsilon = 2t + 2v_{ne} + 2J$$</div>
+          <p>The kinetic and nuclear terms are correctly doubled: there really are two electrons,
+          each with its own kinetic energy and its own attraction to the nucleus.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 3 — spot the error</span>
+          <p>But \(J\) is the interaction energy <b>of the pair</b>. Electron 1 repelling electron 2
+          and electron 2 repelling electron 1 are not two separate energies — they are one
+          interaction, seen from both ends. The true energy contains \(J\) once:</p>
+          <div class="eq">$$E_{\text{total}} = 2t+2v_{ne}+J$$</div>
+        </div>
+
+        <div class="step"><span class="n">Step 4 — subtract the surplus</span>
+          <div class="eq">$$E_{\text{total}} = 2\varepsilon - J,\qquad J=\int n(r)\,v_H(r)\,dr$$</div>
+          <p>which is exactly <code>E_tot = 2*eps - E_ee</code>. The correction is not a fudge — it
+          is the removal of a specific, countable duplication.</p>
+        </div>
+
+        <h3 style="margin-top:24px">Check it with the converged numbers</h3>
+        <pre class="work">converged:  ε      = -0.91395     (each electron's eigenvalue)
+            E_ee   =  1.02862     (the pair repulsion, counted once)
+
+2ε          = -1.82790
+2ε - E_ee   = -1.82790 - 1.02862 = -2.85652   ← the printed total energy
+
+and the naive alternative, for contrast:
+2ε alone    = -1.82790            ← wrong by more than 1 hartree (28 eV)</pre>
+        <div class="note-box"><b>Carry this warning into every code you ever use.</b> Sums of
+        Kohn–Sham eigenvalues ("band energy") are <em>not</em> total energies, and the difference is
+        enormous. When a DFT output lists both, they differ for precisely this reason. Anyone who
+        compares the eigenvalue sums of two structures and calls the difference a formation energy
+        has made this mistake.</div>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="d12">
+      <div class="sec-head"><span class="kicker">12</span><h2>The SCF loop as a fixed-point iteration</h2></div>
+      <p class="sec-sub">"Mix the density" is presented everywhere as a practical trick. It is
+      actually a well-defined numerical method with a convergence criterion you can predict — and
+      the helium run obeys it to two decimal places.</p>
+
+      <div class="card">
+        <div class="step"><span class="n">Step 1 — name the map</span>
+          <p>One SCF cycle takes a density in and gives a density out: build \(v_H[n]\), solve for
+          the orbital, square it. Call that whole operation \(F\). Self-consistency means finding a
+          <b>fixed point</b>:</p>
+          <div class="eq">$$n^{*}=F[n^{*}]$$</div>
+          <p>This is the same class of problem as solving \(x=\cos x\) by typing cos repeatedly into
+          a calculator, or a Newton–Raphson stress-strain loop in an FE solver.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 2 — why plain iteration can fail</span>
+          <p>Feeding the output straight back in, \(n_{k+1}=F[n_k]\), converges only if \(F\) is a
+          contraction. Near the fixed point, write the error \(e_k=n_k-n^*\) and linearise:
+          \(e_{k+1}\approx \lambda e_k\), where \(\lambda\) is an eigenvalue of the response
+          (how strongly the output density reacts to a wiggle in the input). If any
+          \(|\lambda|>1\) — and in metals it can be large and <em>negative</em>, meaning charge
+          sloshes back and forth — the loop diverges.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 3 — mixing, and what β actually does</span>
+          <div class="eq">$$n_{k+1}=(1-\beta)\,n_k+\beta\,F[n_k]\qquad\Longrightarrow\qquad
+          e_{k+1}=\big[(1-\beta)+\beta\lambda\big]\,e_k$$</div>
+          <p>So the per-iteration error factor is \(|1-\beta+\beta\lambda|\), and it must be below 1.
+          Read off the three regimes:</p>
+          <table>
+            <tr><th>Situation</th><th>Behaviour</th><th>What to do</th></tr>
+            <tr><td>\(\lambda\approx0\) (weak response)</td><td>\(\beta=1\) converges almost immediately</td><td>Take big steps; small molecules behave like this</td></tr>
+            <tr><td>\(\lambda\) large and negative (charge sloshing)</td><td>\(\beta=1\) overshoots and oscillates</td><td>Small \(\beta\): slow but stable</td></tr>
+            <tr><td>\(\beta\) pushed too high</td><td>\(|1-\beta+\beta\lambda|>1\): divergence</td><td>This is the widget on the course page, and a real failure mode</td></tr>
+          </table>
+        </div>
+
+        <h3 style="margin-top:22px">The helium run, predicted before it happens</h3>
+        <p>With \(\beta=0.5\), the density change per iteration should fall <b>geometrically</b> —
+        a straight line on a log axis, which is exactly what the left-hand figure panel plots.
+        From the first iterations:</p>
+        <pre class="work">iter 1   ∫|Δn| = 3.48e-01
+iter 2           1.18e-01     ratio 0.339
+iter 3           4.08e-02     ratio 0.346
+iter 4           1.44e-02     ratio 0.353
+
+measured error factor ≈ 0.35 per iteration
+
+predicted number of iterations to reach the 1e-8 tolerance:
+   ln(1e-8 / 0.348) / ln(0.35) = -17.37 / -1.050 ≈ 16.5
+   plus the first few pre-asymptotic steps  →  ~20-23</pre>
+        <details class="out"><summary>What the loop actually takes — predict first</summary>
+<pre>23 iterations, then "CONVERGED: the field is self-consistent."
+
+The prediction was not luck: geometric convergence with a constant factor is
+what linear fixed-point theory says must happen near the solution, and the
+factor 0.35 is (1 - β + βλ) with β = 0.5, i.e. λ ≈ -0.3 for helium.
+
+Now solve for the interesting case yourself:  at which β would this system
+diverge?  |1 - β + β(-0.3)| = 1  →  β = 1.54.  Try β = 1.6 in the script.</pre>
+        </details>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section id="d13">
+      <div class="sec-head"><span class="kicker">13</span><h2>Correlation energy — and how much of the error is really physics</h2></div>
+      <p class="sec-sub">The lesson's headline is "the missing energy is correlation". That is
+      true, but the script's number contains something else as well, and separating the two is a
+      skill worth more than the fact.</p>
+
+      <div class="card">
+        <h3>What correlation means, precisely</h3>
+        <p>Mean field says: electron 1 moves in the <b>average</b> cloud of electron 2. Reality says:
+        when electron 1 is on the left, electron 2 is preferentially on the right — they dodge each
+        other in real time. That instantaneous avoidance lowers the repulsion below the mean-field
+        estimate. The energy you fail to capture by averaging is, by definition,</p>
+        <div class="eq">$$E_c \;\equiv\; E_{\text{exact}} - E_{\text{Hartree–Fock}}$$</div>
+        <p>It is a <em>definitional</em> quantity, not a measured one: "whatever the best possible
+        mean-field theory still misses".</p>
+
+        <div class="note-box"><b>Why this lesson is secretly Hartree–Fock.</b> Helium's two
+        electrons occupy the same spatial orbital with opposite spins. For that closed-shell case,
+        the exchange term in Hartree–Fock exactly cancels the self-interaction in the Coulomb term,
+        leaving each electron feeling precisely <em>one</em> other electron's density — which is
+        what this code implements. So the converged answer is the Hartree–Fock limit, and the gap to
+        experiment is pure correlation. That coincidence does not survive to bigger atoms.</div>
+
+        <h3 style="margin-top:22px">The honest error budget</h3>
+        <p>Before attributing the whole discrepancy to physics, converge the numerics:</p>
+        <table class="num">
+          <tr><th>Δr (bohr)</th><th>N</th><th>E_total</th><th>ε</th></tr>
+          <tr><td>0.0050</td><td>4000</td><td>−2.85652</td><td>−0.91395</td></tr>
+          <tr><td>0.0025</td><td>8000</td><td>−2.85912</td><td>−0.91596</td></tr>
+          <tr><td>0.0010</td><td>20000</td><td>−2.86066</td><td>−0.91716</td></tr>
+          <tr><td>0.0005</td><td>60000</td><td>−2.86117</td><td>−0.91756</td></tr>
+          <tr><td colspan="2">Hartree–Fock limit (literature)</td><td>−2.8617</td><td>−0.9179</td></tr>
+        </table>
+        <pre class="work">script's setting (Δr = 0.005):     E = -2.85652
+Hartree-Fock limit:                E = -2.86170     ← where the physics actually sits
+exact (experiment):                E = -2.90370
+
+apparent error of the run    = 2.9037 - 2.85652 = 0.0472 Ha  (1.28 eV)
+   of which GRID error       = 2.8617 - 2.85652 = 0.0052 Ha  (0.14 eV)  ← numerics
+   of which CORRELATION      = 2.9037 - 2.8617  = 0.0420 Ha  (1.14 eV)  ← physics</pre>
+        <div class="warn"><b>The transferable lesson.</b> Roughly 11 % of the "correlation energy"
+        the script appears to be missing is not correlation at all — it is the grid. Attribute a
+        discrepancy to physics only <em>after</em> the numerics are converged, or you will publish a
+        conclusion about electrons that is really a statement about your mesh. This is the
+        "is it converged?" question from <code>ASSESSMENT.md</code>, met for the first time with
+        real numbers.</div>
+        <p>One more number worth extracting: \(|\varepsilon| = 0.918\) hartree = 25.0 eV, against
+        helium's measured first ionisation energy of 24.59 eV. That near-agreement is
+        <b>Koopmans' theorem</b> — the highest occupied eigenvalue approximates minus the ionisation
+        energy — and it is the one eigenvalue in a mean-field calculation with a defensible physical
+        meaning. You will meet it again as the single formal anchor for Kohn–Sham eigenvalues.</p>
+      </div>
+    </section>
+
+    <!-- 14 -->
+    <section id="d14">
+      <div class="sec-head"><span class="kicker">14</span><h2>Lesson 5's model: why the Coulomb law is softened</h2></div>
+      <p class="sec-sub">Before the DFT machinery, understand the toy — because two of its
+      constants look arbitrary and are not.</p>
+      <div class="card">
+        <div class="step"><span class="n">The problem with 1D Coulomb</span>
+          <p>In three dimensions the \(1/r\) singularity is harmless: the volume element \(4\pi r^2\)
+          vanishes fast enough to make every integral finite (you saw exactly that in section 05).
+          In one dimension there is no such rescue — \(\int dx/|x|\) diverges logarithmically, and
+          the ground state of a strict 1D Coulomb well has no finite energy.</p>
+        </div>
+        <div class="step"><span class="n">The standard repair</span>
+          <div class="eq">$$\frac{1}{|x|}\;\longrightarrow\;\frac{1}{\sqrt{x^{2}+1}}$$</div>
+          <p>Finite at the origin (equal to 1), and indistinguishable from \(1/|x|\) once
+          \(|x|\gg1\). The "1" is a <b>softening length in bohr</b> — it stands in for the
+          transverse extent that a real 3D orbital would have. This is the standard device in the
+          1D-model literature, not a shortcut invented for this course.</p>
+        </div>
+        <div class="step"><span class="n">Where it appears three times, consistently</span>
+          <pre class="work">v_ext = -1/√((x-d/2)²+1) - 1/√((x+d/2)²+1)   # electron ← nuclei
+K     =  1/√((xᵢ-xⱼ)²+1)                     # electron ↔ electron
+E_nn  =  1/√(d²+1)                           # nucleus ↔ nucleus</pre>
+          <p><b>All three interactions must use the same softening.</b> If the nuclear repulsion
+          used bare \(1/d\) while the electrons felt a softened attraction, the binding curve would
+          be wrong — the terms would no longer cancel correctly at large \(d\). Consistency of the
+          model matters more than the realism of any one piece.</p>
+        </div>
+        <div class="step"><span class="n">Reading the Hartree line</span>
+          <p><code>v_H = K @ n * dx</code> is the discretised integral
+          \(v_H(x)=\int K(x,x')\,n(x')\,dx'\): row \(i\) of the matrix dotted into the density,
+          times the grid spacing. A matrix–vector product <em>is</em> a numerical integral whenever
+          the matrix holds a kernel.</p>
+        </div>
+        <div class="warn"><b>Honest limits of the toy.</b> Energies from this model are not
+        comparable to real H₂ (whose bond length is 1.40 bohr and binding energy 0.17 hartree). What
+        transfers is the <em>machinery</em> and the <em>shape</em> of the result: a minimum exists,
+        charge piles up between the nuclei, and switching off exchange changes both. Never quote a
+        number from a 1D soft-Coulomb model as if it described a molecule.</div>
+      </div>
+    </section>
+
+    <!-- 15 -->
+    <section id="d15">
+      <div class="sec-head"><span class="kicker">15</span><h2>Exchange: the functional, and what "functional derivative" means</h2></div>
+      <p class="sec-sub">Two lines of lesson 5 carry the entire idea of density functional theory.
+      They are also the two lines every course states without justification.</p>
+
+      <div class="card">
+        <h3>What a functional is, and what its derivative is</h3>
+        <p>A <b>function</b> eats a number and returns a number. A <b>functional</b> eats an entire
+        function and returns a number — for instance "the total exchange energy of this density".
+        Square brackets signal it: \(E_x[n]\).</p>
+        <p>Its <b>functional derivative</b> \(\delta E_x/\delta n(x)\) answers: <em>if I add a tiny
+        bump of density at position \(x\), how much does the total energy change, per unit of density
+        added?</em> Discretise the density into grid values \(n_i\) and it is nothing but the partial
+        derivative \(\partial E/\partial n_i\), divided by the grid spacing so it stays finite as the
+        grid refines. That is the whole concept — an ordinary gradient, with one component per point
+        in space instead of one per variable.</p>
+        <div class="note-box">Why it matters: <b>a potential is the functional derivative of an
+        energy.</b> That is the rule that turns any proposed energy expression \(E_{xc}[n]\) into the
+        potential \(v_{xc}\) you can actually put into the Kohn–Sham equation. Every functional on
+        Jacob's ladder is delivered as an energy; every code needs the derivative.</div>
+
+        <h3 style="margin-top:22px">Deriving the code's <code>v_x</code> from its <code>E_x</code></h3>
+        <p>The local density approximation for exchange is</p>
+        <div class="eq">$$E_x[n]=-\frac{3}{4}\left(\frac{3}{\pi}\right)^{1/3}\!\int n(x)^{4/3}\,dx \;=\;C\!\int n^{4/3}dx$$</div>
+        <p>Because the integrand depends on \(n\) at that point only — that is what "local" means —
+        the functional derivative is just the ordinary derivative of the integrand:</p>
+        <pre class="work">δE_x/δn  =  C · d(n^4/3)/dn  =  C · (4/3) · n^1/3
+
+with     C = -(3/4)·(3/π)^1/3 :
+
+  v_x = -(3/4)·(4/3)·(3/π)^1/3 · n^1/3
+      =        -(3/π)^1/3 · n^1/3
+      =        -(3n/π)^1/3</pre>
+        <p>which is precisely <code>v_x = -np.cbrt(3.0 * n / np.pi)</code>. The two lines in the
+        script are an energy and its own derivative — they are not independent choices, and if you
+        modify one you must modify the other.</p>
+
+        <div class="note-box"><b>A free consistency check.</b> Since \(v_x\propto n^{1/3}\) and
+        \(E_x\propto\int n^{4/3}\), the two are rigidly related:
+        \(\int n\,v_x\,dx = \tfrac43 E_x\), i.e. \(E_x=\tfrac34\int n v_x\,dx\).
+        In the converged \(d=2\) run: \(\int n v_x=-1.49084\) and
+        \(0.75\times(-1.49084)=-1.11813=E_x\) — exact to all printed digits. <b>If you ever swap in
+        a different exchange functional and this identity still holds, you forgot to update one of
+        the two lines.</b></div>
+
+        <div class="warn"><b>Stated honestly:</b> this \(E_x\) is the <em>three-dimensional</em>
+        uniform-electron-gas result, used in a one-dimensional toy. It plays the structural role of
+        an xc functional so you can watch the machinery work; its numbers are illustrative. The
+        real 1D analogue has a different exponent — and the fact that you can swap the functional
+        without touching anything else in the code <em>is</em> the modularity that makes Jacob's
+        ladder possible.</div>
+      </div>
+    </section>
+
+    <!-- 16 -->
+    <section id="d16">
+      <div class="sec-head"><span class="kicker">16</span><h2>The total-energy assembly, line by line</h2></div>
+      <p class="sec-sub">This is the formula flagged in the course as the most hand-waved thing in
+      the lesson:<br><code>E_tot = N_ELEC*eps[0] - E_H - V_x_int + E_x + E_nn</code>. Every term is
+      forced; here is why.</p>
+
+      <div class="card">
+        <div class="step"><span class="n">Step 1 — what the eigenvalue sum contains</span>
+          <p>The Kohn–Sham orbital satisfies \(\left[-\tfrac12\partial_x^2+v_{\text{eff}}\right]\varphi=\varepsilon\varphi\)
+          with \(v_{\text{eff}}=v_{\text{ext}}+v_H+v_x\). Take the expectation value and multiply by
+          the occupation \(N=2\), using \(n=2|\varphi|^2\):</p>
+          <div class="eq">$$2\varepsilon = T_s + \int n\,v_{\text{ext}}\,dx + \int n\,v_H\,dx + \int n\,v_x\,dx$$</div>
+          <p>where \(T_s\) is the kinetic energy of the fictitious non-interacting electrons.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 2 — what the true energy contains</span>
+          <div class="eq">$$E = T_s + \int n\,v_{\text{ext}}\,dx + \underbrace{\tfrac12\!\int n\,v_H\,dx}_{E_H} + E_x + E_{nn}$$</div>
+          <p>Note the two mismatches against step 1. The Hartree <em>energy</em> carries a factor
+          \(\tfrac12\) (the same pair-counting argument as section 11 — the loop over pairs counts
+          each pair twice). And the exchange <em>energy</em> \(E_x\) is not \(\int n v_x\): the
+          potential is a derivative of the energy, so they differ by construction.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 3 — subtract what was over-counted, add what is missing</span>
+          <pre class="work">E = 2ε − ∫n v_H − ∫n v_x        (remove both potential terms from the eigenvalue sum)
+      + E_H + E_x               (put back the correct energies)
+      + E_nn                    (the nuclei repel each other; no electron knows this)
+
+and since ∫n v_H = 2E_H, the first correction collapses:
+
+E = 2ε − E_H − ∫n v_x + E_x + E_nn</pre>
+          <p>Line for line, that is the code. The pieces are usually called
+          "double-counting corrections", which undersells them: they are the difference between an
+          energy and the sum of the eigenvalues of the operator built from it.</p>
+        </div>
+
+        <h3 style="margin-top:22px">The converged run at d = 2.0, term by term</h3>
+        <table class="num">
+          <tr><th>Term</th><th>Value (hartree)</th><th>What it is</th></tr>
+          <tr><td>ε</td><td>−0.68149</td><td style="text-align:left">the one occupied Kohn–Sham eigenvalue</td></tr>
+          <tr><td>2ε</td><td>−1.36298</td><td style="text-align:left">eigenvalue sum — <em>not</em> the energy</td></tr>
+          <tr><td>T_s</td><td>+0.17722</td><td style="text-align:left">non-interacting kinetic energy</td></tr>
+          <tr><td>E_H</td><td>+1.31767</td><td style="text-align:left">classical cloud self-repulsion</td></tr>
+          <tr><td>∫n·v_x</td><td>−1.49084</td><td style="text-align:left">the term to remove</td></tr>
+          <tr><td>E_x</td><td>−1.11813</td><td style="text-align:left">= ¾ ∫n·v_x, as derived in §15</td></tr>
+          <tr><td>E_nn</td><td>+0.44721</td><td style="text-align:left">= 1/√(4+1), the softened nuclear repulsion</td></tr>
+          <tr><td><b>E_total</b></td><td><b>−1.86074</b></td><td style="text-align:left">−1.36298 − 1.31767 + 1.49084 − 1.11813 + 0.44721</td></tr>
+        </table>
+        <div class="note-box"><b>Verified independently.</b> Building \(T_s\) directly from the
+        finite-difference kinetic operator and assembling
+        \(E=T_s+\int nv_{\text{ext}}+E_H+E_x+E_{nn}\) gives <b>−1.86074</b> — identical to the
+        eigenvalue-sum route to all five decimals. Two different algebraic paths to the same number
+        is what a correct derivation looks like, and it is a test you can run on any code you don't
+        trust.</div>
+
+        <details class="out"><summary>Part B's answer — predict the shape before you look</summary>
+<pre>scan d = 1.0 … 8.0 in 29 steps:
+
+   d = 1.00   E = -1.8788
+   d = 1.25   E = -1.8958      ← minimum
+   d = 1.50   E = -1.8956
+   d = 1.75   E = -1.8824
+   d = 8.00   E = -1.7811
+
+  equilibrium d ≈ 1.25 bohr,  binding energy ≈ 0.115 hartree vs d = 8
+
+Two things to notice before moving on:
+
+1. d = 1.25 and d = 1.50 differ by 0.0002 hartree. The scan spacing is 0.25
+   bohr, so "1.25" is only accurate to about that. A real geometry
+   optimisation uses FORCES (the derivative), not a coarse scan, precisely
+   because the curve is flat near its minimum.
+2. The minimum is real but the numbers are the toy's, not hydrogen's
+   (real H₂: 1.40 bohr, 0.17 hartree). Mechanism transfers; magnitudes do not.</pre>
+        </details>
+      </div>
+    </section>
+
+    <!-- 17 -->
+    <section id="d17">
+      <div class="sec-head"><span class="kicker">17</span><h2>Bloch's theorem and the plane-wave matrix element</h2></div>
+      <p class="sec-sub">Lesson 6 writes down a Hamiltonian matrix in three lines of code. Here is
+      where each entry comes from — and why this basis has no overlap matrix.</p>
+
+      <div class="card">
+        <div class="step"><span class="n">Step 1 — what periodicity forces</span>
+          <p>The crystal potential repeats: \(V(x+a)=V(x)\). Translating by one lattice vector
+          therefore cannot change any measurable quantity, so it can only multiply the wavefunction
+          by a phase. Requiring consistency over many translations forces the phase to be
+          \(e^{ika}\), and Bloch's theorem follows:</p>
+          <div class="eq">$$\psi_k(x)=e^{ikx}u_k(x),\quad u_k(x+a)=u_k(x)
+          \qquad\Longleftrightarrow\qquad
+          \psi_k(x)=\sum_G c_G\,e^{i(k+G)x}$$</div>
+          <p>The two forms are the same statement: expanding the periodic part \(u_k\) in its
+          Fourier series produces the sum on the right, where
+          \(G=2\pi m/a\) are the <b>reciprocal lattice vectors</b> — precisely the wavevectors whose
+          waves share the lattice's period.</p>
+          <p><b>Consequence that makes solids computable:</b> an infinite crystal reduces to one
+          unit cell plus a label \(k\), and \(k\) only needs to run over one Brillouin zone
+          \([-\pi/a,\pi/a]\) — because \(k\) and \(k+G\) give the same set of plane waves.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 2 — the kinetic energy is diagonal</span>
+          <p>Plane waves are eigenfunctions of the kinetic operator, which is the entire reason to
+          use them:</p>
+          <div class="eq">$$-\tfrac12\frac{d^2}{dx^2}e^{i(k+G)x}=\tfrac12(k+G)^2\,e^{i(k+G)x}
+          \;\Longrightarrow\; T_{GG'}=\tfrac12(k+G)^2\,\delta_{GG'}$$</div>
+          <p>Code: <code>H = np.diag(0.5 * (k + G)**2)</code>.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 3 — the potential is its Fourier series</span>
+          <p>A matrix element between two plane waves is</p>
+          <div class="eq">$$\langle k+G|V|k+G'\rangle=\frac{1}{a}\int_0^a e^{-i(k+G)x}V(x)e^{i(k+G')x}dx
+          =\frac{1}{a}\int_0^a V(x)\,e^{-i(G-G')x}dx = V_{G-G'}$$</div>
+          <p>— the Fourier coefficient of the potential at the difference vector. Nothing else
+          survives, because plane waves are orthogonal. For the lesson's potential,</p>
+          <div class="eq">$$V(x)=V_0\cos\!\left(\frac{2\pi x}{a}\right)=\frac{V_0}{2}\left(e^{i2\pi x/a}+e^{-i2\pi x/a}\right)$$</div>
+          <p>so the <em>only</em> non-zero coefficients are \(V_{\pm2\pi/a}=V_0/2\). Each plane wave
+          couples to its two immediate neighbours in \(G\) and to nothing else — which is exactly
+          the loop</p>
+          <pre class="work">for m in range(nG - 1):
+    H[m, m+1] += V0 / 2
+    H[m+1, m] += V0 / 2</pre>
+        </div>
+
+        <div class="note-box"><b>Why there is no overlap matrix here.</b> In lesson 3 the Gaussians
+        were non-orthogonal, so you had to solve \(H\mathbf c=E S\mathbf c\). Plane waves are
+        orthonormal, \(\langle k+G|k+G'\rangle=\delta_{GG'}\), so \(S=I\) and the problem is the
+        ordinary \(H\mathbf c=E\mathbf c\) — <code>np.linalg.eigvalsh(H)</code>, no second argument.
+        <b>That simplification is one of the main reasons solid-state codes are built on plane
+        waves.</b></div>
+      </div>
+    </section>
+
+    <!-- 18 -->
+    <section id="d18">
+      <div class="sec-head"><span class="kicker">18</span><h2>Where the gap comes from, and what the cutoff is</h2></div>
+      <p class="sec-sub">Two results you can predict on paper and then check against the printout —
+      including one that deliberately disagrees, for a reason worth knowing.</p>
+
+      <div class="card">
+        <h3>The gap at the zone boundary — degenerate perturbation theory</h3>
+        <div class="step"><span class="n">Step 1 — find the degeneracy</span>
+          <p>At the zone edge \(k=-\pi/a\), take the plane waves \(m=0\) (so \(G=0\)) and \(m=+1\)
+          (so \(G=2\pi/a\)). Their free-electron energies with \(a=1\):</p>
+          <pre class="work">m = 0:  ½(k+G)² = ½(-π + 0)²  = ½π² = 4.9348
+m = 1:  ½(k+G)² = ½(-π + 2π)² = ½π² = 4.9348      ← exactly degenerate</pre>
+          <p>Two states with the same energy, and \(V\) couples precisely this pair — because they
+          differ by \(G=2\pi/a\), the one non-zero Fourier component.</p>
+        </div>
+        <div class="step"><span class="n">Step 2 — diagonalise the 2×2</span>
+          <div class="eq">$$\begin{pmatrix}E_0 & V_0/2\\ V_0/2 & E_0\end{pmatrix}
+          \;\Longrightarrow\; E_\pm=E_0\pm\frac{V_0}{2},\qquad \text{gap}=2\cdot\frac{V_0}{2}=V_0$$</div>
+          <p>The lower state is the standing wave that piles charge <b>on</b> the ions (it sees more
+          attraction); the upper one piles charge <b>between</b> them. The energy difference between
+          those two ways of standing still <em>is</em> the band gap.</p>
+        </div>
+
+        <h3 style="margin-top:20px">Predicted vs computed — and why they differ</h3>
+        <table class="num">
+          <tr><th>V₀</th><th>predicted E₋ / E₊</th><th>computed E₋ / E₊</th><th>predicted gap</th><th>computed gap</th></tr>
+          <tr><td>4</td><td>2.9348 / 6.9348</td><td>2.8385 / 6.8283</td><td>4.000</td><td>3.990</td></tr>
+          <tr><td>12</td><td>−1.0652 / 10.9348</td><td>−1.8483 / 9.8826</td><td>12.000</td><td>11.731</td></tr>
+        </table>
+        <p>At \(V_0=4\) the two-state prediction is good to 0.25 %; at \(V_0=12\) it is off by
+        2.2 %, and both levels have been dragged downward. The reason is that the 2×2 treatment
+        ignores coupling to the <em>other</em> plane waves, which the full \(15\times15\) matrix
+        includes: every additional coupling pushes the level down (second-order perturbation theory
+        always lowers the ground state). <b>The approximation degrades as \(V_0\) grows relative to
+        the spacing between free-electron levels</b> — which is the honest statement of when
+        "nearly-free-electron" reasoning applies to a real material.</p>
+
+        <div class="card" style="box-shadow:none;border-style:dashed;margin-top:18px">
+          <h3>What the plane-wave cutoff actually is</h3>
+          <p>The script keeps \(m=-M\ldots M\) with \(M=7\): fifteen plane waves. A real code does
+          not ask for a count — it asks for an <b>energy cutoff</b>, and keeps every plane wave
+          below it:</p>
+          <div class="eq">$$\tfrac12|\mathbf k+\mathbf G|^2 < E_{\text{cut}}$$</div>
+          <pre class="work">largest G kept:  2π·7/a = 43.98 bohr⁻¹   (a = 1)
+equivalent cutoff: ½(43.98)² = 967 hartree ≈ 26.3 keV</pre>
+          <p>Absurdly high — because \(a=1\) bohr is a toy cell far smaller than any real lattice
+          constant (silicon: 10.26 bohr). The point is the correspondence: <b>"number of plane
+          waves" and "energy cutoff" are the same knob</b>, and in three dimensions the count grows
+          as \(N_{PW}\propto V_{\text{cell}}\,E_{\text{cut}}^{3/2}\). Reduce \(M\) in the script and
+          the low bands go wrong first at large \(|k|\) — you have just run the convergence test
+          that <code>ecutwfc</code> exists for.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 19 -->
+    <section id="d19">
+      <div class="sec-head"><span class="kicker">19</span><h2>Predict, then run — lessons 4, 5, 6</h2></div>
+      <div class="card">
+        <h3>Before <code>lesson04_hartree_helium_scf.py</code></h3>
+        <ol style="color:var(--txt-2);font-size:14.5px;line-height:1.8;max-width:76ch">
+          <li>The <em>first</em> eigenvalue printed comes from the bare-nucleus guess. Predict it
+          from \(-Z^2/2\) before anything else happens.</li>
+          <li>Will the converged \(\varepsilon\) be higher or lower than that? By roughly how much,
+          and what physical effect sets the sign?</li>
+          <li>From \(\varepsilon=-0.914\) and \(E_{ee}=1.029\), compute the total energy without
+          looking at the last line of output.</li>
+          <li>Of the gap to the experimental \(-2.9037\), how much is correlation and how much is
+          your grid? (§13 — and say how you would <em>demonstrate</em> the split rather than assert it.)</li>
+          <li>At \(\beta=0.5\) the error falls by ≈0.35 per iteration. Predict the iteration count
+          to reach \(10^{-8}\), then predict what \(\beta=1.6\) does.</li>
+        </ol>
+
+        <h3 style="margin-top:22px">Before <code>lesson05_kohn_sham_1d.py</code></h3>
+        <ol style="color:var(--txt-2);font-size:14.5px;line-height:1.8;max-width:76ch">
+          <li>Write \(v_{\text{eff}}\) and name its three terms without looking. Then say which one
+          contains an electron's repulsion from itself, and what is supposed to cancel it.</li>
+          <li>Write the total-energy formula and justify every sign. Then check
+          \(E_x=\tfrac34\int nv_x\) against the printed components.</li>
+          <li>Predict the <em>shape</em> of E(d): what must it do as \(d\to0\) and as \(d\to\infty\),
+          and which term dominates each limit?</li>
+          <li>Task 1 of the curriculum switches exchange off. Predict the direction of the change in
+          both bond length and binding energy <em>before</em> running it — then explain your
+          prediction using self-interaction.</li>
+        </ol>
+
+        <h3 style="margin-top:22px">Before <code>lesson06_bands_planewaves.py</code></h3>
+        <ol style="color:var(--txt-2);font-size:14.5px;line-height:1.8;max-width:76ch">
+          <li>Compute the free-electron degeneracy energy at the zone edge (\(\pi^2/2\)) and the
+          predicted gaps for \(V_0=4\) and \(V_0=12\).</li>
+          <li>Predict which of the two will match the printed gap better, and say why before you see
+          either.</li>
+          <li>Reduce \(M\) from 7 to 2, then 1. Predict which bands break first — low or high, small
+          \(|k|\) or large — and connect your answer to \(E_{\text{cut}}\).</li>
+          <li>For 1, 2 and 3 valence electrons per cell, classify metal or insulator, and state the
+          one counting rule you used.</li>
+        </ol>
+        <div class="warn"><b>Then mark yourself.</b> Run <code>/dft-tutor</code>, choose
+        <em>mark</em>, paste your predictions alongside the real output, and have both graded — the
+        prediction is worth more than the output, because it is the only part that tests you.</div>
       </div>
     </section>
   </main>
