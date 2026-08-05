@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI4DFT — Derivations: every symbol, every integral, worked by hand</title>
+<meta name="description" content="The grounding layer for the AI4DFT course: notation defined, the hydrogen radial equation and the Gaussian basis-set integrals derived from scratch, and the matrices worked out numerically by hand before you run the code.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/theme.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false});"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  main{max-width:1000px}
+  section{margin-top:56px;scroll-margin-top:30px}
+  .step{border-left:2px solid var(--line);padding:0 0 0 20px;margin:18px 0}
+  .step .n{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--accent);display:block;margin-bottom:5px}
+  .step p{margin:0 0 8px;color:var(--txt-2);font-size:14.6px;line-height:1.7;max-width:76ch}
+  .step p b{color:var(--txt)}
+  .dict td:first-child{font-family:"JetBrains Mono",monospace;color:var(--accent);
+    white-space:nowrap;font-size:12.5px;vertical-align:top}
+  .num{font-family:"JetBrains Mono",monospace;font-size:12.5px}
+  .num td,.num th{text-align:right}
+  .num td:first-child,.num th:first-child{text-align:left}
+  pre.work{background:var(--surface-2);border:1px solid var(--line);border-radius:9px;
+    padding:14px 16px;font-family:"JetBrains Mono",monospace;font-size:12.3px;line-height:1.7;
+    color:var(--txt);overflow-x:auto;margin:12px 0}
+  .rail-cta{display:flex;flex-direction:column;gap:6px}
+  .rail-cta a{font-size:12.5px;text-decoration:none;display:flex;align-items:center;gap:8px;
+    padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--txt-2)}
+  .rail-cta a:hover{border-color:var(--accent);color:var(--accent)}
+  .rail-cta a .k{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--txt-3);letter-spacing:.12em}
+  .warn{border:1px solid var(--warm-line);background:var(--warm-tint);border-radius:9px;
+    padding:12px 15px;color:var(--txt-2);font-size:13.6px;line-height:1.65;margin:14px 0}
+  .warn b{color:var(--warm)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <div class="eyebrow">AI4DFT</div>
+      <div class="title">Derivations<br><span class="thin">nothing asserted</span></div>
+    </div>
+    <nav>
+      <a href="#d0"><span class="num">00</span> How to read the maths</a>
+      <a href="#d1"><span class="num">01</span> Atomic units</a>
+      <a href="#d2"><span class="num">02</span> Hydrogen: 3D → radial</a>
+      <a href="#d3"><span class="num">03</span> Hydrogen: the matrix, by hand</a>
+      <a href="#d4"><span class="num">04</span> The variational theorem</a>
+      <a href="#d5"><span class="num">05</span> Gaussian integrals, derived</a>
+      <a href="#d6"><span class="num">06</span> One Gaussian, minimised</a>
+      <a href="#d7"><span class="num">07</span> Why <em>H</em>c = <em>E</em>Sc</a>
+      <a href="#d8"><span class="num">08</span> The 2×2, worked by hand</a>
+      <a href="#d9"><span class="num">09</span> Predict, then run</a>
+    </nav>
+    <div class="rail-cta">
+      <a href="index.html"><span class="k">COURSE</span> Interactive course</a>
+      <a href="walkthrough.html"><span class="k">DEEP</span> Lesson walkthrough</a>
+      <a href="exam.html"><span class="k">TEST</span> Self-exam</a>
+    </div>
+    <div class="note">Everything here is derived, not quoted. If a line doesn't follow from the
+      one above it, that's a bug in this page — say so and it gets fixed.</div>
+  </aside>
+
+  <main>
+    <div class="hero">
+      <div class="eyebrow">Grounding layer · lessons 2 &amp; 3</div>
+      <h1>Every symbol defined.<br><span class="grad">Every integral derived.</span></h1>
+      <p class="lede">The course pages state results; the walkthrough lists parameters. This page
+      does the part in between — <b>where each formula comes from, what every letter in it means,
+      and the arithmetic worked out by hand</b> so that when the script prints a number you have
+      already produced it yourself on paper. Bring a calculator. That is not a figure of speech:
+      the worked examples below are meant to be re-typed key by key.</p>
+    </div>
+
+    <!-- 00 -->
+    <section id="d0">
+      <div class="sec-head"><span class="kicker">00</span><h2>How to read the maths</h2></div>
+      <p class="sec-sub">Most of the "vagueness" in quantum mechanics texts is unexplained
+      <em>notation</em>, not unexplained physics. Here is the entire vocabulary used in lessons 2
+      and 3. Nothing else appears.</p>
+      <div class="card">
+        <table class="dict">
+          <tr><th>Symbol</th><th>Read it as</th><th>What it actually is</th></tr>
+          <tr><td>\(\psi(\mathbf r)\)</td><td>"psi of r"</td>
+            <td>A function that assigns a number to every point in space. Feed it coordinates, it
+            returns an amplitude. Nothing more mysterious than a temperature field \(T(x,y,z)\).</td></tr>
+          <tr><td>\(|\psi|^2\)</td><td>"psi squared"</td>
+            <td>Probability <em>density</em>: \(|\psi|^2\,dV\) is the probability of finding the
+            electron inside the little volume \(dV\). Units: 1/volume.</td></tr>
+          <tr><td>\(\hat H\)</td><td>"H-hat", the Hamiltonian</td>
+            <td>An <b>operator</b>: a machine that eats a function and returns a different function.
+            \(\hat H = -\tfrac12\nabla^2 + V\) means "take the second derivative, multiply by −½,
+            then add \(V\) times the original". Not a number.</td></tr>
+          <tr><td>\(\nabla^2\)</td><td>"del squared", the Laplacian</td>
+            <td>Sum of unmixed second derivatives, \(\partial_x^2+\partial_y^2+\partial_z^2\).
+            It measures <b>curvature</b>. This is the only place kinetic energy enters.</td></tr>
+          <tr><td>\(\hat H\psi = E\psi\)</td><td>"H psi equals E psi"</td>
+            <td>An <b>eigenvalue equation</b>: find the special functions that the operator merely
+            rescales rather than reshapes. \(\psi\) = eigenfunction (the orbital), \(E\) = eigenvalue
+            (its energy).</td></tr>
+          <tr><td>\(\langle f|g\rangle\)</td><td>"bracket f g"</td>
+            <td>Shorthand for the integral \(\int f^*(\mathbf r)\,g(\mathbf r)\,d^3r\) over all space.
+            It is an <b>inner product</b> — the continuous version of a dot product between vectors.
+            Real functions here, so drop the complex conjugate.</td></tr>
+          <tr><td>\(\langle f|\hat H|g\rangle\)</td><td>"matrix element"</td>
+            <td>Apply the operator to \(g\), then take the inner product with \(f\):
+            \(\int f\,(\hat Hg)\,d^3r\). One number. Stack these numbers in a grid and you have
+            <b>the matrix</b> the computer diagonalises.</td></tr>
+          <tr><td>\(\int d^3r\)</td><td>"integrate over all space"</td>
+            <td>For a spherically symmetric integrand this collapses to
+            \(\int_0^\infty 4\pi r^2 f(r)\,dr\) — the \(4\pi r^2\) is the surface area of a shell of
+            radius \(r\), i.e. how much space sits at that distance. <b>Every</b> radial integral
+            below uses this one substitution.</td></tr>
+          <tr><td>\(\delta_{ij}\)</td><td>"delta i j"</td>
+            <td>1 if \(i=j\), 0 otherwise. A compact way of saying "these functions are orthonormal".</td></tr>
+        </table>
+        <div class="note-box"><b>The one idea behind all of it:</b> functions behave like vectors.
+        They add, they scale, they have inner products, and operators act on them like matrices.
+        "Solving the Schrödinger equation" is then literally the same task as finding the principal
+        axes of a stress tensor — find the directions the operator doesn't rotate. Every method in
+        this course is a different choice of which vectors to use as the basis.</div>
+      </div>
+    </section>
+
+    <!-- 01 -->
+    <section id="d1">
+      <div class="sec-head"><span class="kicker">01</span><h2>Atomic units — why there are no constants in the code</h2></div>
+      <p class="sec-sub">Look at <code>lesson02_hydrogen_atom.py</code>: no \(\hbar\), no electron
+      mass, no \(4\pi\varepsilon_0\). They didn't vanish — they were set to 1 by choosing the units.</p>
+      <div class="card">
+        <p>The rule: measure mass in electron masses, charge in electron charges, action in \(\hbar\),
+        and let the Coulomb constant be 1. Four choices, four constants gone:</p>
+        <div class="eq">$$\hbar = m_e = e = \frac{1}{4\pi\varepsilon_0} = 1$$</div>
+        <table>
+          <tr><th>Quantity</th><th>Atomic unit</th><th>In SI</th><th>Feel for it</th></tr>
+          <tr><td>Length</td><td>1 bohr, \(a_0\)</td><td>0.5292 Å = 52.92 pm</td>
+            <td>The most probable radius of hydrogen's 1s electron. A C–C bond is ≈ 2.9 bohr.</td></tr>
+          <tr><td>Energy</td><td>1 hartree, \(E_h\)</td><td>27.211 eV = 2625.5 kJ/mol</td>
+            <td>Twice hydrogen's ionisation energy. A strong covalent bond is ≈ 0.2 hartree.</td></tr>
+          <tr><td>Mass</td><td>\(m_e\)</td><td>9.109×10⁻³¹ kg</td><td>—</td></tr>
+        </table>
+        <p style="margin-top:12px">So when the script prints <code>-0.49995</code>, that is
+        −0.49995 hartree = −13.605 eV, and hydrogen's measured ionisation energy is 13.606 eV.
+        The full Schrödinger equation \(-\frac{\hbar^2}{2m_e}\nabla^2\psi - \frac{Ze^2}{4\pi\varepsilon_0 r}\psi = E\psi\)
+        becomes, in these units, exactly what the code implements:</p>
+        <div class="eq">$$-\tfrac12\nabla^2\psi - \frac{Z}{r}\psi = E\psi$$</div>
+        <div class="warn"><b>Watch out:</b> "1 hartree" and "1 rydberg" are both in circulation
+        (1 Ha = 2 Ry). Quantum ESPRESSO reports rydbergs by default; VASP and most chemistry codes
+        report eV. A factor-of-2 disagreement with a paper is almost always this, not physics.</div>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="d2">
+      <div class="sec-head"><span class="kicker">02</span><h2>Hydrogen: from three dimensions to one</h2></div>
+      <p class="sec-sub">The equation solved in lesson 2 is the radial equation. Here is where it
+      comes from — every term, including the one that looks invented (the centrifugal barrier).</p>
+
+      <div class="card">
+        <h3>The derivation</h3>
+        <div class="step"><span class="n">Step 1 — exploit the symmetry</span>
+          <p>The potential \(V=-Z/r\) depends only on distance, not direction. So look for
+          solutions that separate into "how far" times "which way":</p>
+          <div class="eq">$$\psi(r,\theta,\phi) = R(r)\,Y_{lm}(\theta,\phi)$$</div>
+          <p>\(R(r)\) is the <b>radial function</b> — the part we must solve for numerically.
+          \(Y_{lm}\) are the <b>spherical harmonics</b>: the s, p, d shapes from chemistry. They are
+          universal — the same set appears for <em>any</em> spherically symmetric potential, so they
+          are solved once, analytically, and never again. That is why the code has no angles in it.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 2 — the Laplacian in spherical coordinates</span>
+          <p>The only non-obvious input. Acting on \(R\,Y_{lm}\), the angular derivatives collapse
+          to a single number because the spherical harmonics are themselves eigenfunctions of the
+          angular part, with eigenvalue \(-l(l+1)\):</p>
+          <div class="eq">$$\nabla^2\big(RY_{lm}\big) = Y_{lm}\left[\frac{1}{r^2}\frac{d}{dr}\!\left(r^2\frac{dR}{dr}\right) - \frac{l(l+1)}{r^2}R\right]$$</div>
+          <p>Here \(l = 0,1,2,\dots\) is the <b>angular-momentum quantum number</b> (s, p, d). It is
+          an integer for the same reason the box levels were integers: going once around in \(\phi\)
+          must return the same value, so only whole numbers of wavelengths fit around the sphere.
+          <b>Same boundary-condition argument, applied to angle instead of length.</b></p>
+        </div>
+
+        <div class="step"><span class="n">Step 3 — the substitution that removes the first derivative</span>
+          <p>Define \(u(r) \equiv r\,R(r)\). Then a two-line calculation gives
+          \(\frac{1}{r^2}\frac{d}{dr}(r^2R') = \frac{u''}{r}\). Substituting and multiplying
+          through by \(r\):</p>
+          <div class="eq">$$-\tfrac12 u''(r) + \left[\frac{l(l+1)}{2r^2} - \frac{Z}{r}\right]u(r) = E\,u(r),\qquad u(0)=0$$</div>
+          <p>This is <b>exactly the 1D equation from lesson 1</b>, on the half-line \(r>0\), with a
+          different potential in the bracket. Nothing new had to be learned to solve it — that is
+          the entire point of the substitution.</p>
+        </div>
+
+        <div class="step"><span class="n">Step 4 — why \(u\), not \(R\)</span>
+          <p>Two payoffs. The equation lost its first-derivative term, so the same three-point
+          stencil as lesson 1 works. And the normalisation becomes flat:
+          \(\int_0^\infty |R|^2 r^2dr = \int_0^\infty |u|^2 dr = 1\) — the \(r^2\) from the volume
+          element is already absorbed into \(u\). <b>So \(|u(r)|^2dr\) reads directly as "probability
+          of being at radius \(r\)"</b>, which is what the left panel of the figure plots.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Every term in the bracket</h3>
+        <table class="dict">
+          <tr><th>Term</th><th>Name</th><th>Where it came from · what it does</th></tr>
+          <tr><td>\(-\tfrac12 u''\)</td><td>kinetic energy</td>
+            <td>From \(-\frac{\hbar^2}{2m}\nabla^2\) with \(\hbar=m=1\). Curvature costs energy:
+            a wiggly \(u\) has large \(|u''|\), hence high energy. This is what forbids the electron
+            from collapsing onto the nucleus.</td></tr>
+          <tr><td>\(-Z/r\)</td><td>Coulomb attraction</td>
+            <td>Charge \(-1\) (electron) times charge \(+Z\) (nucleus) over distance, with the
+            Coulomb constant equal to 1. Negative = binding. Diverges at \(r\to0\), which is why the
+            grid starts at \(r=dr\), not \(r=0\).</td></tr>
+          <tr><td>\(\dfrac{l(l+1)}{2r^2}\)</td><td>centrifugal barrier</td>
+            <td>Not invented — it is the <b>angular part of the kinetic energy</b>, dropped out of
+            step 2. An electron circulating with angular momentum has kinetic energy that grows as
+            it approaches the axis, exactly like \(L^2/2mr^2\) in classical orbital mechanics. It is
+            zero for \(l=0\) (s-states can sit on the nucleus) and a growing wall for p, d.</td></tr>
+          <tr><td>\(u(0)=0\)</td><td>boundary condition</td>
+            <td>\(R=u/r\) must stay finite at the origin, so \(u\) must vanish there. In the code
+            this is enforced implicitly: the grid simply has no point at \(r=0\), which is the same
+            "wall" trick as the particle in a box.</td></tr>
+        </table>
+        <div class="note-box"><b>The physical payoff, in one line:</b> s-electrons (\(l=0\)) feel no
+        barrier and penetrate to the nucleus; p and d electrons are held out by the \(l(l+1)/2r^2\)
+        wall. In a many-electron atom the penetrating s-electron therefore sees more of the raw
+        nuclear charge — <b>that asymmetry is what orders the periodic table</b>, and it is visible
+        as the right-hand panel of the lesson-2 figure.</div>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section id="d3">
+      <div class="sec-head"><span class="kicker">03</span><h2>Hydrogen: build the matrix by hand</h2></div>
+      <p class="sec-sub">Before running <code>lesson02_hydrogen_atom.py</code>, construct the first
+      few entries of the 3000×3000 matrix yourself. Then the code's job becomes obvious rather than
+      magic.</p>
+
+      <div class="card">
+        <h3>From derivative to matrix</h3>
+        <p>Replace the second derivative by its three-point finite difference on a grid of spacing
+        \(\Delta r\):</p>
+        <div class="eq">$$u''(r_i)\;\approx\;\frac{u_{i+1}-2u_i+u_{i-1}}{\Delta r^{2}}$$</div>
+        <p>Substitute into \(-\tfrac12u''+Vu=Eu\) and collect the coefficient of each \(u\):</p>
+        <div class="eq">$$\underbrace{\left[\frac{1}{\Delta r^{2}}+V(r_i)\right]}_{\text{diagonal }H_{ii}}u_i
+        \;\underbrace{-\;\frac{1}{2\Delta r^{2}}}_{H_{i,i\pm1}}\big(u_{i+1}+u_{i-1}\big) = E\,u_i$$</div>
+        <p>That is a <b>tridiagonal matrix</b> — non-zero only on the diagonal and its two
+        neighbours — and it is precisely these two lines of the script:</p>
+        <pre class="work">main = 1.0 / dr**2 + V          # the diagonal,  H_ii
+off  = -0.5 / dr**2 * ones(N-1) # the two off-diagonals, H_i,i±1</pre>
+      </div>
+
+      <div class="card">
+        <h3>The actual numbers — check these on your calculator</h3>
+        <p>The script uses <code>rmax = 60</code>, <code>N = 3000</code>, so
+        \(\Delta r = 60/3000 = 0.02\) bohr and the grid is \(r_i = 0.02,\,0.04,\,0.06,\dots\)
+        For the s-channel (\(l=0\)) the potential is just \(-1/r\):</p>
+        <pre class="work">1/dr²          = 1/0.0004        = 2500
+off-diagonal   = -0.5/0.0004     = -1250      (every one of them)
+
+i=1: r=0.02   V = -1/0.02  = -50.00   →  H₁₁ = 2500 - 50.00   = 2450.00
+i=2: r=0.04   V = -1/0.04  = -25.00   →  H₂₂ = 2500 - 25.00   = 2475.00
+i=3: r=0.06   V = -1/0.06  = -16.67   →  H₃₃ = 2500 - 16.67   = 2483.33
+i=50: r=1.00  V = -1/1.00  = -1.00    →  H₅₀,₅₀ = 2500 - 1.00 = 2499.00</pre>
+        <p>So the matrix is</p>
+        <div class="eq">$$H=\begin{pmatrix}
+        2450.00 & -1250 & 0 & \cdots\\
+        -1250 & 2475.00 & -1250 & \\
+        0 & -1250 & 2483.33 & \ddots\\
+        \vdots & & \ddots & \ddots
+        \end{pmatrix}$$</div>
+        <div class="warn"><b>The thing worth staring at:</b> every entry is in the thousands, yet the
+        answer you want is \(-0.5\). The ground-state energy is a <b>tiny difference between huge
+        kinetic and potential contributions</b> — about one part in 5000. That is why grid spacing
+        matters so much, why quantum chemistry obsesses over numerical precision, and why an
+        eigensolver is used rather than anything cruder. You are extracting a whisper from two shouts
+        that nearly cancel.</div>
+      </div>
+
+      <div class="card">
+        <h3>A version small enough to solve without a computer</h3>
+        <p>Take the same construction with a deliberately crude grid, \(\Delta r=0.5\) bohr, three
+        points \(r=0.5,1.0,1.5\), \(l=0\). Then \(1/\Delta r^2=4\) and the off-diagonals are \(-2\):</p>
+        <pre class="work">H₁₁ = 4 - 1/0.5 = 4 - 2.000 = 2.000
+H₂₂ = 4 - 1/1.0 = 4 - 1.000 = 3.000
+H₃₃ = 4 - 1/1.5 = 4 - 0.667 = 3.333
+
+      ⎡ 2.000  -2.000   0.000 ⎤
+  H = ⎢-2.000   3.000  -2.000 ⎥
+      ⎣ 0.000  -2.000   3.333 ⎦</pre>
+        <p>Its lowest eigenvalue is \(-0.0866\) hartree. Right sign, wildly wrong magnitude — and
+        the two reasons are worth separating, because you will meet both again in every real
+        calculation:</p>
+        <ul style="color:var(--txt-2);font-size:14.4px;line-height:1.75;max-width:76ch">
+          <li><b>Truncation.</b> The grid stops at \(r=1.5\) bohr, but hydrogen's 1s density reaches
+          well past 4 bohr. You have not solved hydrogen — you have solved <em>hydrogen in a box of
+          radius 1.5</em>, and squeezing costs energy exactly as in lesson 1. This dominates here.</li>
+          <li><b>Resolution.</b> \(\Delta r=0.5\) cannot represent the cusp at the origin, which
+          biases the answer the other way (finite differences under-estimate curvature).</li>
+        </ul>
+        <p>Fix them one at a time and watch the number walk to the answer — this is a convergence
+        test, and you have now done one by hand:</p>
+        <table class="num">
+          <tr><th>Δr</th><th>N</th><th>r<sub>max</sub></th><th>E (hartree)</th><th>what was limiting</th></tr>
+          <tr><td>0.5</td><td>3</td><td>1.5</td><td>−0.0866</td><td style="text-align:left">box far too small</td></tr>
+          <tr><td>0.5</td><td>8</td><td>4.0</td><td>−0.4626</td><td style="text-align:left">box now adequate; Δr crude</td></tr>
+          <tr><td>0.5</td><td>20</td><td>10.0</td><td>−0.4721</td><td style="text-align:left">box done — Δr is the wall</td></tr>
+          <tr><td>0.25</td><td>40</td><td>10.0</td><td>−0.4924</td><td style="text-align:left">halving Δr: error ÷4</td></tr>
+          <tr><td>0.10</td><td>100</td><td>10.0</td><td>−0.4988</td><td style="text-align:left">second-order convergence</td></tr>
+          <tr><td>0.02</td><td>3000</td><td>60.0</td><td>−0.49995</td><td style="text-align:left">the script's settings</td></tr>
+        </table>
+        <p style="margin-top:12px">Look at rows 3→4→5: each halving of \(\Delta r\) cuts the error by
+        about 4. That factor is the <b>second-order accuracy</b> of the three-point stencil,
+        measured rather than asserted — and it is the same measurement asked for in deliverable P1.
+        Note also that going from row 2 to row 3 barely helps: <b>once a parameter is converged,
+        spending more on it buys nothing.</b> Knowing which knob is currently limiting you is the
+        whole skill of production DFT.</p>
+      </div>
+    </section>
+
+    <!-- 04 -->
+    <section id="d4">
+      <div class="sec-head"><span class="kicker">04</span><h2>The variational theorem, proved</h2></div>
+      <p class="sec-sub">Lesson 3's foundation. Four lines, no hand-waving, and the proof is worth
+      owning because everything after it — Hartree–Fock, DFT, basis sets, plane-wave cutoffs —
+      inherits its logic.</p>
+      <div class="card">
+        <h3>Statement</h3>
+        <div class="eq">$$E[\psi] \;=\; \frac{\langle\psi|\hat H|\psi\rangle}{\langle\psi|\psi\rangle}\;\ge\;E_0
+        \quad\text{for \textit{any} well-behaved }\psi$$</div>
+        <p>\(E_0\) is the true ground-state energy. The denominator is there so you don't have to
+        normalise your guess first — it divides out whatever overall scale \(\psi\) happens to have.
+        This ratio has a name: the <b>Rayleigh quotient</b>. Structural engineers meet the identical
+        object when estimating the fundamental frequency of a vibrating structure, and for the
+        identical reason.</p>
+
+        <div class="step"><span class="n">Step 1</span>
+          <p>The exact eigenfunctions \(\phi_n\) of \(\hat H\) form a complete orthonormal set:
+          \(\hat H\phi_n = E_n\phi_n\), \(\langle\phi_m|\phi_n\rangle=\delta_{mn}\), with
+          \(E_0\le E_1\le E_2\le\cdots\). So <em>any</em> function can be written
+          \(\psi=\sum_n c_n\phi_n\). We never need to know what the \(\phi_n\) are — only that
+          they exist.</p>
+        </div>
+        <div class="step"><span class="n">Step 2</span>
+          <p>Apply \(\hat H\) term by term and use orthonormality to kill every cross term:</p>
+          <div class="eq">$$\langle\psi|\hat H|\psi\rangle=\sum_n |c_n|^2E_n,
+          \qquad \langle\psi|\psi\rangle=\sum_n |c_n|^2$$</div>
+        </div>
+        <div class="step"><span class="n">Step 3</span>
+          <p>So the Rayleigh quotient is \(E[\psi]=\dfrac{\sum_n|c_n|^2E_n}{\sum_n|c_n|^2}\) — a
+          <b>weighted average of the exact energies</b>, with non-negative weights \(|c_n|^2\).</p>
+        </div>
+        <div class="step"><span class="n">Step 4</span>
+          <p>No weighted average can fall below the smallest item being averaged. Hence
+          \(E[\psi]\ge E_0\), with equality only when all the weight sits on \(n=0\) — i.e. when the
+          guess <em>is</em> the ground state. <b>∎</b></p>
+        </div>
+        <div class="note-box"><b>Why this matters more than it looks:</b> it converts an unsolvable
+        search into an optimisation with a built-in compass. You never know how far you are from the
+        truth, but you always know which of two answers is better: <b>the lower one</b>. Every
+        "improvement" in this field — bigger basis, higher cutoff, more Gaussians — is justified by
+        this one inequality.</div>
+        <div class="warn"><b>The limit of the theorem:</b> it bounds the <em>energy</em>, not other
+        properties. A trial function can give a decent energy and a poor dipole moment or density,
+        because errors in \(\psi\) enter the energy quadratically but other observables linearly.
+        "Good energy" ⇏ "good wavefunction".</div>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section id="d5">
+      <div class="sec-head"><span class="kicker">05</span><h2>The three Gaussian integrals, derived</h2></div>
+      <p class="sec-sub">These are the formulas <code>lesson03</code> hard-codes as
+      <code>overlap()</code>, <code>kinetic()</code> and <code>nuclear()</code>. The walkthrough
+      calls them "standard results". They are three lines of calculus each — here they are.</p>
+
+      <div class="card">
+        <h3>Setup and the master integrals</h3>
+        <p>The basis functions are s-type Gaussians centred on the nucleus:</p>
+        <div class="eq">$$g_i(\mathbf r)=e^{-a_i r^2}$$</div>
+        <p>\(a_i\) is the <b>exponent</b> (units: bohr⁻²) and it controls width only —
+        large \(a\) = narrow and spiky, small \(a\) = broad and diffuse. Everything below uses one
+        fact: a product of two Gaussians is another Gaussian,
+        \(g_ig_j=e^{-(a_i+a_j)r^2}\). Write \(p \equiv a_i+a_j\) throughout.</p>
+        <p>Because everything is spherically symmetric, \(\int d^3r \to \int_0^\infty 4\pi r^2dr\),
+        and only three radial integrals are ever needed:</p>
+        <div class="eq">$$\int_0^\infty re^{-pr^2}dr=\frac{1}{2p},\qquad
+        \int_0^\infty r^2e^{-pr^2}dr=\frac{1}{4}\sqrt{\frac{\pi}{p^3}},\qquad
+        \int_0^\infty r^4e^{-pr^2}dr=\frac{3}{8}\frac{\sqrt\pi}{p^{5/2}}$$</div>
+        <p>(The first is elementary by substituting \(s=r^2\); the others follow from the standard
+        \(\int_0^\infty e^{-pr^2}dr=\tfrac12\sqrt{\pi/p}\) by differentiating with respect to \(p\)
+        — each differentiation pulls down a factor \(-r^2\).)</p>
+      </div>
+
+      <div class="card">
+        <h3>1 · Overlap \(S_{ij}=\langle g_i|g_j\rangle\)</h3>
+        <div class="eq">$$S_{ij}=\int e^{-pr^2}d^3r=4\pi\!\int_0^\infty\! r^2e^{-pr^2}dr
+        =4\pi\cdot\frac{1}{4}\sqrt{\frac{\pi}{p^3}}=\left(\frac{\pi}{p}\right)^{3/2}$$</div>
+        <p><b>What it means physically:</b> how much two basis functions look alike. \(S_{ij}=1\)
+        would mean identical (after normalisation), \(S_{ij}=0\) would mean orthogonal. Gaussians
+        centred on the same nucleus <em>always</em> overlap, which is exactly why the eigenvalue
+        problem later comes out "generalised" rather than ordinary.</p>
+      </div>
+
+      <div class="card">
+        <h3>2 · Nuclear attraction \(V_{ij}=\langle g_i|-Z/r|g_j\rangle\)</h3>
+        <div class="eq">$$V_{ij}=-Z\!\int\frac{e^{-pr^2}}{r}d^3r
+        =-Z\cdot4\pi\!\int_0^\infty\! \frac{r^2}{r}e^{-pr^2}dr
+        =-4\pi Z\cdot\frac{1}{2p}=-\frac{2\pi Z}{p}$$</div>
+        <p>Note how the \(1/r\) singularity was defused: the volume element supplied \(r^2\), so the
+        integrand is \(r\,e^{-pr^2}\) — perfectly finite. <b>The nucleus's infinite pull is tamed by
+        the vanishing amount of space near it.</b> With \(Z=1\) this is the code's
+        <code>nuclear()</code>.</p>
+      </div>
+
+      <div class="card">
+        <h3>3 · Kinetic energy \(T_{ij}=\langle g_i|-\tfrac12\nabla^2|g_j\rangle\)</h3>
+        <p>Integrate by parts once; the boundary term dies because Gaussians vanish at infinity.
+        This turns a second derivative into a product of first derivatives — numerically and
+        algebraically kinder:</p>
+        <div class="eq">$$T_{ij}=-\tfrac12\int g_i\nabla^2g_j\,d^3r=\tfrac12\int\nabla g_i\cdot\nabla g_j\,d^3r$$</div>
+        <p>For \(g=e^{-ar^2}\) the gradient is radial, \(\nabla g=-2a\,\mathbf r\,e^{-ar^2}\), so
+        \(\nabla g_i\cdot\nabla g_j=4a_ia_j\,r^2e^{-pr^2}\) and</p>
+        <div class="eq">$$T_{ij}=\tfrac12\cdot4a_ia_j\cdot4\pi\!\int_0^\infty\! r^4e^{-pr^2}dr
+        =8\pi a_ia_j\cdot\frac{3}{8}\frac{\sqrt\pi}{p^{5/2}}
+        =\frac{3\,a_ia_j\,\pi^{3/2}}{p^{5/2}}$$</div>
+        <p>Sanity check you can do in your head: \(T\) grows with the exponents (narrow = curvy =
+        expensive) and falls with \(p^{5/2}\). Both signs match physical intuition.</p>
+        <div class="note-box"><b>Why the industry uses Gaussians:</b> all three results are closed
+        algebraic formulas — no numerical integration anywhere. That property survives when the
+        Gaussians sit on <em>different</em> atoms (a product of two off-centre Gaussians is a third
+        Gaussian on the line between them), which is what makes molecular quantum chemistry
+        tractable. Slater functions \(e^{-\zeta r}\) have the right cusp and the right tail, but no
+        such product rule — which is why STO-3G exists: three Gaussians fitted to one Slater.</div>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section id="d6">
+      <div class="sec-head"><span class="kicker">06</span><h2>One Gaussian, minimised on paper</h2></div>
+      <p class="sec-sub">Part A of lesson 3 scans 400 values of \(\alpha\) numerically. You can do
+      it exactly, in five lines, and predict the printed answer to four decimals.</p>
+      <div class="card">
+        <div class="step"><span class="n">Step 1 — assemble the Rayleigh quotient</span>
+          <p>With a single basis function, \(i=j\), so \(p=2\alpha\) and the three formulas give</p>
+          <div class="eq">$$S=\left(\frac{\pi}{2\alpha}\right)^{3/2},\qquad
+          T=\frac{3\alpha^2\pi^{3/2}}{(2\alpha)^{5/2}},\qquad
+          V=-\frac{2\pi}{2\alpha}=-\frac{\pi}{\alpha}$$</div>
+        </div>
+        <div class="step"><span class="n">Step 2 — divide (the algebra all cancels)</span>
+          <div class="eq">$$\frac{T}{S}=\frac{3\alpha^2\pi^{3/2}}{2^{5/2}\alpha^{5/2}}\cdot\frac{2^{3/2}\alpha^{3/2}}{\pi^{3/2}}=\frac{3\alpha}{2},
+          \qquad
+          \frac{V}{S}=-\frac{\pi}{\alpha}\cdot\frac{2^{3/2}\alpha^{3/2}}{\pi^{3/2}}=-2\sqrt{\frac{2\alpha}{\pi}}$$</div>
+          <p>So the trial energy is a function of one variable:</p>
+          <div class="eq">$$E(\alpha)=\frac{3\alpha}{2}-2\sqrt{\frac{2\alpha}{\pi}}$$</div>
+          <p><b>Read it before solving it.</b> First term: kinetic, rises linearly — squeezing costs
+          curvature. Second: attraction, rises like \(\sqrt\alpha\) — huddling near the nucleus pays,
+          but with diminishing returns. A linear cost against a square-root benefit must have a
+          minimum. That competition <em>is</em> the atom: it is what stops the electron collapsing
+          onto the nucleus, and it is the same balance the SCF loop resolves in every later lesson.</p>
+        </div>
+        <div class="step"><span class="n">Step 3 — minimise</span>
+          <pre class="work">dE/dα = 3/2 - √(2/(πα)) = 0
+    →  √(2/(πα)) = 3/2
+    →  2/(πα)    = 9/4
+    →  α*        = 8/(9π) = 8/28.2743 = 0.282942</pre>
+        </div>
+        <div class="step"><span class="n">Step 4 — evaluate</span>
+          <pre class="work">kinetic   T = (3/2)(0.282942)               = +0.424413
+potential V = -2√(2×0.282942/π) = -2√0.180126 = -0.848826
+              ------------------------------------------------
+total     E = -0.424413  hartree   ( = -4/3π exactly )
+exact                      -0.500000
+error                       0.075587   →  15.1 %</pre>
+        </div>
+        <div class="note-box"><b>Free professional-grade check — the virial theorem.</b> Any exact
+        Coulomb ground state satisfies \(T=-E\) and \(V=2E\). Ours: \(T=0.4244=-E\) ✓ and
+        \(V=-0.8488=2E\) ✓. A variational optimum inherits this. <b>If you modify the script and the
+        virial relation breaks, your minimisation is wrong</b> — a bug detector that costs nothing.</div>
+        <p>And the lesson of the 15 % error: it is not a width problem, it is a <b>shape</b> problem.
+        The true 1s orbital \(e^{-r}\) has a cusp at the nucleus (its slope jumps) and a slow
+        exponential tail; \(e^{-\alpha r^2}\) is flat at the origin and dies far too fast at range.
+        No value of \(\alpha\) can fix a wrong functional form — which is precisely the argument for
+        using several Gaussians at once.</p>
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section id="d7">
+      <div class="sec-head"><span class="kicker">07</span><h2>Why the answer is <em>H</em>c = <em>E</em>Sc</h2></div>
+      <p class="sec-sub">The line <code>eigh(H, S)</code> is the whole of lesson 3 Part B. Here is
+      where that equation comes from — it is ordinary calculus on the Rayleigh quotient.</p>
+      <div class="card">
+        <div class="step"><span class="n">Step 1 — the trial function is now a mixture</span>
+          <div class="eq">$$\psi(\mathbf r)=\sum_{i=1}^{n} c_i\,g_i(\mathbf r)$$</div>
+          <p>The \(g_i\) are <b>fixed</b> (chosen once, exponents and all); the \(c_i\) are the
+          <b>unknowns</b>. This is the move that turns quantum mechanics into linear algebra:
+          instead of searching over all conceivable functions, search over \(n\) numbers.</p>
+        </div>
+        <div class="step"><span class="n">Step 2 — the energy in terms of the coefficients</span>
+          <p>Insert the sum into the Rayleigh quotient and expand both brackets. Every term is one
+          of the matrix elements from section 05:</p>
+          <div class="eq">$$E(\mathbf c)=\frac{\sum_{ij}c_ic_j\langle g_i|\hat H|g_j\rangle}{\sum_{ij}c_ic_j\langle g_i|g_j\rangle}
+          =\frac{\mathbf c^{\mathsf T}H\mathbf c}{\mathbf c^{\mathsf T}S\mathbf c},
+          \qquad H_{ij}=T_{ij}+V_{ij},\quad S_{ij}=\langle g_i|g_j\rangle$$</div>
+        </div>
+        <div class="step"><span class="n">Step 3 — set the gradient to zero</span>
+          <p>Differentiate with respect to one coefficient \(c_k\), using
+          \(\partial(\mathbf c^{\mathsf T}H\mathbf c)/\partial c_k = 2(H\mathbf c)_k\) for symmetric
+          \(H\), and the quotient rule:</p>
+          <div class="eq">$$\frac{\partial E}{\partial c_k}=\frac{2(H\mathbf c)_k\,(\mathbf c^{\mathsf T}S\mathbf c)-(\mathbf c^{\mathsf T}H\mathbf c)\,2(S\mathbf c)_k}{(\mathbf c^{\mathsf T}S\mathbf c)^2}=0$$</div>
+          <p>Divide through by \(2\,\mathbf c^{\mathsf T}S\mathbf c\) and recognise
+          \(E=\mathbf c^{\mathsf T}H\mathbf c/\mathbf c^{\mathsf T}S\mathbf c\):</p>
+          <div class="eq">$$\boxed{\;H\mathbf c = E\,S\mathbf c\;}$$</div>
+        </div>
+        <p>So the stationary points of the energy are the <b>generalised eigenvectors</b>, and their
+        energies are the eigenvalues. The lowest one is your variational estimate of the ground
+        state; the higher ones are (rough) estimates of excited states, free of charge.</p>
+        <table class="dict" style="margin-top:16px">
+          <tr><th>Object</th><th>Size</th><th>Meaning</th></tr>
+          <tr><td>\(H_{ij}\)</td><td>\(n\times n\)</td><td>Hamiltonian matrix. Entry \(ij\) = the energy coupling between basis functions \(i\) and \(j\).</td></tr>
+          <tr><td>\(S_{ij}\)</td><td>\(n\times n\)</td><td>Overlap matrix. Present only because the basis is non-orthogonal.</td></tr>
+          <tr><td>\(\mathbf c\)</td><td>\(n\)</td><td>The answer: how much of each basis function the orbital contains.</td></tr>
+          <tr><td>\(E\)</td><td>scalar</td><td>The orbital energy — the eigenvalue.</td></tr>
+        </table>
+        <div class="note-box"><b>Why "generalised":</b> if the basis were orthonormal, \(S=I\) and
+        this collapses to the ordinary \(H\mathbf c=E\mathbf c\). The \(S\) is the price of using
+        convenient, non-orthogonal functions. <b>Plane waves are orthogonal</b> — which is one
+        practical reason solid-state codes like them, and why you will not see an overlap matrix in
+        lesson 6.</div>
+      </div>
+    </section>
+
+    <!-- 08 -->
+    <section id="d8">
+      <div class="sec-head"><span class="kicker">08</span><h2>The 2×2, worked completely by hand</h2></div>
+      <p class="sec-sub">This is the "example before running the code" — the two-Gaussian basis from
+      <code>lesson03</code>, exponents \(a_1=0.202\), \(a_2=1.33\). Every number below comes from
+      the three formulas in section 05 and a calculator. At the end you will have produced the
+      script's printed energy before the script does.</p>
+
+      <div class="card">
+        <h3>Step 1 — the three sums \(p=a_i+a_j\)</h3>
+        <pre class="work">p₁₁ = 0.202 + 0.202 = 0.404
+p₁₂ = 0.202 + 1.330 = 1.532
+p₂₂ = 1.330 + 1.330 = 2.660</pre>
+
+        <h3>Step 2 — overlap, \(S_{ij}=(\pi/p)^{3/2}\)</h3>
+        <pre class="work">S₁₁ = (π/0.404)^1.5 = (7.7761)^1.5 = 21.6847
+S₁₂ = (π/1.532)^1.5 = (2.0506)^1.5 =  2.9365
+S₂₂ = (π/2.660)^1.5 = (1.1810)^1.5 =  1.2835</pre>
+        <p>Already informative: \(S_{11}\) is large because a diffuse Gaussian covers a lot of space,
+        and \(S_{12}=2.94\) says the two functions are far from orthogonal — hence the \(S\) matrix
+        is doing real work here.</p>
+
+        <h3>Step 3 — kinetic, \(T_{ij}=3a_ia_j\pi^{3/2}/p^{5/2}\) &nbsp;(\(\pi^{3/2}=5.5683\))</h3>
+        <pre class="work">T₁₁ = 3(0.202)(0.202)(5.5683) / 0.404^2.5 = 0.68163 / 0.103742 =  6.5705
+T₁₂ = 3(0.202)(1.330)(5.5683) / 1.532^2.5 = 4.48796 / 2.905005 =  1.5449
+T₂₂ = 3(1.330)(1.330)(5.5683) / 2.660^2.5 = 29.5494 / 11.53995 =  2.5606</pre>
+
+        <h3>Step 4 — attraction, \(V_{ij}=-2\pi/p\) &nbsp;(\(Z=1\))</h3>
+        <pre class="work">V₁₁ = -6.28319/0.404 = -15.5524
+V₁₂ = -6.28319/1.532 =  -4.1013
+V₂₂ = -6.28319/2.660 =  -2.3621</pre>
+
+        <h3>Step 5 — assemble \(H=T+V\)</h3>
+        <pre class="work">H₁₁ =  6.5705 - 15.5524 = -8.9820
+H₁₂ =  1.5449 -  4.1013 = -2.5564
+H₂₂ =  2.5606 -  2.3621 = +0.1985      ← positive! the tight Gaussian alone is unbound</pre>
+        <table class="num" style="margin-top:14px">
+          <tr><th></th><th>S</th><th>T</th><th>V</th><th>H = T+V</th></tr>
+          <tr><td>11</td><td>21.6847</td><td>6.5705</td><td>−15.5524</td><td>−8.9820</td></tr>
+          <tr><td>12 = 21</td><td>2.9366</td><td>1.5449</td><td>−4.1013</td><td>−2.5564</td></tr>
+          <tr><td>22</td><td>1.2835</td><td>2.5606</td><td>−2.3621</td><td>+0.1985</td></tr>
+        </table>
+
+        <h3>Step 6 — solve \(\det(H-ES)=0\)</h3>
+        <p>For 2×2 this is a quadratic \(AE^2+BE+C=0\) with</p>
+        <pre class="work">A = S₁₁S₂₂ - S₁₂²                    = 21.6847(1.2835) - 2.9366²   = 19.2094
+B = -(H₁₁S₂₂ + H₂₂S₁₁ - 2H₁₂S₁₂)
+  = -[(-8.9820)(1.2835) + (0.1985)(21.6847) - 2(-2.5564)(2.9366)]
+  = -[-11.5286 + 4.3044 + 15.0140]                                = -7.7902
+C = H₁₁H₂₂ - H₁₂²                    = (-8.9820)(0.1985) - (-2.5564)²  = -8.3182
+
+discriminant = B² - 4AC = 60.681 + 4(19.2094)(8.3181) = 699.82
+√699.82 = 26.4542
+
+E₋ = (7.7902 - 26.4542) / (2 × 19.2094) = -18.6640 / 38.4188 = -0.48581
+E₊ = (7.7902 + 26.4542) / 38.4188                            = +0.89133</pre>
+
+        <div class="note-box"><b>You have just computed the output.</b> When you run
+        <code>python lesson03_variational_basis_sets.py</code>, the line
+        <code>2 Gaussians&nbsp;&nbsp;E = -0.48581</code> is this number. Not "similar to" — the same
+        number, because the code evaluates the same three formulas and solves the same 2×2 problem.
+        The computer's contribution was speed, not insight.</div>
+
+        <p>What the two roots mean: \(E_-=-0.4858\) is the variational ground-state estimate (error
+        2.8 %, down from 15 % with one Gaussian — the second width fixed part of the shape problem).
+        \(E_+=+0.8913\) is a crude, unbound excited-state estimate; with only two basis functions you
+        get two solutions, and the higher one is essentially numerical debris. <b>A basis of size
+        \(n\) always returns \(n\) energies, and only the lowest few mean anything.</b></p>
+
+        <details class="out"><summary>Extending to STO-3G — predict before you peek</summary>
+<pre>Same recipe, 3×3 instead of 2×2, exponents 3.42525, 0.62391, 0.16886
+(Hehre, Stewart &amp; Pople 1969: three Gaussians least-squares fitted to e^-r).
+
+  E = -0.49574   error 0.00426  →  0.9 %
+
+Error budget across the three bases:
+  1 Gaussian   -0.42441   15.1 %      wrong shape
+  2 Gaussians  -0.48581    2.8 %      one extra width scale
+  3 Gaussians  -0.49574    0.9 %      cusp region + tail both patched
+
+Each added width buys roughly a factor 3-5. That decay pattern is
+basis-set convergence, and it is why papers quote a basis set at all.</pre>
+        </details>
+      </div>
+    </section>
+
+    <!-- 09 -->
+    <section id="d9">
+      <div class="sec-head"><span class="kicker">09</span><h2>Predict, then run</h2></div>
+      <p class="sec-sub">Write your answers down before executing anything. A prediction you keep in
+      your head is a memory of having been right; one on paper is a test.</p>
+      <div class="card">
+        <h3>Before <code>lesson02_hydrogen_atom.py</code></h3>
+        <ol style="color:var(--txt-2);font-size:14.5px;line-height:1.8;max-width:76ch">
+          <li>Write \(E_n=-Z^2/2n^2\) for \(n=1,2,3\) with \(Z=1\). Three numbers, five decimals.</li>
+          <li>Which will the grid get <em>least</em> accurately, 1s or 3s — and for which of two
+          opposite reasons (cusp resolution vs box truncation at \(r_{\max}=60\))?</li>
+          <li>Predict the 2s and 2p numbers <em>relative to each other</em> before looking. Then
+          explain in one sentence why that is a peculiarity of \(-Z/r\) and not a general law.</li>
+          <li>Set \(Z=2\): predict the 1s energy. (If you wrote −1.0 you used \(Z\), not \(Z^2\).)</li>
+        </ol>
+        <h3 style="margin-top:22px">Before <code>lesson03_variational_basis_sets.py</code></h3>
+        <ol style="color:var(--txt-2);font-size:14.5px;line-height:1.8;max-width:76ch">
+          <li>From section 06: the best single-Gaussian \(\alpha\) and energy, four decimals each.</li>
+          <li>From section 08: the two-Gaussian energy. You already have it — \(-0.48581\).</li>
+          <li>Will STO-3G land above or below \(-0.5\)? State the theorem that makes this a
+          certainty rather than a guess.</li>
+          <li>Predict what happens if you add a fourth Gaussian with exponent 0.05: does the energy
+          go down, and can it ever reach \(-0.5\)? Why not?</li>
+        </ol>
+        <div class="warn"><b>Then mark yourself honestly.</b> Anything you missed by more than
+        rounding is a gap in the derivation, not a slip — come back to the section that produced it
+        rather than moving on. Or run <code>/dft-tutor</code> and choose <em>mark</em>, paste your
+        predictions and the real output, and have them graded against the rubric.</div>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

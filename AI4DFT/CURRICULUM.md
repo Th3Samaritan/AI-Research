@@ -3,17 +3,21 @@
 **How to use this document.** Work top to bottom. For each section:
 1. Read the matching chapter in `dft_course.pdf` (same section numbers) or the matching
    section of the interactive site (`index.html`).
-2. Before running a lesson, open its chapter in **`walkthrough.html`** (or
+2. If a formula feels like it was handed to you rather than derived, open
+   **`derivations.html`** — notation dictionary, the hydrogen radial equation and every Gaussian
+   integral derived from scratch, and the matrices worked out by hand so you can produce the
+   printed numbers on paper before running anything (covers lessons 2-3 in full).
+3. Before running a lesson, open its chapter in **`walkthrough.html`** (or
    `lesson_walkthrough.pdf` — same content): it unpacks every equation symbol by symbol,
    explains where every parameter value came from, and tells you exactly what output to
    expect. Predict the output before revealing it.
-3. Run the listed Python file(s) yourself from the `lessons/` folder.
-3. Do **every task** in the "Tasks" block before moving on. Tasks marked ★ are the
+4. Run the listed Python file(s) yourself from the `lessons/` folder.
+5. Do **every task** in the "Tasks" block before moving on. Tasks marked ★ are the
    checkpoint — if you can't do a ★ task, re-read before continuing.
-4. **Sit the gate.** Each section maps to a module in `ASSESSMENT.md`, and a module is only
+6. **Sit the gate.** Each section maps to a module in `ASSESSMENT.md`, and a module is only
    finished when all three instruments pass: the module's questions in `exam.html` (≥ 80 %),
    the ★ code-surgery task with a written prediction, and the oral defence via `/dft-tutor`.
-5. Tick the box here and log the result in `PROGRESS.md`.
+7. Tick the box here and log the result in `PROGRESS.md`.
 
 > **The habit that makes this work:** before you run anything, write down what you expect it to
 > print. One line is enough. Everything in this course is built to be predicted first and

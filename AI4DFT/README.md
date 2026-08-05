@@ -24,6 +24,9 @@ GNoME, and modern ML interatomic potentials.
 - **`CURRICULUM.md`** — START HERE. Every file to run, in order, with tasks and ★ checkpoints after each section
 - **`index.html`** — interactive site: live widgets for quantization, the curse of dimensionality, SCF mixing, band-gap opening, and the MLIP speedup
 - **`walkthrough.html`** + **`lesson_walkthrough.pdf`** — the deep lesson-by-lesson walkthrough: every equation symbol by symbol, every parameter's value and why it was chosen, expected output, figure guides (covers lessons 1–8 + PDE Lesson 1)
+- **`derivations.html`** — the grounding layer: notation dictionary, every formula in lessons 2-3
+  derived from scratch (radial equation, overlap/kinetic/nuclear integrals, `Hc = ESc`), and the
+  matrices worked out by hand so you predict the scripts' output before running them
 - **`dft_course.pdf`** — the full prose explanation (chapters mirror the curriculum sections)
 - **`lessons/`** — 8 runnable scripts, lesson01–lesson08 (pure numpy/scipy until lesson07; `pip install ase` then `pip install chgnet` when the curriculum says so)
 
