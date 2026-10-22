@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LLM Inference Field Guide: Qwen, Gemma, DeepSeek</title>
+<meta name="description" content="An interactive, first-principles field guide to LLM inference speed: why tokens/s is set by memory bandwidth, how Qwen (1.0 to 3.6), Gemma (1 to 4) and DeepSeek (V2 to V4) architectures changed and why, GPU vs CPU, KV cache, quantization, inference engines and abliteration, with 3D layer stacks and a speed calculator.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#EDF0F3">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-Research/llm-inference/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="LLM Inference Field Guide: Qwen, Gemma, DeepSeek">
+<meta property="og:description" content="Why your model makes N tokens per second. Architecture history of Qwen, Gemma and DeepSeek, GPU vs CPU, KV cache, quantization and engines, with 3D views and a speed calculator.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-Research/llm-inference/">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-Research/llm-inference/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="LLM Inference Field Guide">
+<meta name="twitter:description" content="Why your model makes N tokens per second: Qwen, Gemma and DeepSeek from first principles.">
+<meta name="twitter:image" content="https://th3samaritan.github.io/AI-Research/llm-inference/preview.png">
+<script>
+/* theme: shared 'site-theme' key with the hub and course pages; first visit follows the OS */
+(function(){
+  var KEY="site-theme",root=document.documentElement;
+  function preferred(){var s=null;try{s=localStorage.getItem(KEY)}catch(e){}
+    if(s==="light"||s==="dark")return s;
+    return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+  root.setAttribute("data-theme",preferred());
+  function apply(m){root.setAttribute("data-theme",m);
+    var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",m==="dark"?"#0D131A":"#EDF0F3");
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b){b.querySelector(".ico").textContent=m==="dark"?"☀":"☾";b.querySelector(".lbl").textContent=m==="dark"?"Light":"Dark";
+      b.setAttribute("aria-label","Switch to "+(m==="dark"?"light":"dark")+" mode");}}
+  document.addEventListener("DOMContentLoaded",function(){
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b)b.addEventListener("click",function(){var n=root.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(KEY,n)}catch(e){}apply(n);});
+    apply(root.getAttribute("data-theme"));});
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: sticky section rail on the left, a reading column with wide "bench" panels for every interactive instrument. Datasheet feel: cool steel paper, copper traces. */
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --sunk:#E3E8ED; --ink:#15202B; --muted:#586676; --line:#CFD7DF;
+  --copper:#B2532A; --steel:#8696A6; --teal:#1C7673; --violet:#5A4AAE; --gold:#9A7210; --good:#2E7D4F; --warn:#A86A12; --bad:#B03A3A;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+a{color:var(--copper)}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.1;margin:0}
+h2{font-size:clamp(1.7rem,3.4vw,2.4rem);font-stretch:112%;font-weight:760;letter-spacing:-.01em}
+h3{font-size:1.15rem;font-stretch:105%;font-weight:680}
+p{margin:0}
+code,kbd,.mono{font-family:var(--mono);font-size:.86em}
+code{background:var(--sunk);padding:.08em .35em;border-radius:4px}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px;max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 80px}
+nav.rail{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;height:100vh;overflow:auto;padding-block:28px;display:flex;flex-direction:column;gap:2px;font-size:.88rem}
+nav.rail a.hub{border-left:none;padding-left:0;margin-bottom:10px;font-size:.8rem}
+nav.rail .brand{font-family:var(--display);font-stretch:118%;font-weight:800;font-size:1.02rem;line-height:1.15;margin-bottom:18px}
+nav.rail .brand span{color:var(--copper)}
+nav.rail a{color:var(--muted);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line)}
+nav.rail a:hover{color:var(--ink)}
+nav.rail .tools{display:flex;gap:8px;align-items:center;margin-top:16px;padding-left:10px}
+nav.rail .tools button{font-size:.78rem;padding:4px 10px}
+nav.rail a.on{color:var(--ink);border-left-color:var(--copper);font-weight:600}
+main{min-width:0;display:flex;flex-direction:column;gap:96px;padding-top:40px}
+section{display:flex;flex-direction:column;gap:22px;scroll-margin-top:24px}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--copper)}
+.lede{font-size:1.1rem;color:var(--muted);max-width:66ch}
+.prose{max-width:68ch;display:flex;flex-direction:column;gap:14px}
+.prose ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px}
+.cite{font-family:var(--mono);font-size:.72em;text-decoration:none;vertical-align:super;line-height:0;margin-left:1px}
+/* hero */
+.hero{display:flex;flex-direction:column;gap:20px}
+.hero h1{font-size:clamp(2.3rem,6vw,4.4rem);font-stretch:122%;font-weight:800;letter-spacing:-.02em}
+.hero h1 em{font-style:normal;color:var(--copper)}
+.equation{display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px 24px;font-family:var(--display);font-stretch:108%}
+.equation .term{display:flex;flex-direction:column;gap:2px}
+.equation .big{font-size:clamp(1.3rem,3vw,1.9rem);font-weight:750}
+.equation .small{font-family:var(--body);font-size:.8rem;color:var(--muted)}
+.equation .op{font-size:1.8rem;color:var(--muted)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+.fact{border-top:2px solid var(--copper);padding-top:10px;display:flex;flex-direction:column;gap:4px}
+.fact b{font-family:var(--display);font-stretch:110%;font-size:1.05rem}
+.fact span{color:var(--muted);font-size:.92rem}
+/* bench panel */
+.bench{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.bench-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px}
+.bench-head .tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted);min-width:0}
+.ctl output{font-family:var(--mono);color:var(--ink);font-size:.82rem}
+select,input[type=range]{accent-color:var(--copper)}
+select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;max-width:100%}
+input[type=range]{width:170px;max-width:100%}
+button{font:inherit;font-size:.85rem;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:6px 12px}
+button:hover{border-color:var(--copper)}
+button.pri{background:var(--copper);border-color:var(--copper);color:var(--surface);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button.on{border-color:var(--copper);color:var(--copper);font-weight:600}
+.split{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px}
+.split > *{min-width:0}
+canvas{display:block;max-width:100%}
+.stage{position:relative;width:100%;height:520px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.stage canvas{width:100%;height:100%}
+.stage .hint{position:absolute;left:12px;bottom:10px;font-size:.75rem;color:var(--muted);pointer-events:none}
+.stage .zoom{position:absolute;right:10px;top:10px;display:flex;gap:6px}
+.stage .zoom button{width:32px;padding:4px 0}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:.78rem;line-height:1.4;max-width:240px;box-shadow:0 4px 18px rgba(0,0,0,.15)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.metric{background:var(--bg);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.metric .k{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.metric .v{font-family:var(--display);font-stretch:108%;font-size:1.55rem;font-weight:740;font-variant-numeric:tabular-nums}
+.metric .s{font-size:.78rem;color:var(--muted)}
+.pill{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+.pill.good{color:var(--good)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.membar{display:flex;height:26px;border-radius:6px;overflow:hidden;background:var(--sunk);position:relative}
+.membar div{height:100%}
+.membar .cap{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink)}
+.steps{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.steps li::marker{font-family:var(--mono);color:var(--copper)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.86rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--sunk)}
+tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-size:.82rem;white-space:nowrap}
+/* timeline */
+.timeline{display:flex;flex-direction:column;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.gen{position:relative;padding:0 0 26px 24px;display:flex;flex-direction:column;gap:8px}
+.gen::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--bg);border:2px solid var(--copper)}
+.gen .when{font-family:var(--mono);font-size:.74rem;color:var(--muted)}
+.gen h3 small{font-family:var(--body);font-weight:400;font-size:.82rem;color:var(--muted);margin-left:8px;font-stretch:100%}
+.gen .grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 22px;font-size:.92rem}
+.gen .grid2 b{display:block;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--copper);font-family:var(--mono);font-weight:600}
+.gen ul{margin:0;padding-left:1.1em}
+.callout{border-left:3px solid var(--teal);background:var(--surface);padding:14px 18px;border-radius:0 8px 8px 0;max-width:72ch;display:flex;flex-direction:column;gap:6px}
+.callout b.t{font-family:var(--display);font-stretch:108%}
+pre{margin:0;background:var(--sunk);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.8rem;line-height:1.55}
+pre .c{color:var(--muted)}
+.cards3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.card h3{font-size:1rem}
+.sources{columns:2 340px;column-gap:32px;font-size:.84rem;padding-left:2.2em;margin:0}
+.sources li{break-inside:avoid;margin-bottom:6px}
+.sources li::marker{font-family:var(--mono);color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted)}
+svg text{font-family:var(--body)}
+@media (max-width:980px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:0}
+  nav.rail{position:sticky;top:env(safe-area-inset-top,0px);height:auto;flex-direction:row;overflow-x:auto;padding-block:10px;background:var(--bg);z-index:5;border-bottom:1px solid var(--line);gap:0}
+  nav.rail .brand{display:none}
+  nav.rail a{white-space:nowrap;border-left:none;border-bottom:2px solid transparent}
+  nav.rail a.on{border-bottom-color:var(--copper)}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .stage{height:420px}
+}
+@media (max-width:560px){.gen .grid2{grid-template-columns:minmax(0,1fr)} .stage{height:360px} .equation{padding:16px}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="rail" id="rail">
+  <a class="hub" href="../">← All projects</a>
+  <div class="brand">LLM Inference<br><span>Field Guide</span></div>
+  <a href="#start">The one equation</a>
+  <a href="#anatomy">Anatomy of a token</a>
+  <a href="#speed">Speed lab</a>
+  <a href="#cpu">GPU vs CPU</a>
+  <a href="#kv">KV cache &amp; attention</a>
+  <a href="#quant">Quantization</a>
+  <a href="#qwen">Qwen lineage</a>
+  <a href="#deepseek">DeepSeek's path</a>
+  <a href="#gemma">Gemma lineage</a>
+  <a href="#engines">Engines &amp; knobs</a>
+  <a href="#abliteration">Abliteration</a>
+  <a href="#plan">Bench plan</a>
+  <a href="#sources">Sources</a>
+  <div class="tools"><button type="button" data-theme-toggle aria-label="Switch theme"><span class="ico">☾</span> <span class="lbl">Dark</span></button></div>
+</nav>
+
+<main>
+<!-- ================= START ================= -->
+<section id="start" class="hero">
+  <div class="eyebrow">Qwen · Gemma · DeepSeek, 2023 → Oct 2026</div>
+  <h1>Why your model makes <em>N</em> tokens per second</h1>
+  <p class="lede">Producing one token means reading every active weight once. When you run on your own machine (one user, one request at a time), speed is set mostly by memory bandwidth, not by how many operations the chip can do. Nearly everything on this page follows from that.</p>
+  <div class="equation" aria-label="decode tokens per second is roughly memory bandwidth divided by bytes read per token">
+    <div class="term"><span class="big">tokens / s</span><span class="small">decode speed, batch 1</span></div>
+    <span class="op">≈</span>
+    <div class="term"><span class="big">memory bandwidth</span><span class="small">GB/s the chip can stream</span></div>
+    <span class="op">÷</span>
+    <div class="term"><span class="big">bytes per token</span><span class="small">active weights + KV cache read</span></div>
+  </div>
+  <div class="facts">
+    <div class="fact"><b>Qwen3-8B, BF16 = 16.4 GB</b><span>8.19 B params × 2 bytes. That is the "18 GB" from the meeting, once KV cache and buffers are added.<a class="cite" href="#s8">[8]</a></span></div>
+    <div class="fact"><b>RTX 4090: 1008 GB/s</b><span>1008 ÷ 16.4 ≈ 61 tok/s ceiling in BF16. Measured runs land at about 70–80% of that.</span></div>
+    <div class="fact"><b>Dual-channel DDR5: ~90 GB/s</b><span>The same model on a CPU: ≈ 5 tok/s. Quantized to 4.9 bits/weight (≈5 GB): ≈ 15 tok/s.</span></div>
+    <div class="fact"><b>Quantization = fewer bytes</b><span>Fewer bytes per weight means more tokens/s. The cost is rounding error, which shows up as lost quality.</span></div>
+  </div>
+</section>
+
+<!-- ================= ANATOMY ================= -->
+<section id="anatomy">
+  <div class="eyebrow">01 · Architecture</div>
+  <h2>Anatomy of a token</h2>
+  <p class="lede">A decoder-only transformer is a stack of identical blocks around one "residual stream" vector per token. Each block has a mixing step (attention, or a linear-attention variant) and a thinking step (feed-forward MLP, or a mixture of experts). Pick a model to see how its stack is built.</p>
+  <div class="bench">
+    <div class="bench-head"><h3>Layer stack, to scale</h3><span class="tag">drag to rotate · hover a layer</span></div>
+    <div class="controls">
+      <label class="ctl" for="anModel">Model<select id="anModel"></select></label>
+      <button id="anPlay" type="button">Pause pulse</button>
+    </div>
+    <div class="split">
+      <div class="stage" id="anStage"><canvas id="anCanvas" aria-label="3D view of the selected model's layer stack"></canvas>
+        <div class="zoom"><button type="button" id="anIn" aria-label="Zoom in">+</button><button type="button" id="anOut" aria-label="Zoom out">−</button></div>
+        <div class="hint">One glowing pulse = one token's trip up the stack</div>
+        <div class="tip" id="anTip" hidden></div></div>
+      <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+        <div class="legend" id="anLegend"></div>
+        <div id="anFacts" class="readout"></div>
+        <p id="anNote" class="note"></p>
+      </div>
+    </div>
+  </div>
+  <div class="split">
+    <div class="prose">
+      <h3>One forward pass, step by step</h3>
+      <ol class="steps">
+        <li><b>Tokenize.</b> Text → integer IDs. Qwen3 has a 151,936-entry vocabulary, Qwen3.5 has 248,320, Gemma has 262,144.<a class="cite" href="#s8">[8]</a><a class="cite" href="#s10">[10]</a><a class="cite" href="#s27">[27]</a></li>
+        <li><b>Embed.</b> Each ID picks one row of the embedding matrix, giving a vector of size <code>hidden</code> (4096 for Qwen3-8B). This is the residual stream.</li>
+        <li><b>RMSNorm → attention.</b> Project to Q, K, V. Rotate Q and K by position (RoPE).<a class="cite" href="#s16">[16]</a> Score the new token against every cached K, softmax, take a weighted sum of the V's, project back, and add to the stream.</li>
+        <li><b>Store K, V.</b> The new token's K and V get appended to the <b>KV cache</b>, so earlier tokens never have to be recomputed.</li>
+        <li><b>RMSNorm → MLP.</b> SwiGLU: <code>down( silu(gate·x) ⊙ up·x )</code>.<a class="cite" href="#s18">[18]</a> In Qwen3-8B this is 3 × 4096 × 12288 ≈ 151 M weights per layer, which is <b>78% of each block</b>.</li>
+        <li><b>Repeat</b> for all layers (36 in Qwen3-8B).</li>
+        <li><b>LM head.</b> Final norm, then multiply by a vocab × hidden matrix to get a logit for every token. Sample one (temperature, top-p…), append it, and go back to step 2.</li>
+      </ol>
+    </div>
+    <div class="prose">
+      <h3>Where the time goes</h3>
+      <ul>
+        <li><b>Prefill</b> (reading your prompt): all prompt tokens go through together. Each weight read is reused across hundreds of tokens, so the GPU's arithmetic units become the limit. This phase is <b>compute-bound</b>.</li>
+        <li><b>Decode</b> (writing the answer): one token at a time. Every weight is read for just 2 FLOPs (a multiply and an add), so arithmetic sits idle waiting on memory. This phase is <b>memory-bound</b>.<a class="cite" href="#s43">[43]</a></li>
+        <li>That is why a 1,000-token prompt can take half a second to read while each answer token takes 20 ms.</li>
+        <li>Attention cost grows with context: each new token reads the whole KV cache. Linear attention (Qwen3.5) and sliding windows (Gemma) exist to cap that cost.</li>
+      </ul>
+      <div class="callout"><b class="t">Parameter math you can check</b><span class="mono" style="font-size:.8rem">Qwen3-8B per layer: attn = 4096·4096·2 + 4096·1024·2 = 41.9 M · MLP = 3·4096·12288 = 151 M · ×36 = 6.95 B · + embed and LM head 2 × 151,936 × 4096 = 1.24 B → <b>8.19 B</b></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SPEED LAB ================= -->
+<section id="speed">
+  <div class="eyebrow">02 · Interactive</div>
+  <h2>Speed lab</h2>
+  <p class="lede">A roofline estimate of what your hardware can do. Choose a model, a quantization and a machine, then move the GPU-layers slider to see what offloading costs. Treat the results as upper-bound physics. Your measured numbers should come in at roughly 60–85% of them.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl" for="spModel">Model<select id="spModel"></select></label>
+      <label class="ctl" for="spQuant">Weights<select id="spQuant"></select></label>
+      <label class="ctl" for="spHw">Hardware<select id="spHw"></select></label>
+      <label class="ctl" for="spKv">KV cache type<select id="spKv"><option value="2">F16 (default)</option><option value="1.0625">q8_0</option><option value="0.5625">q4_0</option></select></label>
+    </div>
+    <div class="controls">
+      <label class="ctl" for="spCtx">Context length <output id="spCtxO"></output><input type="range" id="spCtx" min="0" max="8" step="1" value="3"></label>
+      <label class="ctl" for="spNgl" id="spNglWrap"><span>Layers on GPU (<code>-ngl</code>) <output id="spNglO"></output></span><input type="range" id="spNgl" min="0" max="36" step="1" value="36"></label>
+      <label class="ctl" for="spBatch">Parallel requests (batch) <output id="spBatchO"></output><input type="range" id="spBatch" min="0" max="6" step="1" value="0"></label>
+    </div>
+    <div class="readout" id="spOut"></div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div class="legend"><span><i style="background:var(--copper)"></i>Weights</span><span><i style="background:var(--teal)"></i>KV cache + state</span><span><i style="background:var(--muted)"></i>Buffers</span><span>▏ = device memory</span></div>
+      <div class="membar" id="spBar"></div>
+      <p class="note" id="spBarNote"></p>
+    </div>
+    <div id="spExplain" class="callout"></div>
+  </div>
+  <div class="cards3">
+    <div class="card"><h3>Arithmetic intensity</h3><p>FLOPs done per byte read. At batch 1 with BF16 weights that is <b>1 FLOP/byte</b>. An RTX 4090 needs about <b>165 FLOP/byte</b> before its math units are the limit. The remaining 99% of its compute sits idle during decode.<a class="cite" href="#s44">[44]</a></p></div>
+    <div class="card"><h3>Why servers batch</h3><p>32 requests decoding together share each weight read, so intensity goes up 32×. Total throughput rises almost linearly until compute runs out. Move the batch slider to watch it. This is what vLLM's continuous batching takes advantage of.<a class="cite" href="#s33">[33]</a></p></div>
+    <div class="card"><h3>Why MoE is fast</h3><p>Qwen3-30B-A3B stores 30.5 B weights but reads only 3.3 B of them per token. Memory needed follows the total. Speed follows the active count.<a class="cite" href="#s7">[7]</a></p></div>
+  </div>
+</section>
+
+<!-- ================= CPU ================= -->
+<section id="cpu">
+  <div class="eyebrow">03 · Hardware</div>
+  <h2>Why a GPU, and how it still runs on a CPU</h2>
+  <div class="split">
+    <div class="prose">
+      <h3>A GPU is a bandwidth machine</h3>
+      <ul>
+        <li><b>Bandwidth:</b> GDDR6X/HBM delivers 1–3.3 TB/s. A desktop's DDR5 delivers 60–90 GB/s, 10–40× less. For decode, this is the main reason GPUs win.</li>
+        <li><b>Tensor cores:</b> they do 16×16 matrix tiles per instruction, reaching hundreds of TFLOPS. That makes prefill and batching fast.</li>
+        <li><b>Training</b> really does need GPUs: it is compute-bound with huge batches. Inference at batch 1 does not.</li>
+      </ul>
+      <h3>What makes CPUs viable</h3>
+      <ul>
+        <li><b>Quantized kernels.</b> llama.cpp stores weights in 4–6 bit blocks and quantizes activations to 8-bit on the fly. It then does integer dot products with SIMD (AVX2, AVX-512 VNNI, ARM NEON dotprod/i8mm), unpacking each block in registers. A full FP16 copy is never created.<a class="cite" href="#s38">[38]</a><a class="cite" href="#s39">[39]</a></li>
+        <li><b>RAM is cheap.</b> 64 GB of DDR5 costs about the same as an 8 GB GPU. Large MoE models fit, and their small active count keeps them fast enough.</li>
+        <li><b>mmap.</b> The GGUF file is memory-mapped, so the OS pages weights in on demand and you get near-instant load.</li>
+        <li><b>Threads hit a wall.</b> Decode saturates RAM bandwidth with about 4–8 cores. More threads help prefill (compute) but not decode.</li>
+        <li><b>Partial offload</b> (<code>-ngl</code>): put as many layers as fit on the GPU and the rest on the CPU. Total time = GPU part + CPU part, so the slow side dominates.</li>
+      </ul>
+    </div>
+    <div class="prose">
+      <h3>What "requires X GB" actually counts</h3>
+      <p>When llama.cpp or Ollama refuses to load, the number it reports is the sum of three buffers:</p>
+      <div class="tablewrap"><table>
+        <tr><th>Buffer</th><th>Size</th><th>You control it with</th></tr>
+        <tr><td>Model weights</td><td>params × bits/weight ÷ 8</td><td>quant type (Q4_K_M, Q8_0…)</td></tr>
+        <tr><td>KV cache</td><td>2 × layers × kv_heads × head_dim × bytes × context</td><td><code>-c</code>, <code>--cache-type-k/v</code></td></tr>
+        <tr><td>Compute buffer</td><td>activations of one batch, ~0.3–1.5 GB</td><td><code>-b</code>, <code>-ub</code>, <code>-fa</code></td></tr>
+      </table></div>
+      <p>Ollama defaults to a short context, so the number looks small. Ask for 128K and the KV cache alone can be larger than the weights. On the CPU side, the build also requires <b>AVX2</b> on x86 for the fast kernels. Without it, llama.cpp falls back to much slower scalar code.</p>
+      <div class="callout"><b class="t">How Gemma gets onto phones</b><span>Nothing magic: small parameter counts, sliding-window attention (small KV), official int4 QAT checkpoints, and in Gemma 3n / 4 E-models, <b>Per-Layer Embeddings</b>. A large part of the weights are lookup tables that can stay in slow CPU memory or flash, because each token reads only one row from them.<a class="cite" href="#s28">[28]</a><a class="cite" href="#s29">[29]</a> Qwen's 0.6 B–4 B models run on the same physics.</span></div>
+    </div>
+  </div>
+  <div class="tablewrap"><table>
+    <tr><th>Device</th><th>Memory</th><th>Bandwidth</th><th>Qwen3-8B Q4_K_M ceiling</th><th>What limits it</th></tr>
+    <tbody id="hwTable"></tbody>
+  </table></div>
+  <p class="note">Ceiling = bandwidth ÷ 5.0 GB. Bandwidth figures are vendor specifications. Compute figures in the Speed lab are approximate dense FP16 tensor peaks.</p>
+</section>
+
+<!-- ================= KV ================= -->
+<section id="kv">
+  <div class="eyebrow">04 · Attention</div>
+  <h2>KV cache, and the race to shrink it</h2>
+  <p class="lede">Each layer keeps a K and a V vector for every past token. At long contexts this cache becomes the biggest consumer of memory and bandwidth. Every recent architecture change in Qwen, Gemma and DeepSeek is an attack on it.</p>
+  <div class="bench">
+    <div class="bench-head"><h3>Who shares K/V with whom</h3><span class="tag">8 query heads shown</span></div>
+    <div class="chips" id="attnChips"></div>
+    <div style="overflow-x:auto"><svg id="attnSvg" viewBox="0 0 760 230" style="width:100%;min-width:560px;height:auto" role="img" aria-label="Diagram of query heads and key/value heads for the selected attention type"></svg></div>
+    <p id="attnText" style="max-width:72ch"></p>
+  </div>
+  <div class="bench">
+    <div class="bench-head"><h3>KV cache size per request</h3><span class="tag">BF16 · from each model's config</span></div>
+    <div class="controls"><label class="ctl" for="kvCtx">Context <output id="kvCtxO"></output><input type="range" id="kvCtx" min="0" max="8" step="1" value="5"></label></div>
+    <div style="overflow-x:auto"><svg id="kvSvg" viewBox="0 0 760 420" style="width:100%;min-width:560px;height:auto" role="img" aria-label="Bar chart of KV cache size per model"></svg></div>
+    <p class="note">Faded bars are past the model's native context. Qwen3.5 also keeps a fixed ~50 MB linear-attention state that does not grow with context.</p>
+  </div>
+  <div class="bench">
+    <div class="bench-head"><h3>Which past tokens can a token see?</h3><span class="tag">attention masks, 40 tokens</span></div>
+    <div class="controls"><label class="ctl" for="maskW">Sliding window <output id="maskWO"></output><input type="range" id="maskW" min="2" max="20" value="8"></label></div>
+    <div class="cards3">
+      <div style="display:flex;flex-direction:column;gap:6px"><b class="mono" style="font-size:.78rem">GLOBAL · full causal</b><canvas id="maskG" width="240" height="240" style="width:100%;max-width:240px;aspect-ratio:1"></canvas><span class="note">KV grows with every token. Qwen3 has it in every layer.</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px"><b class="mono" style="font-size:.78rem">LOCAL · sliding window</b><canvas id="maskL" width="240" height="240" style="width:100%;max-width:240px;aspect-ratio:1"></canvas><span class="note">KV capped at the window (Gemma 3/4: 1024). 5 of every 6 Gemma layers.</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px"><b class="mono" style="font-size:.78rem">LINEAR · Gated DeltaNet</b><canvas id="maskD" width="240" height="240" style="width:100%;max-width:240px;aspect-ratio:1"></canvas><span class="note">No cache at all: a fixed matrix that fades and gets overwritten. 3 of every 4 Qwen3.5 layers.</span></div>
+    </div>
+  </div>
+  <div class="callout"><b class="t">Gated DeltaNet in one line</b><span class="mono" style="font-size:.82rem">S<sub>t</sub> = α<sub>t</sub>·S<sub>t−1</sub>(I − β<sub>t</sub> k<sub>t</sub>k<sub>t</sub><sup>⊤</sup>) + β<sub>t</sub> v<sub>t</sub>k<sub>t</sub><sup>⊤</sup>  ·  o<sub>t</sub> = S<sub>t</sub> q<sub>t</sub></span><span>α (the gate) lets old memory fade. The delta rule (β) overwrites whatever the state already associated with key k. Cost per token is constant no matter how long the context gets. Exact recall is weaker than real attention, so Qwen keeps <b>1 full-attention layer in every 4</b>.<a class="cite" href="#s12">[12]</a><a class="cite" href="#s9">[9]</a></span></div>
+</section>
+
+<!-- ================= QUANT ================= -->
+<section id="quant">
+  <div class="eyebrow">05 · Compression</div>
+  <h2>Quantization: trading precision for bytes</h2>
+  <p class="lede">Quantization stores each weight in fewer bits, plus a shared scale per small block. What you saw on Qwen3-1.7B (smaller, faster, a bit dumber) is the rounding error below, repeated across 1.7 billion weights.</p>
+  <div class="bench">
+    <div class="bench-head"><h3>Quantize one block of 32 real-looking weights</h3><span class="tag">llama.cpp-style block quantization</span></div>
+    <div class="controls">
+      <label class="ctl" for="qBits">Bits per weight <output id="qBitsO"></output><input type="range" id="qBits" min="2" max="8" value="4"></label>
+      <label class="ctl" for="qScheme">Scheme<select id="qScheme"><option value="sym">Scale only (like Q4_0/Q8_0)</option><option value="asym">Scale + min (like Q4_1/K-quants)</option></select></label>
+      <label class="ctl" for="qBlock">Block size <output id="qBlockO"></output><input type="range" id="qBlock" min="0" max="3" value="1"></label>
+      <button type="button" id="qOutlier">Add an outlier weight</button>
+      <button type="button" id="qNew">New weights</button>
+    </div>
+    <canvas id="qCanvas" width="1000" height="300" style="width:100%;height:auto;background:var(--sunk);border-radius:8px"></canvas>
+    <div class="legend"><span><i style="background:var(--ink)"></i>Original FP16 weight</span><span><i style="background:var(--copper)"></i>After quantize → dequantize</span><span><i style="background:var(--line)"></i>Representable levels</span></div>
+    <div class="readout" id="qOut"></div>
+  </div>
+  <div class="split">
+    <div class="prose">
+      <h3>Why quality drops, and when it drops fast</h3>
+      <ul>
+        <li><b>Rounding noise adds up.</b> Each layer's output picks up small errors, and 36 layers compound them. Logits shift, and close calls between tokens flip.</li>
+        <li><b>Outliers ruin blocks.</b> One large weight stretches the scale, so the other 31 get squeezed into a few levels. Try the button above. A few activation channels in LLMs are 100× larger than the rest.<a class="cite" href="#s37">[37]</a></li>
+        <li><b>Small models suffer more.</b> An 8 B model spreads knowledge redundantly. A 1.7 B model packs it tight, so each bit lost matters more. That is why your Qwen3-1.7B dropped noticeably.</li>
+        <li><b>Below about 4 bits</b> the error rises steeply. Q4_K_M is the usual sweet spot, Q5/Q6 are close to lossless, and Q2/Q3 break reasoning first.</li>
+        <li><b>Embeddings, attn_v and ffn_down</b> are the most sensitive tensors, so <code>_M</code> mixes keep some of them at Q6_K.<a class="cite" href="#s40">[40]</a></li>
+      </ul>
+    </div>
+    <div class="prose">
+      <h3>Smarter ways to round</h3>
+      <ul>
+        <li><b>K-quants:</b> super-blocks of 256 weights made of sub-blocks, with quantized scales and mins. Q4_K ≈ 4.5 bpw.<a class="cite" href="#s39">[39]</a></li>
+        <li><b>imatrix:</b> run calibration text through the model, measure which weights matter, and give them lower error. Biggest win at Q2–Q4.</li>
+        <li><b>GPTQ:</b> quantize column by column and adjust the remaining columns to cancel the error, using second-order (Hessian) information.<a class="cite" href="#s35">[35]</a></li>
+        <li><b>AWQ:</b> scale up the ~1% of channels with large activations before quantizing so they keep their precision.<a class="cite" href="#s36">[36]</a></li>
+        <li><b>QAT:</b> train with the rounding in the loop. Gemma 3's int4 QAT checkpoints lose far less than post-hoc Q4.<a class="cite" href="#s27">[27]</a></li>
+        <li><b>FP8 / FP4:</b> floating-point low precision with hardware support (H100, Blackwell). DeepSeek-V4 ships FP4 experts.<a class="cite" href="#s24">[24]</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Format</th><th>≈ bits/weight</th><th>Qwen3-8B file</th><th>Qwen3-1.7B file</th><th>Perplexity rise (LLaMA-7B, approx.)</th><th>Verdict</th></tr></thead>
+    <tbody id="quantTable"></tbody>
+  </table></div>
+  <p class="note">Perplexity deltas are the llama.cpp quantize tool's published reference figures for LLaMA-1 7B. Use them for relative ordering only, and measure Qwen yourself with <code>llama-perplexity --kl-divergence</code> (see the bench plan).<a class="cite" href="#s40">[40]</a></p>
+</section>
+
+<!-- ================= QWEN ================= -->
+<section id="qwen">
+  <div class="eyebrow">06 · History</div>
+  <h2>The Qwen lineage: what changed, and why</h2>
+  <p class="lede">Qwen started as a LLaMA-style dense transformer and kept that skeleton for two years, scaling data instead. In 2025 it changed course: MoE with QK-Norm, then hybrid linear attention.</p>
+  <div class="timeline">
+    <div class="gen"><span class="when">Aug – Nov 2023</span><h3>Qwen (1.0)<small>1.8B · 7B · 14B · 72B</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li>LLaMA-like decoder: pre-RMSNorm, SwiGLU, RoPE, untied embeddings</li><li>Full multi-head attention (KV heads = Q heads)</li><li>Bias kept only on QKV projections</li><li>151,851-token BPE vocab, numbers split into digits</li></ul></div>
+      <div><b>Why</b><ul><li>LLaMA's recipe was proven, so the work went into data (up to 3 T tokens) and a vocab that compresses Chinese, English and code well</li><li>QKV bias helped length extrapolation. NTK-aware RoPE scaling, LogN attention scaling and window attention stretched a 2K training context further at inference time<a class="cite" href="#s2">[2]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Feb – Mar 2024</span><h3>Qwen1.5<small>0.5B → 110B · first MoE</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li>Same block, 32K context across the range</li><li>GQA only on 32B and 110B</li><li>Qwen1.5-MoE-A2.7B: 14.3 B total, 2.7 B active, fine-grained experts plus shared experts, upcycled from Qwen-1.8B</li></ul></div>
+      <div><b>Why</b><ul><li>A cleanup release that made the family easy to use in HF Transformers and llama.cpp</li><li>The MoE tested whether 2.7 B active parameters could match a 7 B dense model. It roughly could, at about ¼ of the compute per token<a class="cite" href="#s3">[3]</a><a class="cite" href="#s4">[4]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Jun 2024</span><h3>Qwen2<small>0.5B · 1.5B · 7B · 57B-A14B · 72B</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li><b>GQA in every size</b></li><li>Tied embeddings on the small models</li><li>Dual Chunk Attention + YaRN for 128K</li><li>7 T training tokens</li></ul></div>
+      <div><b>Why</b><ul><li>GQA cuts the KV cache 4–7×, which raises long-context speed and batch capacity</li><li>In a 0.5 B model the 151K×896 embedding is a big share of all weights, so tying input and output embeddings saves real memory<a class="cite" href="#s5">[5]</a><a class="cite" href="#s17">[17]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Sep 2024 – Jan 2025</span><h3>Qwen2.5<small>0.5B → 72B · Coder · Math · 1M</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li>Essentially unchanged from Qwen2</li><li>18 T tokens</li><li>Qwen2.5-1M added sparse attention plus DCA for million-token context</li></ul></div>
+      <div><b>Why</b><ul><li>Gains came from data and post-training, not architecture. This is the strongest evidence that the block itself was not the bottleneck<a class="cite" href="#s6">[6]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Apr 29, 2025</span><h3>Qwen3<small>0.6B · 1.7B · 4B · 8B · 14B · 32B · 30B-A3B · 235B-A22B</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li><b>QKV bias removed, QK-Norm added</b> (RMSNorm on each head's q and k)</li><li>MoE: 128 experts, top-8, <b>no shared expert</b>, global-batch load balancing</li><li>36 T tokens, 119 languages, 32K native → 128K with YaRN</li><li>One model with thinking and non-thinking modes</li></ul></div>
+      <div><b>Why</b><ul><li>QK-Norm stops attention logits from blowing up during large-scale training, a more principled fix than the bias</li><li>Balancing over the global batch instead of per micro-batch lets experts actually specialize<a class="cite" href="#s7">[7]</a><a class="cite" href="#s8">[8]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Sep 2025</span><h3>Qwen3-Next<small>80B-A3B · the turning point</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li><b>Hybrid: 3 Gated DeltaNet layers to 1 gated full-attention layer</b></li><li>512 experts, 10 routed + 1 shared (≈3.7% active)</li><li>Output gate on attention</li><li>Zero-centered, weight-decayed norms</li><li>Multi-token prediction head</li></ul></div>
+      <div><b>Why</b><ul><li>Full attention costs O(n²) compute and O(n) KV. With 75% of layers made linear, long context gets about 10× cheaper</li><li>The attention gate removes "attention sinks" and huge activations, which helps both stability and quantization</li><li>MTP gives built-in speculative decoding<a class="cite" href="#s9">[9]</a><a class="cite" href="#s13">[13]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Feb – Mar 2026</span><h3>Qwen3.5<small>397B-A17B flagship · dense 0.8B · 2B · 4B · 9B</small></h3>
+      <div class="grid2"><div><b>Architecture (9B config)</b><ul><li>32 layers: 24 Gated DeltaNet + 8 full attention (every 4th)</li><li>16 Q / 4 KV heads, head_dim 256, partial RoPE (25% of dims)</li><li>248,320-token vocab, natively multimodal</li><li>262K native context, 1 MTP layer, <b>dense</b> MLP</li></ul></div>
+      <div><b>Why</b><ul><li>The Qwen3-Next design carried down to small models. KV is 32 KB/token versus 144 KB for Qwen3-8B, so long context fits on a laptop</li><li>A larger vocab means fewer tokens per sentence in 200+ languages, which is a speed win as well<a class="cite" href="#s10">[10]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Apr 2026</span><h3>Qwen3.6<small>35B-A3B open weights · Plus (API)</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li>Same hybrid DeltaNet + gated attention + sparse MoE family</li><li>262K context</li></ul></div>
+      <div><b>Why</b><ul><li>Focused on agentic coding. 3 B active parameters keeps it fast on a single GPU or a big-RAM CPU<a class="cite" href="#s11">[11]</a></li></ul></div></div></div>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Model</th><th>Layers</th><th>hidden</th><th>Q / KV heads</th><th>head_dim</th><th>Attention</th><th>MLP</th><th>KV/token</th></tr></thead>
+    <tbody id="cfgTable"></tbody>
+  </table></div>
+</section>
+
+<!-- ================= DEEPSEEK ================= -->
+<section id="deepseek">
+  <div class="eyebrow">07 · Comparison</div>
+  <h2>DeepSeek took a different path</h2>
+  <p class="lede">Qwen builds a full family that runs anywhere, small dense models included, on standard GQA that every engine supports. DeepSeek builds one giant MoE served on clusters, and redesigns attention and routing to make serving it cheap.</p>
+  <div class="bench">
+    <div class="bench-head"><h3>Mixture-of-Experts router</h3><span class="tag">each dot is an expert · lit = used by this token</span></div>
+    <div class="chips" id="moePresets"></div>
+    <div class="controls">
+      <label class="ctl" for="moeE">Routed experts <output id="moeEO"></output><input type="range" id="moeE" min="8" max="512" step="8" value="256"></label>
+      <label class="ctl" for="moeK">Active per token (top-k) <output id="moeKO"></output><input type="range" id="moeK" min="1" max="16" value="8"></label>
+      <label class="ctl" for="moeS">Shared experts <output id="moeSO"></output><input type="range" id="moeS" min="0" max="2" value="1"></label>
+    </div>
+    <canvas id="moeCanvas" width="1000" height="260" style="width:100%;height:auto;background:var(--sunk);border-radius:8px"></canvas>
+    <p id="moeText" class="note" style="font-size:.88rem"></p>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Idea</th><th>DeepSeek</th><th>Qwen</th><th>Gemma</th></tr></thead>
+    <tbody>
+      <tr><td><b>KV compression</b></td><td>MLA (V2, V3): cache one 512-d latent + 64-d RoPE key per token per layer instead of full K,V. −93% KV vs their 67B<a class="cite" href="#s20">[20]</a></td><td>GQA (Qwen2–3). Then 75% linear layers with no KV (Qwen3-Next/3.5)</td><td>MQA/GQA + 5:1 sliding-window layers</td></tr>
+      <tr><td><b>Long-context compute</b></td><td>DSA (V3.2): a light "indexer" picks the top-2048 past tokens per query. V4: CSA + HCA compressed attention, 10% of V3.2's KV at 1M<a class="cite" href="#s23">[23]</a><a class="cite" href="#s24">[24]</a></td><td>Gated DeltaNet linear attention</td><td>Sliding windows, p-RoPE on global layers (Gemma 4)</td></tr>
+      <tr><td><b>Experts</b></td><td>Fine-grained + shared expert (DeepSeekMoE). V3: 256 routed + 1 shared, top-8<a class="cite" href="#s19">[19]</a><a class="cite" href="#s21">[21]</a></td><td>Qwen3: 128, top-8, no shared. Next: 512, 10 + 1 shared</td><td>Gemma 4 26B: 128, top-8 + 1 shared<a class="cite" href="#s30">[30]</a></td></tr>
+      <tr><td><b>Load balancing</b></td><td>Auxiliary-loss-free: a per-expert bias nudges routing, so no loss term pulls on quality</td><td>Global-batch auxiliary loss</td><td>n/a</td></tr>
+      <tr><td><b>Extra heads</b></td><td>MTP (V3): predicts token t+2, reused as a speculative draft</td><td>MTP since Qwen3-Next</td><td>—</td></tr>
+      <tr><td><b>Precision</b></td><td>FP8 training (V3), FP4 experts (V4)</td><td>BF16 release, community GGUF/AWQ</td><td>Official int4 QAT</td></tr>
+      <tr><td><b>Residual path</b></td><td>mHC hyper-connections (V4)</td><td>Standard pre-norm</td><td>Pre + post norm (sandwich)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="cards3">
+    <div class="card"><h3>V2 · May 2024</h3><p>236 B / 21 B active. Introduced MLA and the DeepSeekMoE layout.</p></div>
+    <div class="card"><h3>V3 / R1 · Dec 2024 – Jan 2025</h3><p>671 B / 37 B active, 61 layers, aux-free balancing, MTP, FP8. R1 = the same network trained with RL (GRPO) to reason.<a class="cite" href="#s21">[21]</a><a class="cite" href="#s22">[22]</a></p></div>
+    <div class="card"><h3>V4 · Apr 2026 (preview)</h3><p>Pro 1.6 T / 49 B active, Flash 284 B / 13 B active, 1 M context. Replaced MLA with hybrid compressed attention. 27% of V3.2's per-token FLOPs at 1M.<a class="cite" href="#s24">[24]</a></p></div>
+  </div>
+  <p class="note">Why this matters to you: MLA and DSA are harder to implement than GQA, so engine support (especially llama.cpp on CPU) arrives later and runs less optimized. Qwen's conservative choices are part of why it runs well everywhere.</p>
+</section>
+
+<!-- ================= GEMMA ================= -->
+<section id="gemma">
+  <div class="eyebrow">08 · History</div>
+  <h2>The Gemma lineage</h2>
+  <p class="lede">Gemma's thread is edge efficiency: cap the KV cache with sliding windows, distill from Gemini, and ship official low-bit and phone-shaped models.</p>
+  <div class="timeline">
+    <div class="gen"><span class="when">Feb 2024</span><h3>Gemma 1<small>2B · 7B</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li>MQA on 2B, MHA on 7B</li><li>GeGLU MLP, RoPE, RMSNorm, head_dim 256</li><li>256K-token vocab, tied embeddings</li></ul></div><div><b>Why</b><ul><li>The large vocab is shared with Gemini and suits multilingual text, but the embeddings make up a big chunk of the 2B</li><li>MQA keeps the small model's KV tiny<a class="cite" href="#s25">[25]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Jun 2024</span><h3>Gemma 2<small>2B · 9B · 27B</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li><b>Alternating local (4096 window) / global layers</b></li><li>GQA, logit soft-capping</li><li>Norm before and after each sublayer</li></ul></div><div><b>Why</b><ul><li>Half the layers stop growing KV past 4K</li><li>Soft-capping and sandwich norms keep training stable</li><li>2B and 9B are distilled from a bigger teacher, which gives more knowledge per parameter<a class="cite" href="#s26">[26]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Mar – Aug 2025</span><h3>Gemma 3<small>270M · 1B · 4B · 12B · 27B</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li><b>5 local : 1 global</b>, window shrunk to 1024</li><li>QK-norm replaces soft-capping</li><li>128K context, SigLIP vision (4B and up)</li><li>Official <b>int4 QAT</b> checkpoints</li></ul></div><div><b>Why</b><ul><li>KV memory at 32K drops about 5× with little loss</li><li>QAT lets the 27B fit on a 24 GB consumer GPU at near-BF16 quality<a class="cite" href="#s27">[27]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Jun 2025</span><h3>Gemma 3n<small>E2B · E4B</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li><b>MatFormer</b>: E4B contains a working E2B inside it</li><li><b>Per-Layer Embeddings</b></li><li>KV-cache sharing across later layers, AltUp, LAuReL</li><li>Audio and vision in</li></ul></div><div><b>Why</b><ul><li>"E" = effective. 8 B real weights, but only about 4 B must sit in fast memory. PLE tables stay on the CPU or flash</li><li>Pick model size at runtime to fit the phone<a class="cite" href="#s28">[28]</a><a class="cite" href="#s31">[31]</a></li></ul></div></div></div>
+    <div class="gen"><span class="when">Apr 2026</span><h3>Gemma 4<small>E2B · E4B · 26B-A4B (MoE) · 31B</small></h3>
+      <div class="grid2"><div><b>Architecture</b><ul><li>5:1 sliding (1024) : global</li><li>Global layers: fewer KV heads but head_dim 512, unified K/V, p-RoPE</li><li>26B: 128 experts, top-8 + 1 shared, 3.8 B active</li><li>256K context (128K on E-models), Apache 2.0</li></ul></div><div><b>Why</b><ul><li>First Gemma MoE: 26 B of knowledge at about 4 B of bandwidth per token</li><li>KV at 262K: about 20.8 GiB for the 31B versus 5.2 GiB for the 26B<a class="cite" href="#s29">[29]</a><a class="cite" href="#s30">[30]</a></li></ul></div></div></div>
+  </div>
+</section>
+
+<!-- ================= ENGINES ================= -->
+<section id="engines">
+  <div class="eyebrow">09 · Inference</div>
+  <h2>Inference engines and the knobs that matter</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Engine</th><th>Best for</th><th>Formats</th><th>Key trick</th></tr></thead>
+    <tbody>
+      <tr><td><b>llama.cpp</b><a class="cite" href="#s38">[38]</a></td><td>Local, CPU, mixed CPU+GPU, Apple</td><td>GGUF (K-quants, I-quants)</td><td>Hand-written SIMD/CUDA/Metal kernels for quantized matmul; layer offload</td></tr>
+      <tr><td><b>Ollama / LM Studio</b></td><td>Convenience</td><td>GGUF</td><td>Wrappers around llama.cpp-style engines with sane defaults</td></tr>
+      <tr><td><b>vLLM</b><a class="cite" href="#s33">[33]</a></td><td>Serving many users on GPUs</td><td>HF safetensors, AWQ, GPTQ, FP8</td><td>PagedAttention (KV in pages, no fragmentation) + continuous batching</td></tr>
+      <tr><td><b>SGLang</b><a class="cite" href="#s45">[45]</a></td><td>Agents, shared prompts</td><td>Same as vLLM</td><td>RadixAttention: reuses KV of shared prefixes</td></tr>
+      <tr><td><b>TensorRT-LLM</b></td><td>Max NVIDIA throughput</td><td>Compiled engines, FP8/FP4</td><td>Fused, compiled kernels per GPU</td></tr>
+      <tr><td><b>ExLlamaV2/V3</b></td><td>Fast single consumer GPU</td><td>EXL2 / EXL3 (mixed bits)</td><td>Variable bits per layer to hit an exact VRAM budget</td></tr>
+      <tr><td><b>HF Transformers</b></td><td>Research, modifying the model</td><td>safetensors</td><td>Plain PyTorch, so you can hook any layer (needed for abliteration)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Knob (llama.cpp)</th><th>Changes</th><th>Speed</th><th>Memory</th><th>Quality</th></tr></thead>
+    <tbody>
+      <tr><td><code>-ngl N</code></td><td>Layers on GPU</td><td>↑↑ until all fit</td><td>Moves weights to VRAM</td><td>—</td></tr>
+      <tr><td><code>-c N</code></td><td>Context window</td><td>↓ at long context</td><td>KV grows linearly</td><td>Needed for long docs</td></tr>
+      <tr><td><code>-fa</code></td><td>FlashAttention: tiles attention in on-chip SRAM<a class="cite" href="#s32">[32]</a></td><td>↑ (long ctx)</td><td>↓ compute buffer</td><td>Exact, no change</td></tr>
+      <tr><td><code>-ctk/-ctv q8_0</code></td><td>Quantized KV cache</td><td>↑ slightly</td><td>KV ÷ 2</td><td>Tiny loss (q4_0: more)</td></tr>
+      <tr><td><code>-t N</code></td><td>CPU threads</td><td>↑ prefill; decode saturates at ~4–8</td><td>—</td><td>—</td></tr>
+      <tr><td><code>-b / -ub</code></td><td>Prompt batch sizes</td><td>↑ prefill</td><td>↑ compute buffer</td><td>—</td></tr>
+      <tr><td><code>-ot "exps=CPU"</code></td><td>Keep MoE experts in RAM, attention on GPU</td><td>Big win for MoE on small GPUs</td><td>VRAM only for dense parts</td><td>—</td></tr>
+      <tr><td><code>-md draft.gguf</code></td><td>Speculative decoding<a class="cite" href="#s34">[34]</a></td><td>1.5–2.5× when the draft guesses well</td><td>+ draft model</td><td>Identical output</td></tr>
+      <tr><td>Quant type</td><td>Bits per weight</td><td>↑ as bits ↓</td><td>↓ as bits ↓</td><td>↓ below ~4 bits</td></tr>
+    </tbody>
+  </table></div>
+  <div class="bench">
+    <div class="bench-head"><h3>Sampling playground</h3><span class="tag">prompt: "The capital of Nigeria is"</span></div>
+    <div class="controls">
+      <label class="ctl" for="smT">Temperature <output id="smTO"></output><input type="range" id="smT" min="0" max="200" value="70"></label>
+      <label class="ctl" for="smK">top-k <output id="smKO"></output><input type="range" id="smK" min="1" max="10" value="10"></label>
+      <label class="ctl" for="smP">top-p <output id="smPO"></output><input type="range" id="smP" min="5" max="100" value="80"></label>
+      <label class="ctl" for="smM">min-p <output id="smMO"></output><input type="range" id="smM" min="0" max="50" value="0"></label>
+      <button type="button" class="pri" id="smGo">Sample 30 times</button>
+    </div>
+    <div style="overflow-x:auto"><svg id="smSvg" viewBox="0 0 760 300" style="width:100%;min-width:520px;height:auto" role="img" aria-label="Probability of each candidate next token after sampling filters"></svg></div>
+    <p class="note" id="smOut">Sampling changes what you get, never the speed: the logits are computed either way. Qwen3 recommends temperature 0.6, top-p 0.95, top-k 20 for thinking mode, and 0.7 / 0.8 / 20 for non-thinking.<a class="cite" href="#s8">[8]</a></p>
+  </div>
+</section>
+
+<!-- ================= ABLITERATION ================= -->
+<section id="abliteration">
+  <div class="eyebrow">10 · Model editing</div>
+  <h2>Abliteration</h2>
+  <p class="lede">The "ablated" builds of Qwen in the meeting are abliterated models, which is likely the "arbitration" you meant. Abliteration removes a model's refusal behaviour by deleting a single direction from its weights. There is no retraining. It is also a clean demonstration of how concepts live inside the residual stream.</p>
+  <div class="bench">
+    <div class="bench-head"><h3>The refusal direction, in a 3-D cartoon of a 4096-D stream</h3><span class="tag">drag to rotate</span></div>
+    <div class="controls">
+      <label class="ctl" for="abA">Remove direction <output id="abAO"></output><input type="range" id="abA" min="0" max="100" value="0"></label>
+      <button type="button" id="abReset">Reset</button>
+    </div>
+    <div class="split">
+      <div class="stage" id="abStage" style="height:440px"><canvas id="abCanvas" aria-label="3D point clouds of harmless and harmful prompt activations with the refusal direction"></canvas><div class="hint">Copper = activations on prompts the model refuses · teal = ordinary prompts</div></div>
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="readout" id="abOut"></div>
+        <ol class="steps">
+          <li>Run about 100–500 refused prompts and the same number of ordinary prompts. Record the residual stream at a middle layer.</li>
+          <li><b>r = mean(refused) − mean(ordinary)</b>, normalized. That vector is the arrow.<a class="cite" href="#s41">[41]</a></li>
+          <li>Orthogonalize every matrix that writes into the stream (embeddings, attention out, MLP down): <code>W ← W − r rᵀ W</code>. Now no layer can write along r.</li>
+          <li>Save the weights. The model can no longer represent "I should refuse". Everything else stays nearly untouched.<a class="cite" href="#s42">[42]</a></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+  <div class="cards3">
+    <div class="card"><h3>The principle</h3><p>Features are roughly <b>linear directions</b> in activation space. If a behaviour is concentrated in one direction, projecting that direction out removes the behaviour. Adding it back makes the model refuse everything.</p></div>
+    <div class="card"><h3>What it costs</h3><p>Small but measurable drops in benchmark scores, because r is not perfectly separate from useful features. Some authors "heal" with a short DPO fine-tune afterwards. The size stays the same, so <b>speed is unchanged</b>.</p></div>
+    <div class="card"><h3>Use it responsibly</h3><p>It removes safety training, so treat abliterated weights as unsafe for public-facing use. For your team it is useful as a hands-on lab for understanding the residual stream with HF Transformers forward hooks.</p></div>
+  </div>
+</section>
+
+<!-- ================= PLAN ================= -->
+<section id="plan">
+  <div class="eyebrow">11 · Tomorrow</div>
+  <h2>Bench plan for the Qwen3-8B baseline</h2>
+  <p class="lede">Measure first, then compare each number to the Speed lab prediction. The ratio (measured ÷ predicted) tells you how much an engine or kernel change could still win.</p>
+  <div class="split">
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+<pre><span class="c"># 1. Convert once to a lossless base (from the HF checkpoint)</span>
+python convert_hf_to_gguf.py ./Qwen3-8B --outtype bf16 --outfile qwen3-8b-bf16.gguf
+
+<span class="c"># 2. Importance matrix from calibration text</span>
+llama-imatrix -m qwen3-8b-bf16.gguf -f calib.txt -o imatrix.dat
+
+<span class="c"># 3. Make each quant</span>
+for Q in Q8_0 Q6_K Q5_K_M Q4_K_M Q3_K_M Q2_K; do
+  llama-quantize --imatrix imatrix.dat qwen3-8b-bf16.gguf qwen3-8b-$Q.gguf $Q
+done
+
+<span class="c"># 4. Speed: prompt (pp) and generation (tg) tok/s</span>
+llama-bench -m qwen3-8b-Q4_K_M.gguf -p 512 -n 128 -ngl 99 -fa 1
+llama-bench -m qwen3-8b-Q4_K_M.gguf -p 512 -n 128 -ngl 0 -t 4,8,16
+
+<span class="c"># 5. Quality: KL divergence vs the BF16 logits</span>
+llama-perplexity -m qwen3-8b-bf16.gguf -f wiki.test.raw --kl-divergence-base base.kld
+llama-perplexity -m qwen3-8b-Q4_K_M.gguf --kl-divergence-base base.kld --kl-divergence</pre>
+    </div>
+    <div class="prose">
+      <h3>Experiment matrix</h3>
+      <ul>
+        <li><b>Quant sweep:</b> BF16 → Q2_K. Record file size, pp512, tg128, KLD, and "top-1 token same %". Plot speed against KLD. That curve is the trade-off you felt on 1.7B.</li>
+        <li><b>Offload sweep:</b> <code>-ngl</code> 0 → 36. Speed should jump as soon as the last layer moves onto the GPU.</li>
+        <li><b>Context sweep:</b> tg at 1K, 8K, 32K. The drop you see is the KV cache being read every token.</li>
+        <li><b>Threads sweep</b> on CPU: find where decode stops scaling. That point is your RAM bandwidth wall.</li>
+        <li><b>Architectural A/B:</b> Qwen3-8B vs Qwen3.5-9B vs Qwen3-30B-A3B at the same quant and 32K context. This shows dense vs hybrid-linear vs MoE.</li>
+        <li><b>Speculative:</b> Qwen3-8B with a Qwen3-0.6B draft (<code>-md</code>), same output, compare tg.</li>
+      </ul>
+      <div class="callout"><b class="t">For thinking models, decode speed is what matters</b><span>Qwen3 in thinking mode can write 1–5K tokens before answering, so generation tok/s dominates the time you wait. Use <code>/no_think</code> to measure the answer-only path as well.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SOURCES ================= -->
+<section id="sources">
+  <div class="eyebrow">References</div>
+  <h2>Sources</h2>
+  <p class="note">Configs were checked against official Hugging Face model cards on 21 Oct 2026. Where third-party write-ups disagreed (some Qwen3.5 and Gemma 4 details), I used the official config or noted the conflict.</p>
+  <ol class="sources" id="srcList"></ol>
+</section>
+</main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const GB=1e9, KiB=1024;
+const fmtB=b=>b>=1e9?(b/1e9).toFixed(b>=1e10?1:2)+' GB':b>=1e6?(b/1e6).toFixed(0)+' MB':(b/1e3).toFixed(0)+' KB';
+const fmtK=n=>n>=1024?(n/1024)+'K':String(n);
+const CTX=[1024,2048,4096,8192,16384,32768,65536,131072,262144];
+
+/* ---------- Sources ---------- */
+const SRC=[
+ ["Vaswani et al., Attention Is All You Need (2017)","https://arxiv.org/abs/1706.03762"],
+ ["Bai et al., Qwen Technical Report (2023)","https://arxiv.org/abs/2309.16609"],
+ ["Qwen team, Introducing Qwen1.5 (2024)","https://qwenlm.github.io/blog/qwen1.5/"],
+ ["Qwen team, Qwen1.5-MoE: Matching 7B performance with 1/3 activated parameters (2024)","https://qwenlm.github.io/blog/qwen-moe/"],
+ ["Yang et al., Qwen2 Technical Report (2024)","https://arxiv.org/abs/2407.10671"],
+ ["Qwen team, Qwen2.5 Technical Report (2024)","https://arxiv.org/abs/2412.15115"],
+ ["Qwen team, Qwen3 Technical Report (2025)","https://arxiv.org/abs/2505.09388"],
+ ["Qwen/Qwen3-8B model card and config.json","https://huggingface.co/Qwen/Qwen3-8B"],
+ ["Qwen/Qwen3-Next-80B-A3B-Instruct model card","https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Instruct"],
+ ["Qwen/Qwen3.5-9B model card and config.json","https://huggingface.co/Qwen/Qwen3.5-9B"],
+ ["Qwen/Qwen3.6-35B-A3B model card","https://huggingface.co/Qwen/Qwen3.6-35B-A3B"],
+ ["Yang, Kautz, Hatamizadeh, Gated Delta Networks (2024)","https://arxiv.org/abs/2412.06464"],
+ ["Qiu et al., Gated Attention for Large Language Models (2025)","https://arxiv.org/abs/2505.06708"],
+ ["Ainslie et al., GQA: Grouped-Query Attention (2023)","https://arxiv.org/abs/2305.13245"],
+ ["Shazeer, Fast Transformer Decoding: One Write-Head is All You Need (MQA, 2019)","https://arxiv.org/abs/1911.02150"],
+ ["Su et al., RoFormer: Rotary Position Embedding (2021)","https://arxiv.org/abs/2104.09864"],
+ ["Peng et al., YaRN: Efficient Context Window Extension (2023)","https://arxiv.org/abs/2309.00071"],
+ ["Shazeer, GLU Variants Improve Transformer (SwiGLU, 2020)","https://arxiv.org/abs/2002.05202"],
+ ["Dai et al., DeepSeekMoE (2024)","https://arxiv.org/abs/2401.06066"],
+ ["DeepSeek-AI, DeepSeek-V2 (MLA) (2024)","https://arxiv.org/abs/2405.04434"],
+ ["DeepSeek-AI, DeepSeek-V3 Technical Report (2024)","https://arxiv.org/abs/2412.19437"],
+ ["DeepSeek-AI, DeepSeek-R1 (2025)","https://arxiv.org/abs/2501.12948"],
+ ["deepseek-ai/DeepSeek-V3.2-Exp model card (DeepSeek Sparse Attention)","https://huggingface.co/deepseek-ai/DeepSeek-V3.2-Exp"],
+ ["deepseek-ai/DeepSeek-V4-Pro model card (2026)","https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro"],
+ ["Gemma Team, Gemma: Open Models Based on Gemini (2024)","https://arxiv.org/abs/2403.08295"],
+ ["Gemma Team, Gemma 2 (2024)","https://arxiv.org/abs/2408.00118"],
+ ["Gemma Team, Gemma 3 Technical Report (2025)","https://arxiv.org/abs/2503.19786"],
+ ["Google, Gemma 3n overview","https://ai.google.dev/gemma/docs/gemma-3n"],
+ ["Google, Gemma models overview (Gemma 4)","https://ai.google.dev/gemma/docs/core"],
+ ["The Kaitchup, Gemma 4 31B and 26B A4B: Architecture and Memory (2026)","https://kaitchup.substack.com/p/gemma-4-31b-and-26b-a4b-architecture"],
+ ["Devvrit et al., MatFormer (2023)","https://arxiv.org/abs/2310.07707"],
+ ["Dao et al., FlashAttention (2022)","https://arxiv.org/abs/2205.14135"],
+ ["Kwon et al., vLLM / PagedAttention (2023)","https://arxiv.org/abs/2309.06180"],
+ ["Leviathan et al., Fast Inference via Speculative Decoding (2022)","https://arxiv.org/abs/2211.17192"],
+ ["Frantar et al., GPTQ (2022)","https://arxiv.org/abs/2210.17323"],
+ ["Lin et al., AWQ: Activation-aware Weight Quantization (2023)","https://arxiv.org/abs/2306.00978"],
+ ["Dettmers et al., LLM.int8() (2022)","https://arxiv.org/abs/2208.07339"],
+ ["ggml-org/llama.cpp","https://github.com/ggml-org/llama.cpp"],
+ ["llama.cpp PR #1684: k-quants","https://github.com/ggml-org/llama.cpp/pull/1684"],
+ ["llama.cpp quantize tool README","https://github.com/ggml-org/llama.cpp/tree/master/tools/quantize"],
+ ["Arditi et al., Refusal in Language Models Is Mediated by a Single Direction (2024)","https://arxiv.org/abs/2406.11717"],
+ ["Labonne, Uncensor any LLM with abliteration (2024)","https://huggingface.co/blog/mlabonne/abliteration"],
+ ["He, Making Deep Learning Go Brrrr From First Principles","https://horace.io/brr_intro.html"],
+ ["Williams, Waterman, Patterson, Roofline (CACM 2009)","https://doi.org/10.1145/1498765.1498785"],
+ ["Zheng et al., SGLang (2023)","https://arxiv.org/abs/2312.07104"]
+];
+$('#srcList').innerHTML=SRC.map((s,i)=>`<li id="s${i+1}"><a href="${s[1]}" target="_blank" rel="noopener">${s[0]}</a></li>`).join('');
+
+/* ---------- Models ---------- */
+// kvL: bytes/token/layer (bf16) for each layer type. pat(i): layer type.
+function std(o){
+  const kvPer=2*o.kv*o.hd*2;
+  return Object.assign({active:o.total,pat:()=>'full',kvL:{full:kvPer},win:0,state:0},o);
+}
+const MODELS=[
+ std({id:'qwen1-7b',name:'Qwen-7B (2023)',fam:'qwen',total:7.7,L:32,hidden:4096,heads:32,kv:32,hd:128,ffn:11008,max:8192,attn:'MHA',mlp:'SwiGLU'}),
+ std({id:'qwen25-7b',name:'Qwen2.5-7B',fam:'qwen',total:7.6,L:28,hidden:3584,heads:28,kv:4,hd:128,ffn:18944,max:131072,attn:'GQA',mlp:'SwiGLU'}),
+ std({id:'qwen3-0.6b',name:'Qwen3-0.6B',fam:'qwen',total:0.6,L:28,hidden:1024,heads:16,kv:8,hd:128,ffn:3072,max:32768,attn:'GQA + QK-Norm',mlp:'SwiGLU'}),
+ std({id:'qwen3-1.7b',name:'Qwen3-1.7B',fam:'qwen',total:1.72,L:28,hidden:2048,heads:16,kv:8,hd:128,ffn:6144,max:32768,attn:'GQA + QK-Norm',mlp:'SwiGLU'}),
+ std({id:'qwen3-4b',name:'Qwen3-4B',fam:'qwen',total:4.02,L:36,hidden:2560,heads:32,kv:8,hd:128,ffn:9728,max:131072,attn:'GQA + QK-Norm',mlp:'SwiGLU'}),
+ std({id:'qwen3-8b',name:'Qwen3-8B (baseline)',fam:'qwen',total:8.19,L:36,hidden:4096,heads:32,kv:8,hd:128,ffn:12288,max:131072,attn:'GQA + QK-Norm',mlp:'SwiGLU'}),
+ std({id:'qwen3-14b',name:'Qwen3-14B',fam:'qwen',total:14.8,L:40,hidden:5120,heads:40,kv:8,hd:128,ffn:17408,max:131072,attn:'GQA + QK-Norm',mlp:'SwiGLU'}),
+ std({id:'qwen3-30b-a3b',name:'Qwen3-30B-A3B (MoE)',fam:'qwen',total:30.5,active:3.3,L:48,hidden:2048,heads:32,kv:4,hd:128,ffn:768,max:131072,attn:'GQA + QK-Norm',mlp:'MoE 128 × top-8',moe:{E:128,k:8,s:0}}),
+ Object.assign(std({id:'qwen35-9b',name:'Qwen3.5-9B (hybrid)',fam:'qwen',total:9.0,L:32,hidden:4096,heads:16,kv:4,hd:256,ffn:12288,max:262144,attn:'3× DeltaNet : 1× gated attn',mlp:'SwiGLU'}),
+   {pat:i=>i%4===3?'full':'linear',kvL:{full:2*4*256*2,linear:0},state:24*32*128*128*4}),
+ Object.assign(std({id:'gemma3-4b',name:'Gemma 3 4B',fam:'gemma',total:3.9,L:34,hidden:2560,heads:8,kv:4,hd:256,ffn:10240,max:131072,attn:'5 local : 1 global',mlp:'GeGLU'}),
+   {pat:i=>(i+1)%6===0?'global':'local',kvL:{global:4096,local:4096},win:1024}),
+ Object.assign(std({id:'gemma3-27b',name:'Gemma 3 27B',fam:'gemma',total:27,L:62,hidden:5376,heads:32,kv:16,hd:128,ffn:21504,max:131072,attn:'5 local : 1 global',mlp:'GeGLU'}),
+   {pat:i=>(i+1)%6===0?'global':'local',kvL:{global:8192,local:8192},win:1024}),
+ Object.assign(std({id:'gemma4-31b',name:'Gemma 4 31B',fam:'gemma',total:30.7,L:60,hidden:null,heads:null,kv:16,hd:256,ffn:null,max:262144,attn:'5 local : 1 global',mlp:'GeGLU'}),
+   {pat:i=>(i+1)%6===0?'global':'local',kvL:{global:8192,local:16384},win:1024}),
+ Object.assign(std({id:'gemma4-26b',name:'Gemma 4 26B-A4B (MoE)',fam:'gemma',total:25.2,active:3.8,L:30,hidden:null,heads:null,kv:8,hd:256,ffn:null,max:262144,attn:'5 local : 1 global',mlp:'MoE 128 × top-8 + 1',moe:{E:128,k:8,s:1}}),
+   {pat:i=>(i+1)%6===0?'global':'local',kvL:{global:4096,local:8192},win:1024}),
+ Object.assign(std({id:'deepseek-v3',name:'DeepSeek-V3 / R1',fam:'deepseek',total:671,active:37,L:61,hidden:7168,heads:128,kv:null,hd:128,ffn:2048,max:131072,attn:'MLA (latent 512 + 64)',mlp:'MoE 256 × top-8 + 1',moe:{E:256,k:8,s:1}}),
+   {pat:()=>'mla',kvL:{mla:576*2}})
+];
+const byId=id=>MODELS.find(m=>m.id===id);
+function kvBytes(m,ctx,elt){ // per sequence
+  let b=0; const f=elt/2;
+  for(let i=0;i<m.L;i++){const t=m.pat(i);const per=m.kvL[t]||0;b+=per*(t==='local'?Math.min(ctx,m.win):ctx);}
+  return b*f;
+}
+const kvPerTok=m=>{let b=0;for(let i=0;i<m.L;i++){const t=m.pat(i);if(t!=='local')b+=m.kvL[t]||0;}return b;};
+
+/* ---------- Config table ---------- */
+$('#cfgTable').innerHTML=MODELS.filter(m=>m.fam==='qwen').map(m=>`<tr><td><b>${m.name}</b></td><td class="num">${m.L}</td><td class="num">${m.hidden}</td><td class="num">${m.heads} / ${m.kv}</td><td class="num">${m.hd}</td><td>${m.attn}</td><td>${m.mlp}${m.moe?'':' '+m.ffn}</td><td class="num">${Math.round(kvPerTok(m)/KiB)} KiB</td></tr>`).join('');
+
+/* ---------- Hardware ---------- */
+const HW=[
+ {id:'phone',name:'Phone · Snapdragon 8 Gen 3 (12 GB LPDDR5X)',kind:'cpu',mem:8,bw:77,tf:2},
+ {id:'ddr4',name:'Laptop CPU · DDR4-3200 2ch (16 GB)',kind:'cpu',mem:16,bw:51.2,tf:0.8},
+ {id:'ddr5',name:'Desktop CPU · DDR5-5600 2ch (64 GB)',kind:'cpu',mem:64,bw:89.6,tf:1.5},
+ {id:'ws',name:'Workstation CPU · 8ch DDR5 (256 GB)',kind:'cpu',mem:256,bw:300,tf:6},
+ {id:'m4pro',name:'Apple M4 Pro (48 GB unified)',kind:'gpu',mem:36,bw:273,tf:17,unified:true},
+ {id:'m2max',name:'Apple M2 Max (96 GB unified)',kind:'gpu',mem:72,bw:400,tf:27,unified:true},
+ {id:'3060',name:'RTX 3060 12 GB',kind:'gpu',mem:12,bw:360,tf:51},
+ {id:'4060ti',name:'RTX 4060 Ti 16 GB',kind:'gpu',mem:16,bw:288,tf:88},
+ {id:'3090',name:'RTX 3090 24 GB',kind:'gpu',mem:24,bw:936,tf:71},
+ {id:'4090',name:'RTX 4090 24 GB',kind:'gpu',mem:24,bw:1008,tf:165},
+ {id:'5090',name:'RTX 5090 32 GB',kind:'gpu',mem:32,bw:1792,tf:209},
+ {id:'a100',name:'A100 80 GB',kind:'gpu',mem:80,bw:2039,tf:312},
+ {id:'h100',name:'H100 SXM 80 GB',kind:'gpu',mem:80,bw:3350,tf:989}
+];
+const HOST={bw:89.6,tf:1.5,mem:64};
+$('#hwTable').innerHTML=HW.map(h=>{const c=h.bw/5.0;return `<tr><td>${h.name}</td><td class="num">${h.unified?h.name.match(/\((\d+) GB/)[1]+' GB unified':h.kind==='cpu'?h.name.match(/\((\d+) GB/)[1]+' GB RAM':h.mem+' GB VRAM'}</td><td class="num">${h.bw} GB/s</td><td class="num">≈ ${c<10?c.toFixed(1):Math.round(c)} tok/s</td><td>${h.kind==='cpu'?'RAM bandwidth':h.unified?'Unified memory bandwidth':'VRAM bandwidth (if it fits)'}</td></tr>`}).join('');
+
+const QUANTS=[
+ {id:'bf16',name:'BF16 (original)',bpw:16},
+ {id:'q8',name:'Q8_0',bpw:8.5},
+ {id:'q6',name:'Q6_K',bpw:6.56},
+ {id:'q5',name:'Q5_K_M',bpw:5.69},
+ {id:'q4',name:'Q4_K_M',bpw:4.89},
+ {id:'q3',name:'Q3_K_M',bpw:3.91},
+ {id:'q2',name:'Q2_K',bpw:3.35}
+];
+const PPL={bf16:'0 (reference)',q8:'+0.0004',q6:'+0.001',q5:'+0.01',q4:'+0.05',q3:'+0.25',q2:'+0.87'};
+const VERD={bf16:['good','Reference'],q8:['good','Indistinguishable'],q6:['good','Near-lossless'],q5:['good','Very close'],q4:['warn','Sweet spot'],q3:['warn','Noticeable on small models'],q2:['bad','Breaks reasoning']};
+$('#quantTable').innerHTML=QUANTS.map(q=>`<tr><td><b>${q.name}</b></td><td class="num">${q.bpw}</td><td class="num">${(8.19*q.bpw/8).toFixed(1)} GB</td><td class="num">${(1.72*q.bpw/8).toFixed(2)} GB</td><td class="num">${PPL[q.id]}</td><td><span class="pill ${VERD[q.id][0]}">${VERD[q.id][1]}</span></td></tr>`).join('');
+
+/* ---------- Speed lab ---------- */
+const spModel=$('#spModel'),spQuant=$('#spQuant'),spHw=$('#spHw');
+spModel.innerHTML=MODELS.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+spModel.value='qwen3-8b';
+spQuant.innerHTML=QUANTS.map(q=>`<option value="${q.id}">${q.name} · ${q.bpw} bpw</option>`).join('');
+spQuant.value='q4';
+spHw.innerHTML=HW.map(h=>`<option value="${h.id}">${h.name}</option>`).join('');
+spHw.value='4090';
+const BATCH=[1,2,4,8,16,32,64];
+function fmtTok(x){return x>=100?Math.round(x):x>=10?x.toFixed(0):x.toFixed(1);}
+function speed(){
+  const m=byId(spModel.value),q=QUANTS.find(x=>x.id===spQuant.value),hw=HW.find(x=>x.id===spHw.value);
+  const ctx=CTX[+$('#spCtx').value],B=BATCH[+$('#spBatch').value],kvElt=+$('#spKv').value;
+  const ngl=$('#spNgl'); ngl.max=m.L; if(+ngl.value>m.L) ngl.value=m.L;
+  $('#spCtxO').textContent=fmtK(ctx)+' tokens'; $('#spBatchO').textContent=B;
+  const isCpu=hw.kind==='cpu';
+  $('#spNglWrap').hidden=isCpu||hw.unified;
+  const f=(isCpu||hw.unified)?1:(+ngl.value/m.L);
+  $('#spNglO').textContent=ngl.value+' / '+m.L;
+  const W=m.total*GB*q.bpw/8, Wa=m.active*GB*q.bpw/8;
+  const kv=kvBytes(m,ctx,kvElt)*B, st=m.state*B;
+  const buf=0.35*GB+0.02*W+ (B>1?0.05*GB*B:0);
+  const need=W+kv+st+buf;
+  // devices
+  const dev=isCpu?{bw:hw.bw,tf:hw.tf,mem:hw.mem}:{bw:hw.bw,tf:hw.tf,mem:hw.mem};
+  const devUse=isCpu?need:(f*(W+kv+st)+buf);
+  const hostUse=isCpu?0:(1-f)*(W+kv+st);
+  const capDev=dev.mem*GB, fitsDev=devUse<=capDev, fitsHost=hostUse<=HOST.mem*GB*0.85;
+  // decode step
+  const bwEffDev=dev.bw*GB*(isCpu?0.65:0.75), bwEffHost=HOST.bw*GB*0.65;
+  // attention flops per token ~ 4 * attention layers * heads*hd * ctx (only for full-ish layers)
+  let attnL=0;for(let i=0;i<m.L;i++){const t=m.pat(i);attnL+= t==='local'?Math.min(ctx,m.win)/Math.max(ctx,1):(t==='linear'?0:1);}
+  const qdim=(m.heads||32)*(m.hd||128);
+  const attnF=4*attnL*qdim*ctx;
+  const flopTok=2*m.active*GB+attnF;
+  const readDev=f*(Wa+kv+st), readHost=(1-f)*(Wa+kv+st);
+  const tMem=readDev/bwEffDev+(isCpu?0:readHost/bwEffHost);
+  const tfEffDev=dev.tf*1e12*(isCpu?0.5:0.45), tfEffHost=HOST.tf*1e12*0.5;
+  const tComp=B*flopTok*(f/tfEffDev+(1-f)/tfEffHost);
+  const step=Math.max(tMem,tComp)+0.0004*m.L/36;
+  const perSeq=1/step, agg=B/step;
+  // prefill: compute bound, avg context ctx/2
+  const flopPre=2*m.active*GB+4*attnL*qdim*(ctx/2);
+  const tPre=flopPre*(f/tfEffDev+(1-f)/tfEffHost);
+  const pre=1/tPre;
+  const memBound=tMem>=tComp;
+  const intensity=(2*m.active*GB*B)/(Wa+kv+st);
+  const ridge=dev.tf*1e12/(dev.bw*GB);
+  let status, cls;
+  if(isCpu){ if(need>hw.mem*GB){status='Will not load';cls='bad';} else if(need>hw.mem*GB*0.8){status='Tight fit';cls='warn';} else {status='Fits in RAM';cls='good';} }
+  else if(!fitsDev){status='Exceeds VRAM: lower -ngl';cls='bad';}
+  else if(!fitsHost){status='Host RAM too small';cls='bad';}
+  else if(f<1){status='Split GPU + CPU';cls='warn';}
+  else {status='Fits fully on GPU';cls='good';}
+  const fail=cls==='bad'&&(isCpu||!fitsHost);
+  $('#spOut').innerHTML=`
+   <div class="metric"><span class="k">Memory needed</span><span class="v">${(need/GB).toFixed(1)} GB</span><span class="s"><span class="pill ${cls}">${status}</span></span></div>
+   <div class="metric"><span class="k">Decode, per request</span><span class="v">${fail?'—':fmtTok(perSeq)}</span><span class="s">tokens/s · ${memBound?'memory-bound':'compute-bound'}</span></div>
+   <div class="metric"><span class="k">Decode, total</span><span class="v">${fail?'—':fmtTok(agg)}</span><span class="s">tokens/s across ${B} request${B>1?'s':''}</span></div>
+   <div class="metric"><span class="k">Prefill</span><span class="v">${fail?'—':fmtTok(pre)}</span><span class="s">prompt tokens/s · compute-bound</span></div>
+   <div class="metric"><span class="k">Intensity / ridge</span><span class="v">${intensity<10?intensity.toFixed(1):Math.round(intensity)} / ${Math.round(ridge)}</span><span class="s">FLOP per byte · ${Math.round(100*Math.min(1,intensity/ridge))}% of compute usable</span></div>`;
+  // memory bar
+  const cap=isCpu?hw.mem*GB:capDev; const scale=Math.max(need,cap)*1.05;
+  const seg=(v,c)=>`<div style="width:${(100*v/scale).toFixed(2)}%;background:${c}"></div>`;
+  $('#spBar').innerHTML=seg(W,'var(--copper)')+seg(kv+st,'var(--teal)')+seg(buf,'var(--muted)')+`<span class="cap" style="left:${(100*cap/scale).toFixed(2)}%"></span>`;
+  $('#spBarNote').textContent=`Weights ${fmtB(W)} · KV cache ${fmtB(kv)}${st?' + state '+fmtB(st):''} · buffers ${fmtB(buf)} · ${isCpu?'RAM':hw.unified?'GPU-usable unified memory':'VRAM'} ${hw.mem} GB`+(!isCpu&&!hw.unified&&f<1?` · ${fmtB(hostUse)} of it sits in host RAM`:'');
+  // explanation
+  let ex='';
+  const pctW=Math.round(100*Wa/(Wa+kv+st));
+  if(memBound) ex=`<b class="t">Memory-bound.</b><span>Each step streams ${fmtB(Wa+kv+st)} (${pctW}% weights, ${100-pctW}% KV/state). ${f<1&&!isCpu?`The ${m.L-(+ngl.value)} CPU layers move at host-RAM speed (${HOST.bw} GB/s) and dominate the time. Moving more layers to the GPU helps most here. `:''}To go faster: fewer bits per weight, a smaller or MoE model, a shorter context, or more bandwidth. A faster chip with the same memory will not help.</span>`;
+  else ex=`<b class="t">Compute-bound.</b><span>With ${B} parallel requests each weight read is reused ${B}×, so arithmetic is now the limit. Total throughput has stopped scaling with batch. This is where a GPU's TFLOPS start to matter.</span>`;
+  if(m.moe) ex+=`<span>MoE: memory follows all ${m.total} B weights, speed follows ${m.active} B active. At larger batches different tokens pick different experts, so real bandwidth rises above this estimate.</span>`;
+  if(m.state) ex+=`<span>Hybrid linear attention: only ${m.L/4} of ${m.L} layers keep a KV cache. The rest keep a fixed ${fmtB(m.state)} state.</span>`;
+  $('#spExplain').innerHTML=ex;
+}
+['#spModel','#spQuant','#spHw','#spKv','#spCtx','#spNgl','#spBatch'].forEach(s=>$(s).addEventListener('input',speed));
+spModel.addEventListener('change',()=>{$('#spNgl').value=byId(spModel.value).L;speed();});
+speed();
+
+/* ---------- Attention variants SVG ---------- */
+const ATT={
+ MHA:{g:8,t:'Multi-Head Attention: every query head has its own K and V. Qwen-7B (2023) and Gemma 1 7B. Largest KV cache: Qwen-7B uses 512 KiB per token.',src:'s1'},
+ GQA:{g:2,t:'Grouped-Query: groups of query heads share one K/V head. Qwen2/2.5/3 (Qwen3-8B: 32 Q heads share 8 KV heads, so 4× smaller cache), Gemma 2/3. Quality close to MHA.',src:'s14'},
+ MQA:{g:1,t:'Multi-Query: all heads share one K/V. Gemma 1 2B, Gemma 3 1B. Smallest cache among the standard designs, but some quality loss at scale.',src:'s15'},
+ MLA:{g:0,t:'Multi-head Latent Attention (DeepSeek-V2/V3): cache one small compressed latent per token and re-expand it into per-head K/V at compute time. MHA-level quality with a cache smaller than GQA.',src:'s20'},
+ Linear:{g:-1,t:'Linear attention (Gated DeltaNet, Qwen3-Next/3.5/3.6): no per-token cache. A fixed d×d state matrix per head is updated every token.',src:'s12'}
+};
+let attnSel='GQA';
+$('#attnChips').innerHTML=Object.keys(ATT).map(k=>`<button type="button" data-k="${k}">${k}</button>`).join('');
+$('#attnChips').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;attnSel=b.dataset.k;drawAttn();});
+function drawAttn(){
+  document.querySelectorAll('#attnChips button').forEach(b=>b.classList.toggle('on',b.dataset.k===attnSel));
+  const a=ATT[attnSel], ink=css('--ink'),mut=css('--muted'),cop=css('--copper'),teal=css('--teal'),line=css('--line'),sunk=css('--sunk');
+  let s=`<text x="20" y="40" fill="${mut}" font-size="12">Query heads</text>`;
+  const qx=i=>140+i*76;
+  for(let i=0;i<8;i++) s+=`<rect x="${qx(i)}" y="22" width="56" height="28" rx="5" fill="${cop}" opacity=".9"/><text x="${qx(i)+28}" y="41" text-anchor="middle" fill="${css('--surface')}" font-size="12" font-weight="600">Q${i+1}</text>`;
+  s+=`<text x="20" y="190" fill="${mut}" font-size="12">Cached per token</text>`;
+  if(a.g>0){
+    const n=a.g===8?8:a.g; const per=8/n;
+    for(let j=0;j<n;j++){
+      const cx=(qx(j*per)+qx(j*per+per-1)+56)/2;
+      const w=Math.max(56,per*76-20);
+      s+=`<rect x="${cx-w/2}" y="168" width="${w}" height="34" rx="5" fill="${teal}"/><text x="${cx}" y="190" text-anchor="middle" fill="${css('--surface')}" font-size="12" font-weight="600">K,V${n>1?' '+(j+1):''}</text>`;
+      for(let i=j*per;i<j*per+per;i++) s+=`<line x1="${qx(i)+28}" y1="50" x2="${cx}" y2="168" stroke="${mut}" stroke-width="1.2"/>`;
+    }
+    s+=`<text x="740" y="225" text-anchor="end" fill="${ink}" font-size="12">KV size ∝ ${n} head${n>1?'s':''} (${(n/8*100).toFixed(0)}% of MHA)</text>`;
+  } else if(a.g===0){
+    s+=`<rect x="330" y="168" width="140" height="34" rx="5" fill="${teal}"/><text x="400" y="190" text-anchor="middle" fill="${css('--surface')}" font-size="12" font-weight="600">latent c (512)</text>`;
+    s+=`<rect x="480" y="168" width="70" height="34" rx="5" fill="${css('--violet')}"/><text x="515" y="190" text-anchor="middle" fill="${css('--surface')}" font-size="11" font-weight="600">rope k 64</text>`;
+    s+=`<rect x="140" y="100" width="604" height="30" rx="5" fill="${sunk}" stroke="${line}"/><text x="442" y="120" text-anchor="middle" fill="${ink}" font-size="12">up-project: latent → per-head K and V (computed on the fly, never cached)</text>`;
+    for(let i=0;i<8;i++) s+=`<line x1="${qx(i)+28}" y1="50" x2="${qx(i)+28}" y2="100" stroke="${mut}"/>`;
+    s+=`<line x1="400" y1="130" x2="400" y2="168" stroke="${mut}"/><text x="740" y="225" text-anchor="end" fill="${ink}" font-size="12">576 values/token/layer vs 32,768 for 128-head MHA</text>`;
+  } else {
+    s+=`<rect x="300" y="150" width="70" height="56" rx="4" fill="${teal}"/><text x="335" y="183" text-anchor="middle" fill="${css('--surface')}" font-size="11" font-weight="600">S (d×d)</text>`;
+    s+=`<text x="390" y="175" fill="${ink}" font-size="12">S ← α·S(I − β k kᵀ) + β v kᵀ</text><text x="390" y="195" fill="${mut}" font-size="12">the same size at token 10 and at token 1,000,000</text>`;
+    for(let i=0;i<8;i++) s+=`<line x1="${qx(i)+28}" y1="50" x2="335" y2="150" stroke="${mut}" stroke-width="1"/>`;
+  }
+  $('#attnSvg').innerHTML=s;
+  $('#attnText').innerHTML=a.t+` <a class="cite" href="#${a.src}">[${a.src.slice(1)}]</a>`;
+}
+
+/* ---------- KV chart ---------- */
+function drawKV(){
+  const ctx=CTX[+$('#kvCtx').value]; $('#kvCtxO').textContent=fmtK(ctx)+' tokens';
+  const ms=MODELS.filter(m=>m.id!=='qwen3-0.6b'&&m.id!=='qwen3-4b'&&m.id!=='qwen3-14b');
+  const vals=ms.map(m=>({m,v:kvBytes(m,ctx,2)+m.state}));
+  const max=Math.max(...vals.map(x=>x.v));
+  const ink=css('--ink'),mut=css('--muted'),line=css('--line');
+  const col={qwen:css('--copper'),gemma:css('--violet'),deepseek:css('--teal')};
+  const x0=190,w=470,rh=30;
+  let s='';
+  // ticks
+  const step=niceStep(max/4);
+  for(let t=0;t<=max*1.0001;t+=step){const x=x0+w*t/max;s+=`<line x1="${x}" y1="10" x2="${x}" y2="${10+vals.length*rh}" stroke="${line}"/><text x="${x}" y="${26+vals.length*rh}" text-anchor="middle" fill="${mut}" font-size="11">${fmtB(t).replace(' ',' ')}</text>`;}
+  vals.forEach((o,i)=>{const y=14+i*rh;const bw=Math.max(1,w*o.v/max);const over=ctx>o.m.max;
+    s+=`<text x="${x0-10}" y="${y+16}" text-anchor="end" fill="${ink}" font-size="12">${o.m.name.replace(' (baseline)','')}</text>`;
+    s+=`<rect x="${x0}" y="${y+3}" width="${bw}" height="18" rx="3" fill="${col[o.m.fam]}" opacity="${over?0.3:0.9}"/>`;
+    s+=`<text x="${x0+bw+6}" y="${y+16}" fill="${ink}" font-size="11">${fmtB(o.v)}</text>`;});
+  $('#kvSvg').setAttribute('viewBox',`0 0 760 ${40+vals.length*rh}`);
+  $('#kvSvg').innerHTML=s;
+}
+function niceStep(x){const p=Math.pow(10,Math.floor(Math.log10(x)));const n=x/p;return (n<1.5?1:n<3?2:n<7?5:10)*p;}
+$('#kvCtx').addEventListener('input',drawKV);
+
+/* ---------- Masks ---------- */
+function drawMasks(){
+  const W=+$('#maskW').value; $('#maskWO').textContent=W+' tokens';
+  const N=40, cop=css('--copper'),vio=css('--violet'),teal=css('--teal'),sunk=css('--surface');
+  const draw=(id,fn,c)=>{const cv=$(id),g=cv.getContext('2d'),s=cv.width/N;g.fillStyle=sunk;g.fillRect(0,0,cv.width,cv.height);
+    for(let i=0;i<N;i++)for(let j=0;j<N;j++){const v=fn(i,j);if(v>0){g.globalAlpha=v;g.fillStyle=c;g.fillRect(j*s,i*s,s-0.6,s-0.6);}}g.globalAlpha=1;};
+  draw('#maskG',(i,j)=>j<=i?1:0,cop);
+  draw('#maskL',(i,j)=>j<=i&&i-j<W?1:0,vio);
+  draw('#maskD',(i,j)=>j<=i?Math.pow(0.88,i-j):0,teal);
+}
+$('#maskW').addEventListener('input',drawMasks);
+
+/* ---------- Quantizer ---------- */
+const BLK=[16,32,64,256];
+let qW=[],qOut=false;
+function randn(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function newW(){qW=[];for(let i=0;i<256;i++)qW.push(randn()*0.02*(Math.random()<0.1?1.8:1));if(qOut)qW[5]=0.2;}
+function quant(){
+  const b=+$('#qBits').value, sch=$('#qScheme').value, bs=BLK[+$('#qBlock').value];
+  $('#qBitsO').textContent=b; $('#qBlockO').textContent=bs+' weights';
+  const deq=[]; let levels=new Set();
+  for(let s=0;s<qW.length;s+=bs){
+    const blk=qW.slice(s,s+bs);
+    if(sch==='sym'){const amax=Math.max(...blk.map(Math.abs));const qm=Math.pow(2,b-1)-1;const sc=amax/qm||1e-9;
+      blk.forEach(w=>{const q=Math.max(-qm-1,Math.min(qm,Math.round(w/sc)));deq.push(q*sc);if(s===0)levels.add(q);});}
+    else {const mn=Math.min(...blk),mx=Math.max(...blk);const qm=Math.pow(2,b)-1;const sc=(mx-mn)/qm||1e-9;
+      blk.forEach(w=>{const q=Math.round((w-mn)/sc);deq.push(mn+q*sc);if(s===0)levels.add(q);});}
+  }
+  const shown=32;
+  const err=qW.map((w,i)=>w-deq[i]);
+  const rmse=Math.sqrt(err.reduce((a,e)=>a+e*e,0)/err.length);
+  const rms=Math.sqrt(qW.reduce((a,e)=>a+e*e,0)/qW.length);
+  const snr=20*Math.log10(rms/rmse);
+  const overhead=(sch==='sym'?16:32)/bs;
+  const bpw=b+overhead;
+  // draw
+  const cv=$('#qCanvas'),g=cv.getContext('2d'),Wd=cv.width,H=cv.height;g.clearRect(0,0,Wd,H);
+  const blk0=qW.slice(0,shown);
+  const lim=Math.max(...qW.slice(0,Math.max(shown,bs)).map(Math.abs))*1.1;
+  const y=v=>H/2-v/lim*(H/2-16);
+  const blkFull=qW.slice(0,bs);
+  g.strokeStyle=css('--line');g.lineWidth=1;
+  if(sch==='sym'){const amax=Math.max(...blkFull.map(Math.abs));const qm=Math.pow(2,b-1)-1;const sc=amax/qm;if(b<=6)for(let q=-qm-1;q<=qm;q++){g.beginPath();g.moveTo(0,y(q*sc));g.lineTo(Wd,y(q*sc));g.stroke();}}
+  else {const mn=Math.min(...blkFull),mx=Math.max(...blkFull);const qm=Math.pow(2,b)-1;const sc=(mx-mn)/qm;if(b<=6)for(let q=0;q<=qm;q++){g.beginPath();g.moveTo(0,y(mn+q*sc));g.lineTo(Wd,y(mn+q*sc));g.stroke();}}
+  g.strokeStyle=css('--muted');g.globalAlpha=.5;g.beginPath();g.moveTo(0,H/2);g.lineTo(Wd,H/2);g.stroke();g.globalAlpha=1;
+  const dx=Wd/(shown+1);
+  blk0.forEach((w,i)=>{const x=dx*(i+1);
+    g.strokeStyle=css('--copper');g.lineWidth=2;g.beginPath();g.moveTo(x,y(w));g.lineTo(x,y(deq[i]));g.stroke();
+    g.fillStyle=css('--ink');g.beginPath();g.arc(x,y(w),4.5,0,7);g.fill();
+    g.fillStyle=css('--copper');g.beginPath();g.arc(x,y(deq[i]),4.5,0,7);g.fill();});
+  const lvl=sch==='sym'?Math.pow(2,b):Math.pow(2,b);
+  $('#qOut').innerHTML=`
+   <div class="metric"><span class="k">Effective bits/weight</span><span class="v">${bpw.toFixed(2)}</span><span class="s">${b} bits + ${sch==='sym'?'16-bit scale':'16-bit scale and min'} ÷ ${bs}</span></div>
+   <div class="metric"><span class="k">Levels available</span><span class="v">${lvl}</span><span class="s">${levels.size} used by the first block</span></div>
+   <div class="metric"><span class="k">Signal-to-noise</span><span class="v">${snr.toFixed(1)} dB</span><span class="s">higher is better · each bit ≈ +6 dB</span></div>
+   <div class="metric"><span class="k">Qwen3-8B at this rate</span><span class="v">${(8.19*bpw/8).toFixed(1)} GB</span><span class="s">vs 16.4 GB BF16 · ${(16/bpw).toFixed(1)}× faster decode</span></div>`;
+}
+['#qBits','#qScheme','#qBlock'].forEach(s=>$(s).addEventListener('input',quant));
+$('#qNew').addEventListener('click',()=>{newW();quant();});
+$('#qOutlier').addEventListener('click',()=>{qOut=!qOut;$('#qOutlier').textContent=qOut?'Remove the outlier':'Add an outlier weight';if(qOut)qW[5]=0.2;else qW[5]=randn()*0.02;quant();});
+newW();
+
+/* ---------- MoE ---------- */
+const MOEP=[['Mixtral 8x7B',8,2,0],['Qwen3-30B-A3B',128,8,0],['Gemma 4 26B-A4B',128,8,1],['DeepSeek-V3',256,8,1],['Qwen3-Next',512,10,1]];
+$('#moePresets').innerHTML=MOEP.map((p,i)=>`<button type="button" data-i="${i}">${p[0]}</button>`).join('');
+$('#moePresets').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const p=MOEP[+b.dataset.i];$('#moeE').value=p[1];$('#moeK').value=p[2];$('#moeS').value=p[3];moeSel=+b.dataset.i;moeRoute();});
+let moeSel=3, moeActive=[], moeTimer=null;
+function moeRoute(){
+  const E=+$('#moeE').value,k=Math.min(+$('#moeK').value,E);
+  const set=new Set();while(set.size<k)set.add(Math.floor(Math.random()*E));moeActive=[...set];drawMoe();
+}
+function drawMoe(){
+  const E=+$('#moeE').value,k=Math.min(+$('#moeK').value,E),S=+$('#moeS').value;
+  $('#moeEO').textContent=E;$('#moeKO').textContent=k;$('#moeSO').textContent=S;
+  document.querySelectorAll('#moePresets button').forEach((b,i)=>{const p=MOEP[i];b.classList.toggle('on',p[1]===E&&p[2]===k&&p[3]===S);});
+  const cv=$('#moeCanvas'),g=cv.getContext('2d'),W=cv.width,H=cv.height;g.clearRect(0,0,W,H);
+  const cols=Math.ceil(Math.sqrt(E*3.2)),rows=Math.ceil(E/cols);
+  const gx0=260,gw=W-gx0-20,cell=Math.min(gw/cols,(H-30)/rows);const r=Math.max(2,cell*0.36);
+  const pos=i=>[gx0+(i%cols+0.5)*cell,15+(Math.floor(i/cols)+0.5)*cell];
+  // token & router
+  g.fillStyle=css('--ink');g.font='600 15px "IBM Plex Sans",sans-serif';g.fillText('token',24,H/2-30);
+  g.fillStyle=css('--copper');g.beginPath();g.arc(50,H/2,14,0,7);g.fill();
+  g.fillStyle=css('--surface');g.fillRect(110,H/2-22,90,44);g.strokeStyle=css('--line');g.strokeRect(110,H/2-22,90,44);
+  g.fillStyle=css('--ink');g.font='13px "IBM Plex Sans",sans-serif';g.fillText('router',132,H/2+5);
+  g.strokeStyle=css('--muted');g.beginPath();g.moveTo(64,H/2);g.lineTo(110,H/2);g.stroke();
+  g.strokeStyle=css('--copper');g.globalAlpha=.55;g.lineWidth=1.3;
+  moeActive.filter(i=>i<E).forEach(i=>{const [x,y]=pos(i);g.beginPath();g.moveTo(200,H/2);g.lineTo(x,y);g.stroke();});g.globalAlpha=1;
+  for(let i=0;i<E;i++){const [x,y]=pos(i);const on=moeActive.includes(i);g.fillStyle=on?css('--copper'):css('--line');g.beginPath();g.arc(x,y,on?r*1.25:r,0,7);g.fill();}
+  if(S){g.fillStyle=css('--teal');for(let s=0;s<S;s++){g.beginPath();g.arc(155+(s-(S-1)/2)*26,H/2+52,9,0,7);g.fill();}g.fillStyle=css('--muted');g.font='12px "IBM Plex Sans",sans-serif';g.fillText('shared (always on)',112,H/2+80);}
+  const frac=(k+S)/(E+S);
+  $('#moeText').innerHTML=`Each token uses <b>${k+S} of ${E+S}</b> experts, so <b>${(frac*100).toFixed(1)}%</b> of the expert weights are read. All ${E+S} must still be in memory. That is why MoE suits big-RAM CPUs and Macs, and why <code>-ot exps=CPU</code> works: experts sit in RAM, and the always-used attention layers stay on the GPU. More, smaller experts (DeepSeekMoE's "fine-grained" idea) give the router more combinations to specialize with.<a class="cite" href="#s19">[19]</a>`;
+}
+['#moeE','#moeK','#moeS'].forEach(s=>$(s).addEventListener('input',moeRoute));
+moeRoute();
+
+/* ---------- Sampling ---------- */
+const CAND=[[' Abuja',6.0],[' Lagos',3.6],[' a',2.2],[' the',1.9],[' located',1.4],[' Kano',0.8],[' not',0.3],[' Ibadan',0.0],[' in',-0.2],[' one',-0.6]];
+let smLast=null;
+function sampleDist(){
+  const T=+$('#smT').value/100,K=+$('#smK').value,P=+$('#smP').value/100,MP=+$('#smM').value/100;
+  $('#smTO').textContent=T.toFixed(2);$('#smKO').textContent=K;$('#smPO').textContent=P.toFixed(2);$('#smMO').textContent=MP.toFixed(2);
+  let p;
+  if(T===0){p=CAND.map((c,i)=>i===0?1:0);} else {const z=CAND.map(c=>c[1]/T);const mx=Math.max(...z);const e=z.map(v=>Math.exp(v-mx));const s=e.reduce((a,b)=>a+b,0);p=e.map(v=>v/s);}
+  const raw=p.slice();
+  let keep=p.map((v,i)=>i<K);
+  let cum=0;keep=keep.map((k,i)=>{if(!k)return false;const ok=cum<P;cum+=p[i];return ok;});
+  const pmax=Math.max(...p);keep=keep.map((k,i)=>k&&p[i]>=MP*pmax);
+  const s=p.reduce((a,v,i)=>a+(keep[i]?v:0),0);
+  const fin=p.map((v,i)=>keep[i]?v/s:0);
+  return {raw,fin,keep};
+}
+function drawSm(){
+  const {raw,fin,keep}=sampleDist();
+  const ink=css('--ink'),mut=css('--muted'),cop=css('--copper'),line=css('--line');
+  let s='';const x0=110,w=520,rh=27;
+  CAND.forEach((c,i)=>{const y=10+i*rh;
+    s+=`<text x="${x0-10}" y="${y+15}" text-anchor="end" fill="${keep[i]?ink:mut}" font-size="13" font-family="JetBrains Mono, monospace">"${c[0]}"</text>`;
+    s+=`<rect x="${x0}" y="${y+2}" width="${Math.max(0.5,w*raw[i])}" height="18" rx="2" fill="${line}"/>`;
+    if(keep[i]) s+=`<rect x="${x0}" y="${y+6}" width="${Math.max(1,w*fin[i])}" height="10" rx="2" fill="${cop}"/>`;
+    s+=`<text x="${x0+Math.max(w*raw[i],w*fin[i])+8}" y="${y+15}" fill="${keep[i]?ink:mut}" font-size="11">${keep[i]?(fin[i]*100).toFixed(1)+'%':'filtered'}</text>`;});
+  $('#smSvg').innerHTML=s+`<text x="${x0}" y="292" fill="${mut}" font-size="11">grey = probability after temperature · copper = after top-k / top-p / min-p, renormalized</text>`;
+  return fin;
+}
+['#smT','#smK','#smP','#smM'].forEach(s=>$(s).addEventListener('input',drawSm));
+$('#smGo').addEventListener('click',()=>{const fin=drawSm();const counts={};for(let n=0;n<30;n++){let r=Math.random(),i=0;for(;i<fin.length-1;i++){r-=fin[i];if(r<=0)break;}counts[CAND[i][0]]=(counts[CAND[i][0]]||0)+1;}
+  $('#smOut').innerHTML='30 samples: '+Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([t,c])=>`<code>${t.trim()}</code> × ${c}`).join(' · ')+'. Sampling changes what you get, never the speed: the logits are computed either way.';});
+
+/* ---------- Mini orbit helper ---------- */
+function orbit(canvas,cam,target,state,onChange){
+  let drag=null;
+  canvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,t:state.theta,p:state.phi};canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{if(!drag)return;state.theta=drag.t-(e.clientX-drag.x)*0.008;state.phi=Math.max(0.15,Math.min(1.45,drag.p-(e.clientY-drag.y)*0.006));onChange();});
+  const end=()=>{drag=null;};canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+  return ()=>{cam.position.set(target.x+state.r*Math.sin(state.phi)*Math.sin(state.theta),target.y+state.r*Math.cos(state.phi),target.z+state.r*Math.sin(state.phi)*Math.cos(state.theta));cam.lookAt(target);};
+}
+function visible(el,cb){if(!('IntersectionObserver' in window)){cb(true);return;}new IntersectionObserver(es=>es.forEach(e=>cb(e.isIntersecting)),{threshold:0.05}).observe(el);}
+
+/* ---------- 3D anatomy ---------- */
+const AN={};
+function initAnatomy(){
+  if(!window.THREE){$('#anNote').textContent='3D view unavailable (Three.js failed to load).';return;}
+  const cv=$('#anCanvas'),stage=$('#anStage');
+  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(40,1,0.1,500);
+  scene.add(new THREE.AmbientLight(0xffffff,0.75));const dl=new THREE.DirectionalLight(0xffffff,0.6);dl.position.set(5,10,7);scene.add(dl);
+  const group=new THREE.Group();scene.add(group);
+  const target=new THREE.Vector3(0,0,0),st={theta:0.7,phi:1.1,r:30};
+  const place=orbit(cv,cam,target,st,()=>{place();render();});
+  Object.assign(AN,{renderer,scene,cam,group,target,st,place,meshes:[],pulse:null,playing:!reduce,vis:false,expertMesh:null});
+  function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();render();}
+  window.addEventListener('resize',resize);AN.resize=resize;
+  // hover
+  const ray=new THREE.Raycaster(),mouse=new THREE.Vector2(),tip=$('#anTip');
+  cv.addEventListener('pointermove',e=>{const r=cv.getBoundingClientRect();mouse.x=((e.clientX-r.left)/r.width)*2-1;mouse.y=-((e.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,cam);
+    const hit=ray.intersectObjects(AN.meshes,false)[0];
+    if(hit&&hit.object.userData.info){tip.hidden=false;tip.innerHTML=hit.object.userData.info;tip.style.left=Math.min(r.width-250,e.clientX-r.left+14)+'px';tip.style.top=(e.clientY-r.top+14)+'px';}else tip.hidden=true;});
+  cv.addEventListener('pointerleave',()=>{tip.hidden=true;});
+  $('#anIn').addEventListener('click',()=>{st.r=Math.max(6,st.r*0.82);place();render();});
+  $('#anOut').addEventListener('click',()=>{st.r=Math.min(140,st.r*1.22);place();render();});
+  $('#anPlay').textContent=AN.playing?'Pause pulse':'Play pulse';
+  $('#anPlay').addEventListener('click',()=>{AN.playing=!AN.playing;$('#anPlay').textContent=AN.playing?'Pause pulse':'Play pulse';if(AN.playing)loop();});
+  visible(stage,v=>{AN.vis=v;if(v){resize();loop();}});
+  buildAnatomy();resize();
+}
+function render(){if(AN.renderer)AN.renderer.render(AN.scene,AN.cam);}
+const TYPECOL={full:'--copper',global:'--copper',linear:'--teal',local:'--violet',mla:'--teal'};
+const TYPENAME={full:'Full attention (GQA)',global:'Global attention',linear:'Gated DeltaNet (linear)',local:'Sliding-window attention',mla:'Multi-head Latent Attention'};
+function buildAnatomy(){
+  const m=byId($('#anModel').value);const G=AN.group;
+  while(G.children.length){const c=G.children.pop();c.geometry&&c.geometry.dispose();}
+  AN.meshes=[];AN.layers=[];
+  const hid=m.hidden||5376;const w=1.6+3.4*(hid/7168);
+  const h=0.16,gap=0.07,per=2*h+gap;const H=m.L*per;
+  const y0=-H/2;
+  const mat=c=>new THREE.MeshLambertMaterial({color:new THREE.Color(css(c)),emissive:new THREE.Color(0x000000)});
+  // embedding plate
+  const emb=new THREE.Mesh(new THREE.BoxGeometry(w*1.35,0.12,w*1.35),mat('--muted'));emb.position.y=y0-0.35;G.add(emb);
+  emb.userData.info=`<b>Embedding</b><br>vocab × ${m.hidden||'hidden'} lookup table<br>Each token reads only one row.`;AN.meshes.push(emb);
+  const head=new THREE.Mesh(new THREE.BoxGeometry(w*1.35,0.12,w*1.35),mat('--muted'));head.position.y=y0+H+0.3;G.add(head);
+  head.userData.info=`<b>LM head</b><br>hidden → vocab logits<br>Read fully on every token.`;AN.meshes.push(head);
+  // spine
+  const sp=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,H+0.8,8),new THREE.MeshBasicMaterial({color:new THREE.Color(css('--ink'))}));sp.position.set(-w*0.5-0.35,y0+H/2,w*0.5+0.35);G.add(sp);
+  // experts instanced
+  let inst=null,EX=0;
+  if(m.moe){EX=Math.min(32,m.moe.E);const eg=new THREE.BoxGeometry(1,1,1);inst=new THREE.InstancedMesh(eg,new THREE.MeshLambertMaterial({color:0xffffff}),m.L*EX);G.add(inst);AN.meshes.push(inst);
+    inst.userData.info=`<b>MoE experts</b><br>${m.moe.E} routed${m.moe.s?' + '+m.moe.s+' shared':''} · top-${m.moe.k}<br>(${EX} drawn per layer)`;}
+  const dummy=new THREE.Object3D(),cOff=new THREE.Color(css('--line')),cOn=new THREE.Color(css('--gold'));
+  for(let i=0;i<m.L;i++){
+    const t=m.pat(i);const y=y0+i*per;
+    const a=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat(TYPECOL[t]));a.position.y=y+h/2;G.add(a);
+    a.userData.info=`<b>Layer ${i+1} · ${TYPENAME[t]}</b><br>${t==='linear'?'Fixed state, no KV cache':t==='local'?'KV kept for last '+m.win+' tokens':t==='mla'?'Caches 576 values/token':'KV grows with context'}<br>${m.heads?m.heads+' Q heads':''}${m.kv&&t!=='linear'?' · '+(t==='global'&&m.id.startsWith('gemma4')?'fewer':m.kv)+' KV heads':''}`;
+    AN.meshes.push(a);
+    let f=null;
+    if(!m.moe){f=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),mat('--steel'));f.position.y=y+h+h/2+0.01;G.add(f);
+      f.userData.info=`<b>Layer ${i+1} · MLP</b><br>${m.mlp}${m.ffn?' · '+m.hidden+' → '+m.ffn+' → '+m.hidden:''}<br>${m.ffn&&m.hidden?((3*m.hidden*m.ffn)/1e6).toFixed(0)+' M weights':''}`;AN.meshes.push(f);}
+    else {const cols=8,rows=Math.ceil(EX/cols),cw=w/cols,cd=w/rows;
+      for(let e=0;e<EX;e++){dummy.position.set(-w/2+cw*(e%cols+0.5),y+h+h/2+0.01,-w/2+cd*(Math.floor(e/cols)+0.5));dummy.scale.set(cw*0.82,h,cd*0.82);dummy.updateMatrix();inst.setMatrixAt(i*EX+e,dummy.matrix);inst.setColorAt(i*EX+e,cOff);}}
+    AN.layers.push({a,f,y});
+  }
+  if(inst){inst.instanceMatrix.needsUpdate=true;inst.instanceColor.needsUpdate=true;}
+  AN.inst=inst;AN.EX=EX;AN.m=m;AN.cOff=cOff;AN.cOn=cOn;
+  // pulse
+  const pg=new THREE.SphereGeometry(Math.max(0.18,w*0.07),16,12);const pm=new THREE.MeshBasicMaterial({color:new THREE.Color(css('--copper'))});
+  AN.pulse=new THREE.Mesh(pg,pm);AN.pulse.position.set(w*0.5+0.5,y0,0);G.add(AN.pulse);
+  AN.y0=y0;AN.H=H;AN.per=per;AN.w=w;
+  AN.st.r=Math.max(12,H*1.9+w*2.2);AN.target.set(0,0,0);AN.place();
+  // legend & facts
+  const types=[...new Set(Array.from({length:m.L},(_,i)=>m.pat(i)))];
+  $('#anLegend').innerHTML=types.map(t=>`<span><i style="background:var(${TYPECOL[t]})"></i>${TYPENAME[t]}</span>`).join('')+`<span><i style="background:var(${m.moe?'--gold':'--steel'})"></i>${m.moe?'Experts (lit = routed)':'MLP'}</span><span><i style="background:var(--muted)"></i>Embedding / LM head</span>`;
+  const kvT=kvPerTok(m);
+  $('#anFacts').innerHTML=`
+   <div class="metric"><span class="k">Parameters</span><span class="v">${m.total} B</span><span class="s">${m.active!==m.total?m.active+' B active per token':'all active per token'}</span></div>
+   <div class="metric"><span class="k">Layers</span><span class="v">${m.L}</span><span class="s">${m.attn}</span></div>
+   <div class="metric"><span class="k">KV per token</span><span class="v">${Math.round(kvT/KiB)} KiB</span><span class="s">${m.win?'global layers only, local capped at '+m.win:'BF16, all layers'}</span></div>
+   <div class="metric"><span class="k">BF16 size</span><span class="v">${(m.total*2).toFixed(m.total<10?1:0)} GB</span><span class="s">Q4_K_M ≈ ${(m.total*4.89/8).toFixed(1)} GB</span></div>`;
+  const notes={
+   'qwen3-8b':'Uniform stack: every layer is identical full GQA attention + SwiGLU. This regularity is why every engine runs it well.',
+   'qwen35-9b':'Every 4th layer is full attention, the other 3 are Gated DeltaNet. Only 8 layers hold a KV cache.',
+   'qwen3-30b-a3b':'48 thin layers (hidden 2048). Each MLP is 128 tiny experts, and 8 light up per token.',
+   'deepseek-v3':'61 wide layers (hidden 7168). The first 3 use dense MLPs; that detail is simplified here.',
+   'gemma3-4b':'Copper global layers every 6th. Violet sliding-window layers only remember the last 1024 tokens.',
+   'gemma4-26b':'Hidden size is not in the sources used, so slab width is illustrative.',
+   'gemma4-31b':'Hidden size is not in the sources used, so slab width is illustrative.',
+   'qwen1-7b':'2023 design: full MHA, so the KV cache is 4× larger than Qwen3-8B despite a similar size.'};
+  $('#anNote').textContent=notes[m.id]||'Slab width ∝ hidden size, one slab pair per layer (attention, then MLP).';
+  render();
+}
+let anT0=performance.now(),anLast=-1,raf=null;
+function loop(){
+  if(raf||!AN.renderer)return;
+  const tick=now=>{raf=null;if(!AN.vis)return;
+    if(AN.playing){
+      const T=3200,ph=((now-anT0)%T)/T;const y=AN.y0-0.35+ph*(AN.H+0.7);AN.pulse.position.y=y;
+      const li=Math.floor((y-AN.y0)/AN.per);
+      AN.layers.forEach((L,i)=>{const on=i===li;L.a.material.emissive.setRGB(on?0.35:0,on?0.22:0,on?0.1:0);if(L.f)L.f.material.emissive.setRGB(on?0.3:0,on?0.25:0,0);});
+      if(AN.inst&&li!==anLast){
+        if(anLast>=0&&anLast<AN.m.L)for(let e=0;e<AN.EX;e++)AN.inst.setColorAt(anLast*AN.EX+e,AN.cOff);
+        if(li>=0&&li<AN.m.L){const k=Math.max(1,Math.round(AN.m.moe.k*AN.EX/AN.m.moe.E));const s=new Set();while(s.size<k)s.add(Math.floor(Math.random()*AN.EX));s.forEach(e=>AN.inst.setColorAt(li*AN.EX+e,AN.cOn));}
+        AN.inst.instanceColor.needsUpdate=true;anLast=li;}
+      AN.st.theta+=0.0016;AN.place();
+    }
+    render();if(AN.playing)raf=requestAnimationFrame(tick);};
+  raf=requestAnimationFrame(tick);
+}
+$('#anModel').innerHTML=MODELS.filter(m=>!['qwen3-0.6b','qwen3-4b','qwen3-14b','qwen3-1.7b'].includes(m.id)).map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+$('#anModel').value='qwen3-8b';
+$('#anModel').addEventListener('change',()=>{if(AN.renderer){anLast=-1;buildAnatomy();}});
+
+/* ---------- 3D abliteration ---------- */
+const AB={};
+function initAblit(){
+  if(!window.THREE)return;
+  const cv=$('#abCanvas'),stage=$('#abStage');
+  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(42,1,0.1,100);
+  const target=new THREE.Vector3(0,0.6,0),st={theta:0.9,phi:1.05,r:12.5};
+  const place=orbit(cv,cam,target,st,()=>{place();rend();});
+  const r=new THREE.Vector3(0.55,0.75,0.35).normalize();
+  const N=260;const base=[],harm=[];
+  for(let i=0;i<N;i++){base.push(new THREE.Vector3(randn()*0.7,randn()*0.45,randn()*0.7));}
+  for(let i=0;i<N;i++){harm.push(new THREE.Vector3(randn()*0.7,randn()*0.45,randn()*0.7).addScaledVector(r,2.4));}
+  const mk=(pts,col)=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pts.length*3),3));const p=new THREE.Points(g,new THREE.PointsMaterial({color:new THREE.Color(css(col)),size:0.09}));scene.add(p);return p;};
+  const pB=mk(base,'--teal'),pH=mk(harm,'--copper');
+  const meanB=new THREE.Vector3(),meanH=new THREE.Vector3();base.forEach(v=>meanB.add(v));meanB.divideScalar(N);harm.forEach(v=>meanH.add(v));meanH.divideScalar(N);
+  const arrow=new THREE.ArrowHelper(r,meanB,meanH.clone().sub(meanB).length(),new THREE.Color(css('--ink')).getHex(),0.35,0.2);scene.add(arrow);
+  const plane=new THREE.Mesh(new THREE.CircleGeometry(2.6,48),new THREE.MeshBasicMaterial({color:new THREE.Color(css('--violet')),transparent:true,opacity:0.12,side:THREE.DoubleSide}));
+  plane.lookAt(r);scene.add(plane);
+  const grid=new THREE.GridHelper(8,16,new THREE.Color(css('--line')).getHex(),new THREE.Color(css('--line')).getHex());grid.position.y=-1.6;scene.add(grid);
+  function update(){
+    const a=+$('#abA').value/100;$('#abAO').textContent=Math.round(a*100)+'%';
+    const set=(pts,P)=>{const arr=P.geometry.attributes.position.array;pts.forEach((v,i)=>{const d=v.dot(r);arr[i*3]=v.x-a*d*r.x;arr[i*3+1]=v.y-a*d*r.y;arr[i*3+2]=v.z-a*d*r.z;});P.geometry.attributes.position.needsUpdate=true;};
+    set(base,pB);set(harm,pH);
+    const proj=pts=>pts.reduce((s,v)=>s+v.dot(r)*(1-a),0)/pts.length;
+    const ph=proj(harm),pb=proj(base);
+    arrow.setLength(Math.max(0.05,(1-a)*meanH.clone().sub(meanB).length()),0.35*(1-a)+0.05,0.2*(1-a)+0.03);
+    arrow.position.copy(meanB.clone().addScaledVector(r,-a*meanB.dot(r)));
+    const refusing=ph-pb>1.2;
+    $('#abOut').innerHTML=`<div class="metric"><span class="k">Refusal signal</span><span class="v">${(ph-pb).toFixed(2)}</span><span class="s">mean projection on r, copper − teal</span></div>
+      <div class="metric"><span class="k">Model behaviour</span><span class="v" style="font-size:1.1rem">${refusing?'Refuses':a>0.95?'Never refuses':'Inconsistent'}</span><span class="s"><span class="pill ${refusing?'good':a>0.95?'bad':'warn'}">${refusing?'safety intact':a>0.95?'abliterated':'partial'}</span></span></div>`;
+    rend();
+  }
+  function rend(){renderer.render(scene,cam);}
+  function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();rend();}
+  window.addEventListener('resize',resize);
+  $('#abA').addEventListener('input',update);
+  $('#abReset').addEventListener('click',()=>{$('#abA').value=0;update();});
+  place();resize();update();
+  let raf2=null,vis=false;
+  const spin=()=>{raf2=null;if(!vis||reduce)return;st.theta+=0.002;place();rend();raf2=requestAnimationFrame(spin);};
+  visible(stage,v=>{vis=v;if(v){resize();if(!raf2)raf2=requestAnimationFrame(spin);}});
+  Object.assign(AB,{update,resize,rend});
+}
+
+/* ---------- nav highlight ---------- */
+const links=[...document.querySelectorAll('#rail a')];
+if('IntersectionObserver' in window){
+  const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+e.target.id));}});},{rootMargin:'-35% 0px -60% 0px'});
+  document.querySelectorAll('main section').forEach(s=>io.observe(s));
+}
+
+/* ---------- boot & theme ---------- */
+function redrawAll(){drawAttn();drawKV();drawMasks();quant();drawMoe();drawSm();}
+redrawAll();
+try{initAnatomy();}catch(e){$('#anNote').textContent='3D view unavailable in this browser.';}
+try{initAblit();}catch(e){}
+const mq=window.matchMedia('(prefers-color-scheme: dark)');
+const retheme=()=>{redrawAll();if(AN.renderer){anLast=-1;buildAnatomy();}};
+if(mq.addEventListener)mq.addEventListener('change',retheme);
+new MutationObserver(retheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+if(location.hash){const t=document.getElementById(location.hash.slice(1));if(t)setTimeout(()=>t.scrollIntoView(),50);}
+})();
+</script>
+</body>
+</html>
