@@ -80,6 +80,7 @@ function ffnParams(a,i){
   const F=(a.moe&&a.moe.denseFfn)?a.moe.denseFfn:a.ffn;
   return {gu:2*h*F,down:F*h,stored:3*h*F};
 }
+TJ.mixParams=mixParams;TJ.ffnParams=ffnParams;
 TJ.totals=function(a){
   let stored=0,active=0;
   for(let i=0;i<a.L;i++){const m=mixParams(a,i),f=ffnParams(a,i);const mp=(m.qkv+(m.up||0)+(m.idx||0)+m.o);

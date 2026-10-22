@@ -210,6 +210,28 @@ button.pulse{animation:pulse 1.4s ease-in-out infinite}
 .costbar i.on{opacity:1;box-shadow:inset 0 0 0 2px var(--ink)}
 #jCostLegend span.on{color:var(--ink);font-weight:600}
 td.mono{font-family:var(--mono);font-size:.76rem}
+
+[hidden]{display:none!important}
+.now:has(b:empty){display:none}
+.tokline{display:flex;flex-wrap:wrap;gap:4px}
+.tokline .tk{font-family:var(--mono);font-size:.74rem;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 7px;color:var(--muted)}
+.tokline .tk.gen{border-color:var(--copper);color:var(--copper)}
+.tokline .tk.cur{background:var(--gold);color:var(--surface);border-color:var(--gold)}
+.tokline .tk.next{border-style:dashed}
+.crumbbar{position:absolute;left:10px;top:10px;right:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;pointer-events:none}
+.crumbbar>*{pointer-events:auto}
+.crumbbar button{font-size:.76rem;padding:3px 9px;background:var(--surface)}
+.crumbbar button:disabled{opacity:.4;cursor:default}
+.crumbs{display:flex;align-items:center;gap:6px;font-size:.82rem;background:color-mix(in srgb,var(--surface) 90%,transparent);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+.crumbs button{border:none;background:none;padding:2px 4px;color:var(--copper);font-weight:600}
+.crumbs span{color:var(--muted)}
+.lnav{margin-left:auto;display:flex;gap:4px}
+.tip{position:absolute;left:0;top:0;pointer-events:none;background:var(--ink);color:var(--bg);font-size:.76rem;padding:4px 8px;border-radius:5px;max-width:320px;z-index:3}
+.lbl3{line-height:1.3;white-space:nowrap}
+.lbl3 b{color:var(--ink)}
+.lbl3.s-r,.lbl3.s-l,.lbl3.s-t{font-family:var(--body);font-size:.74rem;color:var(--muted);background:color-mix(in srgb,var(--sunk) 82%,transparent);padding:1px 5px;border-radius:4px;text-shadow:none}
+.lbl3.shape,.lbl3.tick,.lbl3.tok{font-family:var(--mono);font-size:.64rem;background:none;padding:0}
+.lbl3 .open{color:var(--copper);font-weight:600}
 ol.src{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:5px;font-size:.88rem}
 @media (max-width:1100px){.jgrid{grid-template-columns:minmax(0,1fr)}.inspector{max-height:none}.stage.tall{height:560px}}
 @media (max-width:560px){.stage.tall{height:440px}.views{max-width:100%}.now{bottom:62px}}
@@ -222,7 +244,7 @@ ol.src{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:5px;fo
   <a class="hub" href="attention-memory.html">← Attention &amp; Memory (part 2)</a>
   <div class="brand">Token Journey<br><span>in 3D</span></div>
   <a href="#start">How to use this</a>
-  <a href="#journey">1 · Follow one token</a>
+  <a href="#journey">1 · Explore the architecture</a>
   <a href="#act">2 · Activations in 3D</a>
   <a href="#opt">3 · Optimizers on a landscape</a>
   <a href="#train">4 · Train a tiny model</a>
@@ -234,50 +256,50 @@ ol.src{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:5px;fo
 
 <section id="start" class="hero">
   <span class="eyebrow">LLM Inference Field Guide · Part 3</span>
-  <h1>Follow one token <em>through the whole model</em>, in 3D</h1>
-  <p class="lede">Type a prompt. Then watch the last token turn into an ID, then a vector, climb every layer of a real architecture (Qwen, Gemma or DeepSeek) and come out as a probability for the next word. Click any part to see what it does, its real shapes, and how long it takes on your hardware.</p>
+  <h1>Open up a model, <em>layer by layer</em>, in 3D</h1>
+  <p class="lede">Open a real architecture the way you'd take apart a machine. Start with the whole model, click a layer to open it, then click a part to see every operation inside. Your prompt's last token flows through whichever level you're looking at.</p>
   <div class="howto">
-    <div><b>1 · Watch</b><span>Press play. The gold ball climbs the tower (the whole model). The magnified layer on the right runs every sub-step.</span></div>
-    <div><b>2 · Click</b><span>Click any block, cube or slab. The panel explains it with this run's actual numbers. Click a tower slab to magnify that layer.</span></div>
-    <div><b>3 · Change</b><span>Switch architecture, activation, hardware, quantization or context, then see what moves and what gets slower.</span></div>
+    <div><b>1 · The whole model</b><span>Every layer of Qwen, Gemma or DeepSeek, stacked in order and color-coded by type. Compare up to three side by side at the same scale.</span></div>
+    <div><b>2 · Open a layer</b><span>Click any layer. It opens into its pipeline: norm → attention → add → norm → FFN → add, with the residual stream as the spine.</span></div>
+    <div><b>3 · Open a part</b><span>Click the attention or FFN block to see the heads, KV cache, score grid, experts or state matrices. Press Play to run your token through it.</span></div>
   </div>
-  <div class="callout c"><b class="t">What is real and what is a stand-in</b><p>The <b>structure</b> is real: layer count and pattern, head ratios, norms, RoPE, cache layout, router, LM head. So are the <b>costs</b>: bytes and times come from each model's official config. The <b>numbers flowing through</b> come from a 16-dimensional toy with the same wiring and random weights, so you can see every value. Because those weights are untrained, the toy's next word is noise. The math path is identical.</p></div>
+  <div class="callout c"><b class="t">What is real and what is a stand-in</b><p>The <b>structure</b> is real: layer count and pattern, head counts and grouping, norms, cache layout, router, LM head. So are the <b>shapes and costs</b>: they come from each model's official config. The <b>numbers flowing through</b> (vector bars, scores, states) come from a 16-dimensional toy with the same wiring and random weights, so you can see every value. Its next word is noise; the math path is identical.</p></div>
 </section>
 
 <section id="journey">
-  <span class="eyebrow">1 · Follow one token</span>
-  <h2>From text to the next word</h2>
+  <span class="eyebrow">1 · Explore the architecture</span>
+  <h2>Model → layer → part</h2>
   <div class="bench">
     <div class="controls">
       <label class="ctl" style="flex:1 1 260px">Architecture<select id="jArch"></select></label>
+      <label class="chk" style="align-self:center"><input type="checkbox" id="jCompare"> Compare side by side</label>
       <label class="ctl" style="flex:2 1 280px">Prompt (press Enter)<input id="jPrompt" type="text" value="the model reads the cache and predicts the next" maxlength="160"></label>
       <div class="ctl"><span>&nbsp;</span><div class="btnrow"><button type="button" id="jRun">Run prompt</button><button type="button" id="jNext" class="primary">Generate next token</button></div></div>
     </div>
+    <div id="jCmpPick" class="chkrow" hidden></div>
     <p class="note" id="jArchBlurb"></p>
+    <div id="jToks" class="tokline" aria-label="Tokens"></div>
+    <div class="jgrid">
+      <div class="stage tall" id="jStage">
+        <canvas id="jCanvas" aria-label="3D architecture explorer: click a layer to open it, then click a part"></canvas>
+        <div id="jLabels" class="lbls"></div>
+        <div class="crumbbar"><button type="button" id="jBack" aria-label="Back up one level">← Back</button><nav id="jCrumbs" class="crumbs" aria-label="Where you are"></nav><span class="lnav"><button type="button" id="jPrevL" aria-label="Previous layer">◀ layer</button><button type="button" id="jNextL" aria-label="Next layer">layer ▶</button></span></div>
+        <div id="jTip" class="tip" hidden></div>
+        <div class="now"><b id="jStageName"></b></div>
+        <div class="views"><button type="button" id="jReset">Reset view</button><button type="button" id="jZoomIn" aria-label="Zoom in">+</button><button type="button" id="jZoomOut" aria-label="Zoom out">−</button></div>
+      </div>
+      <aside class="inspector" id="jInspector" aria-live="polite"><p class="note">Hover anything for its name. Click a layer to open it, or click any part to explain it here.</p></aside>
+    </div>
     <div class="transport">
       <button type="button" id="jRestart" title="Restart">⏮</button>
       <button type="button" id="jPrev" title="Previous step">◀</button>
-      <button type="button" id="jPlay">▶ Play</button>
+      <button type="button" id="jPlay" class="primary">▶ Play</button>
       <button type="button" id="jStep" title="Next step">▶|</button>
       <label class="ctl inline">Speed<select id="jSpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
-      <label class="ctl inline">Pace<select id="jPace"><option value="explain">Explain (even steps)</option><option value="real">Real-time proportions</option></select></label>
-      <label class="ctl inline">Magnify<select id="jFocus"></select></label>
-      <label class="chk"><input type="checkbox" id="jAll"> Every layer in detail</label>
-      <label class="chk"><input type="checkbox" id="jFollow" checked> Camera follows</label>
+      <span class="note">Play runs your token through the level you're looking at.</span>
     </div>
-    <div class="jgrid">
-      <div class="stage tall" id="jStage">
-        <canvas id="jCanvas" aria-label="3D view of the model: a tower of layers, a magnified layer with attention and FFN, the residual stream, embedding table and LM head"></canvas>
-        <div id="jLabels" class="lbls"></div>
-        <div id="jToks" class="toks"></div>
-        <div class="now"><b id="jStageName"></b><span id="jReal"></span></div>
-        <div id="jViews" class="views"><button type="button" data-v="all">Whole</button><button type="button" data-v="tower">Tower</button><button type="button" data-v="emb">Embed</button><button type="button" data-v="attn">Attention</button><button type="button" data-v="ffn">FFN</button><button type="button" data-v="out">Output</button><button type="button" id="jZoomIn" aria-label="Zoom in">+</button><button type="button" id="jZoomOut" aria-label="Zoom out">−</button></div>
-        <span class="hint">Drag to orbit · click anything</span>
-      </div>
-      <aside class="inspector" id="jInspector" aria-live="polite"></aside>
-    </div>
-    <div id="jChips" class="stagechips" aria-label="Steps"></div>
-    <div class="legend"><span><i style="background:var(--copper)"></i>Full attention layer</span><span><i style="background:var(--teal)"></i>Local (sliding-window) layer</span><span><i style="background:var(--violet)"></i>Linear-attention layer · norms</span><span><i style="background:var(--gold)"></i>MoE stripe · residual adds · LM head</span><span><i style="background:linear-gradient(90deg,var(--teal),var(--copper))"></i>Vector values: negative → positive</span></div>
+    <div id="jChips" class="stagechips" aria-label="Steps at this level"></div>
+    <div class="legend" id="jLegend"></div>
   </div>
 
   <div class="bench">
@@ -398,9 +420,9 @@ ol.src{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:5px;fo
 </main>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="tj-model.js?v=6"></script>
-<script src="tj-scene.js?v=6"></script>
-<script src="tj-labs.js?v=6"></script>
+<script src="tj-model.js?v=18"></script>
+<script src="tj-explore.js?v=18"></script>
+<script src="tj-labs.js?v=18"></script>
 <script>
 (function(){
 const S=[["Vaswani et al., Attention Is All You Need (2017)","https://arxiv.org/abs/1706.03762"],
