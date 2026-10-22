@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Attention &amp; Memory, Worked: MHA to GQA, MLA, DSA</title>
+<meta name="description" content="Part 2 of the LLM Inference Field Guide. Every byte of a model's memory counted by hand for Qwen3, and attention rebuilt from multi-head through GQA, MQA, MLA, sliding windows, DeepSeek Sparse Attention and linear attention, with worked numbers and 3D cache views.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#EDF0F3">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-Research/llm-inference/attention-memory.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Attention & Memory, Worked">
+<meta property="og:description" content="Count every byte of Qwen3-8B by hand, then watch the KV cache change shape from MHA to GQA, MLA, DSA and linear attention in 3D.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-Research/llm-inference/attention-memory.html">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-Research/llm-inference/preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<script>
+(function(){
+  var KEY="site-theme",root=document.documentElement;
+  function preferred(){var s=null;try{s=localStorage.getItem(KEY)}catch(e){}
+    if(s==="light"||s==="dark")return s;
+    return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+  root.setAttribute("data-theme",preferred());
+  function apply(m){root.setAttribute("data-theme",m);
+    var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",m==="dark"?"#0D131A":"#EDF0F3");
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b){b.querySelector(".ico").textContent=m==="dark"?"☀":"☾";b.querySelector(".lbl").textContent=m==="dark"?"Light":"Dark";}}
+  document.addEventListener("DOMContentLoaded",function(){
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b)b.addEventListener("click",function(){var n=root.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(KEY,n)}catch(e){}apply(n);});
+    apply(root.getAttribute("data-theme"));});
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Same system as the Field Guide: steel paper, copper traces. Worked-number "receipts" are the signature element. */
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --sunk:#E3E8ED; --ink:#15202B; --muted:#586676; --line:#CFD7DF;
+  --copper:#B2532A; --steel:#8696A6; --teal:#1C7673; --teal2:#4FA6A2; --violet:#5A4AAE; --gold:#9A7210; --good:#2E7D4F; --warn:#A86A12; --bad:#B03A3A;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;margin:0}
+a{color:var(--copper)}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.1;margin:0}
+h2{font-size:clamp(1.6rem,3.2vw,2.3rem);font-stretch:112%;font-weight:760}
+h3{font-size:1.12rem;font-stretch:105%;font-weight:680}
+p{margin:0}
+code{font-family:var(--mono);font-size:.84em;background:var(--sunk);padding:.08em .35em;border-radius:4px}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px;max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 80px}
+nav.rail{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding-block:28px;display:flex;flex-direction:column;gap:2px;font-size:.88rem}
+nav.rail .brand{font-family:var(--display);font-stretch:118%;font-weight:800;font-size:1.02rem;line-height:1.15;margin-bottom:18px}
+nav.rail .brand span{color:var(--copper)}
+nav.rail a{color:var(--muted);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line)}
+nav.rail a:hover{color:var(--ink)}
+nav.rail a.on{color:var(--ink);border-left-color:var(--copper);font-weight:600}
+nav.rail a.hub{border-left:none;padding-left:0;margin-bottom:6px;font-size:.8rem}
+nav.rail .tools{margin-top:16px;padding-left:10px}
+nav.rail .tools button{font-size:.78rem;padding:4px 10px}
+main{min-width:0;display:flex;flex-direction:column;gap:88px;padding-top:40px}
+section{display:flex;flex-direction:column;gap:20px;scroll-margin-top:24px}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--copper)}
+.lede{font-size:1.08rem;color:var(--muted);max-width:68ch}
+.prose{max-width:70ch;display:flex;flex-direction:column;gap:12px}
+.prose ul,.prose ol{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px}
+.hero h1{font-size:clamp(2.1rem,5.4vw,3.9rem);font-stretch:120%;font-weight:800;letter-spacing:-.02em}
+.hero h1 em{font-style:normal;color:var(--copper)}
+.bench{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.bench-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px}
+.tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted)}
+.ctl output{font-family:var(--mono);color:var(--ink);font-size:.82rem}
+select,input[type=range]{accent-color:var(--copper)}
+select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;max-width:100%}
+input[type=range]{width:170px;max-width:100%}
+button{font:inherit;font-size:.85rem;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:6px 12px}
+button:hover{border-color:var(--copper)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button.on{border-color:var(--copper);color:var(--copper);font-weight:600}
+.split{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px}
+.split>*{min-width:0}
+.stage{position:relative;width:100%;height:480px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.stage canvas{width:100%;height:100%;display:block}
+.stage .hint{position:absolute;left:12px;bottom:10px;font-size:.75rem;color:var(--muted);pointer-events:none;max-width:80%}
+.stage .lbl3{position:absolute;font-family:var(--mono);font-size:.7rem;color:var(--muted);pointer-events:none;white-space:nowrap}
+/* receipt: the worked-number strip */
+.receipt{font-family:var(--mono);font-size:.82rem;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;overflow-x:auto}
+.receipt .row{display:flex;justify-content:space-between;gap:16px;white-space:nowrap}
+.receipt .row span:last-child{font-variant-numeric:tabular-nums}
+.receipt .sum{border-top:1px solid var(--ink);padding-top:6px;font-weight:600}
+.receipt .dim{color:var(--muted)}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-family:var(--mono);font-size:.86rem}
+.chain .f{background:var(--sunk);border-radius:6px;padding:4px 9px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.chain .f small{font-family:var(--body);font-size:.66rem;color:var(--muted)}
+.chain .f.hot{background:var(--copper);color:var(--surface)}
+.chain .f.hot small{color:var(--surface);opacity:.85}
+.chain .eq{font-weight:700;color:var(--copper)}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.metric{background:var(--bg);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.metric .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.metric .v{font-family:var(--display);font-stretch:108%;font-size:1.45rem;font-weight:740;font-variant-numeric:tabular-nums}
+.metric .s{font-size:.78rem;color:var(--muted)}
+.pill{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+.pill.good{color:var(--good)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.callout{border-left:3px solid var(--teal);background:var(--surface);padding:14px 18px;border-radius:0 8px 8px 0;max-width:74ch;display:flex;flex-direction:column;gap:6px}
+.callout.c{border-left-color:var(--copper)}
+.callout b.t{font-family:var(--display);font-stretch:108%}
+pre{margin:0;background:var(--sunk);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.79rem;line-height:1.55}
+pre .c{color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.86rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--sunk)}
+tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-size:.82rem;white-space:nowrap}
+tr.hl td{background:var(--sunk)}
+.grid-mat{display:grid;gap:2px;font-family:var(--mono);font-size:.72rem}
+.grid-mat div{padding:3px 4px;text-align:center;border-radius:3px;min-width:38px}
+.toy{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.headcard{background:var(--bg);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:.82rem}
+.headcard b{font-family:var(--display);font-stretch:106%}
+.bars{display:flex;flex-direction:column;gap:3px}
+.bars .b{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;align-items:center;font-family:var(--mono);font-size:.72rem}
+.bars .b i{display:block;height:10px;border-radius:2px;background:var(--copper)}
+.note{font-size:.8rem;color:var(--muted)}
+.steps{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.steps li::marker{font-family:var(--mono);color:var(--copper)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+@media (max-width:980px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:0}
+  nav.rail{position:sticky;top:0;height:auto;flex-direction:row;overflow-x:auto;padding-block:10px;background:var(--bg);z-index:5;border-bottom:1px solid var(--line);gap:0}
+  nav.rail .brand{display:none}
+  nav.rail a{white-space:nowrap;border-left:none;border-bottom:2px solid transparent}
+  nav.rail a.on{border-bottom-color:var(--copper)}
+  nav.rail .tools{margin-top:0}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .stage{height:400px}
+}
+@media (max-width:560px){.stage{height:340px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="rail" id="rail">
+  <a class="hub" href="./">← Field Guide (part 1)</a>
+  <div class="brand">Attention &amp; Memory<br><span>Worked</span></div>
+  <a href="#start">What this page does</a>
+  <a href="#weights">1 · Weights, byte by byte</a>
+  <a href="#kv">2 · KV cache, by hand</a>
+  <a href="#tank">3 · Will it fit? (3D)</a>
+  <a href="#speedmem">4 · Memory becomes speed</a>
+  <a href="#mha">5 · Multi-head, with numbers</a>
+  <a href="#cache3d">6 · The cache in 3D</a>
+  <a href="#gqa">7 · GQA &amp; MQA</a>
+  <a href="#mla">8 · MLA</a>
+  <a href="#swa">9 · Sliding window</a>
+  <a href="#dsa">10 · DSA</a>
+  <a href="#linear">11 · Linear attention</a>
+  <a href="#all">12 · All of them, side by side</a>
+  <div class="tools"><button type="button" data-theme-toggle aria-label="Switch theme"><span class="ico">☾</span> <span class="lbl">Dark</span></button></div>
+</nav>
+<main>
+
+<section id="start" class="hero">
+  <div class="eyebrow">Field Guide · part 2</div>
+  <h1>Count every <em>byte</em>. Then watch attention shrink them.</h1>
+  <p class="lede">One running example throughout: <b>Qwen3-8B</b>, your baseline. First we count its memory by hand until every gigabyte has a name. Then we rebuild attention starting from plain multi-head attention, and change one thing at a time: GQA, MQA, MLA, sliding windows, DeepSeek Sparse Attention, linear attention. Each step comes with real numbers.</p>
+  <div class="callout c"><b class="t">The two numbers to keep in your head</b><span><b>Memory you need</b> = weights + KV cache + buffers. <b>Bytes read per token</b> = active weights + the KV cache so far. The first decides whether the model fits. The second decides how fast it runs. Every trick on this page shrinks one or both of them.</span></div>
+</section>
+
+<!-- ============ 1. WEIGHTS ============ -->
+<section id="weights">
+  <div class="eyebrow">1 · Memory</div>
+  <h2>Weights, byte by byte</h2>
+  <p class="lede">A "parameter" is one number in a matrix. A model file is just its matrices. Count the matrices, multiply by bytes per number, and you have the size. No guessing.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl" for="wModel">Model<select id="wModel"></select></label>
+      <label class="ctl" for="wFmt">Number format<select id="wFmt"></select></label>
+    </div>
+    <div class="split">
+      <div class="receipt" id="wReceipt" aria-live="polite"></div>
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="readout" id="wOut"></div>
+        <div class="callout"><b class="t">Read the receipt like this</b><span><code>q_proj 4096 × 4096</code> means 4096 inputs → 32 heads × 128 dims = 4096 outputs. <code>k_proj</code> and <code>v_proj</code> output only <b>8 × 128 = 1024</b>. That smaller number is GQA: Qwen3-8B has 32 query heads but only 8 key/value heads. The MLP (<code>gate</code>, <code>up</code>, <code>down</code>) is about 78% of each layer.</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="bench">
+    <div class="bench-head"><h3>Where the bits actually go in a quantized block</h3><span class="tag">llama.cpp block layouts</span></div>
+    <div class="chips" id="blkChips"></div>
+    <div id="blkBar" style="display:flex;height:34px;border-radius:6px;overflow:hidden"></div>
+    <p id="blkText" class="note" style="font-size:.88rem"></p>
+  </div>
+  <div class="callout"><b class="t">GB vs GiB, the source of half the confusion</b><span>16,381,470,720 bytes is <b>16.38 GB</b> (÷ 1,000,000,000) but <b>15.26 GiB</b> (÷ 1,073,741,824). Hugging Face reports GB. llama.cpp, Ollama and <code>nvidia-smi</code> mostly report GiB, and often label it "GB". A "24 GB" RTX 4090 holds 24 GiB = 25.8 GB. This page uses GB unless it says GiB.</span></div>
+</section>
+
+<!-- ============ 2. KV ============ -->
+<section id="kv">
+  <div class="eyebrow">2 · Memory</div>
+  <h2>The KV cache, by hand</h2>
+  <p class="lede">For every token already processed, every layer keeps that token's key vector and value vector, so they never have to be recomputed. Each factor below is a slider. Change one and watch the chain multiply out.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl" for="kvPreset">Start from<select id="kvPreset"></select></label>
+      <label class="ctl" for="kvL">Layers <output id="kvLO"></output><input type="range" id="kvL" min="1" max="96" value="36"></label>
+      <label class="ctl" for="kvH">KV heads <output id="kvHO"></output><input type="range" id="kvH" min="1" max="64" value="8"></label>
+      <label class="ctl" for="kvD">Head dim <output id="kvDO"></output><input type="range" id="kvD" min="0" max="3" value="1"></label>
+      <label class="ctl" for="kvB">Bytes / number <output id="kvBO"></output><input type="range" id="kvB" min="0" max="2" value="0"></label>
+      <label class="ctl" for="kvT">Tokens in context <output id="kvTO"></output><input type="range" id="kvT" min="0" max="9" value="3"></label>
+      <label class="ctl" for="kvU">Users at once <output id="kvUO"></output><input type="range" id="kvU" min="1" max="16" value="1"></label>
+    </div>
+    <div class="chain" id="kvChain1"></div>
+    <div class="chain" id="kvChain2"></div>
+    <div class="chain" id="kvChain3"></div>
+    <p class="note" id="kvNote"></p>
+  </div>
+  <div class="prose">
+    <h3>Why each factor is there</h3>
+    <ul>
+      <li><b>× 2</b>: one K vector and one V vector. K is what gets matched against queries. V is what gets mixed into the output.</li>
+      <li><b>× KV heads × head dim</b>: the width of K (and of V) for one token in one layer. Qwen3-8B: 8 × 128 = 1024 numbers.</li>
+      <li><b>× layers</b>: every layer has its own attention with its own K and V. Nothing is shared between layers (Gemma 3n is an exception).</li>
+      <li><b>× tokens</b>: one entry per token in the conversation, both prompt and answer. It grows by one entry on every step.</li>
+      <li><b>× users</b>: every conversation has its own cache. The weights are shared. This is why a server with 100 users needs far more memory than the model itself.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 3. TANK ============ -->
+<section id="tank">
+  <div class="eyebrow">3 · 3D</div>
+  <h2>Will it fit? The memory tank</h2>
+  <p class="lede">The glass box is your GPU's memory. Copper is weights (fixed). Each teal slab is one user's KV cache, and it gets taller as their context grows. Grey is runtime buffers. Anything above the rim spills into slow system RAM, or fails to load.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl" for="tModel">Model<select id="tModel"></select></label>
+      <label class="ctl" for="tFmt">Weights<select id="tFmt"></select></label>
+      <label class="ctl" for="tGpu">GPU<select id="tGpu"></select></label>
+      <label class="ctl" for="tKv">KV type<select id="tKv"><option value="2">F16</option><option value="1.0625">q8_0</option><option value="0.5625">q4_0</option></select></label>
+      <label class="ctl" for="tCtx">Context per user <output id="tCtxO"></output><input type="range" id="tCtx" min="0" max="8" value="3"></label>
+      <label class="ctl" for="tUsers">Users <output id="tUsersO"></output><input type="range" id="tUsers" min="1" max="12" value="1"></label>
+    </div>
+    <div class="split">
+      <div class="stage" id="tankStage"><canvas id="tankCanvas" aria-label="3D memory tank showing weights, KV caches and buffers inside GPU memory"></canvas><div class="hint">Drag to rotate · each teal slab = one user's KV cache</div></div>
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="readout" id="tankOut"></div>
+        <div class="receipt" id="tankReceipt"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. SPEED FROM MEMORY ============ -->
+<section id="speedmem">
+  <div class="eyebrow">4 · Memory → speed</div>
+  <h2>How memory turns into tokens per second</h2>
+  <p class="lede">To produce one token, the GPU has to stream every active weight <b>and the whole KV cache so far</b> from memory into its cores. Count the bytes, divide by bandwidth, and you get a time per token. Here is the arithmetic for Qwen3-8B Q4_K_M on an RTX 4090.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl" for="smCtx">Context so far <output id="smCtxO"></output><input type="range" id="smCtx" min="0" max="7" value="2"></label>
+      <label class="ctl" for="smBw">Bandwidth<select id="smBw"><option value="1008">RTX 4090 · 1008 GB/s</option><option value="936">RTX 3090 · 936 GB/s</option><option value="360">RTX 3060 · 360 GB/s</option><option value="273">Apple M4 Pro · 273 GB/s</option><option value="89.6">DDR5-5600 2ch · 89.6 GB/s</option><option value="51.2">DDR4-3200 2ch · 51.2 GB/s</option></select></label>
+    </div>
+    <div class="receipt" id="smReceipt"></div>
+    <canvas id="smChart" width="1000" height="260" style="width:100%;height:auto;background:var(--sunk);border-radius:8px" aria-label="Chart of tokens per second falling as context grows"></canvas>
+    <p class="note">The curve falls because the KV term grows with every token while the weight term stays fixed. At long context the cache, not the model, is what you are waiting on. That is exactly what GQA, MLA, sliding windows, DSA and linear attention attack. The 0.75 factor is typical achieved bandwidth.</p>
+  </div>
+</section>
+
+<!-- ============ 5. MHA ============ -->
+<section id="mha">
+  <div class="eyebrow">5 · Attention from zero</div>
+  <h2>Multi-head attention, with real numbers</h2>
+  <p class="lede">A toy model small enough to show every number: 5 tokens, an 8-dimensional residual stream, 4 query heads of 2 dimensions each. Pick which token is "speaking" (the query), and switch how many K/V heads exist. That switch is the whole difference between MHA, GQA and MQA.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl" for="toyQ">Query token<select id="toyQ"></select></label>
+      <div class="ctl">K/V heads<div class="chips" id="toyKv"></div></div>
+      <button type="button" id="toySeed">New random weights</button>
+    </div>
+    <div class="prose" style="max-width:none">
+      <ol class="steps" id="toySteps"></ol>
+    </div>
+    <div class="toy" id="toyHeads"></div>
+    <div class="split">
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0"><b class="tag">What is stored in the KV cache for these 5 tokens</b><div id="toyCache" style="overflow-x:auto"></div></div>
+      <div class="readout" id="toyOut"></div>
+    </div>
+  </div>
+  <div class="prose">
+    <h3>What multi-head attention is doing</h3>
+    <ul>
+      <li><b>Query</b> = "what am I looking for?" <b>Key</b> = "what do I contain?" <b>Value</b> = "what do I hand over if picked?"</li>
+      <li>Score = q · k ÷ √head_dim. A big score means "relevant". Softmax turns the scores into weights that sum to 1. The output is a weighted mix of V vectors.</li>
+      <li><b>Several heads</b> let the model look for different things at once. One head might track the subject, another the previous word. Each head has its own q.</li>
+      <li>In <b>MHA</b> each head also has its own K and V, and that is what fills memory. Ask whether the heads really need separate keys. They mostly don't, which is where GQA comes from.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 6. CACHE 3D ============ -->
+<section id="cache3d">
+  <div class="eyebrow">6 · 3D</div>
+  <h2>The cache in 3D: one layer, every design</h2>
+  <p class="lede">The same layer shape (32 query heads, head_dim 128, like Qwen3-8B), rebuilt with each attention design. Spheres on top are the 32 query heads of the newest token. Bars below are what is stored: <b>cross-section area = bytes per token</b>, <b>length = tokens</b>. Both are drawn to scale.</p>
+  <div class="bench">
+    <div class="chips" id="c3Modes"></div>
+    <div class="controls">
+      <label class="ctl" for="c3Ctx">Context <output id="c3CtxO"></output><input type="range" id="c3Ctx" min="0" max="8" value="5"></label>
+      <button type="button" id="c3Play">Grow context ▶</button>
+    </div>
+    <div class="split">
+      <div class="stage" id="c3Stage"><canvas id="c3Canvas" aria-label="3D view of the KV cache for one attention layer"></canvas><div class="hint" id="c3Hint">Drag to rotate</div></div>
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="readout" id="c3Out"></div>
+        <p id="c3Text" style="font-size:.92rem"></p>
+        <div class="legend" id="c3Legend"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 7. GQA ============ -->
+<section id="gqa">
+  <div class="eyebrow">7 · GQA &amp; MQA</div>
+  <h2>Grouped-query attention, practically</h2>
+  <div class="split">
+    <div class="prose">
+      <h3>The idea in one picture</h3>
+      <p>Picture 32 students (query heads) studying from textbooks (K/V heads). In MHA every student has a personal copy: 32 books. In GQA-8, groups of 4 students share a book: 8 books. In MQA everyone shares one book. Each student still asks their own question. Only the books are shared.</p>
+      <h3>What it saves, and what it does not</h3>
+      <ul>
+        <li><b>Saves memory:</b> KV cache ÷ (query heads ÷ KV heads). Qwen3-8B: 32 ÷ 8 = <b>4× smaller</b> than MHA.</li>
+        <li><b>Saves time:</b> decode is memory-bound, so reading 4× fewer KV bytes makes long-context steps up to 4× faster in the attention part.</li>
+        <li><b>Does not save compute:</b> every query head still computes a score against every key. FLOPs are identical. The GPU just reuses each loaded K for 4 heads, which raises arithmetic intensity 4×.</li>
+        <li><b>Saves a little weight:</b> k_proj and v_proj shrink from 4096×4096 to 4096×1024. That is 25 M fewer weights per layer in Qwen3-8B.</li>
+        <li><b>Costs a little quality:</b> heads in a group can no longer look for <em>different</em> keys. The GQA paper found that 8 groups give quality close to MHA, while 1 group (MQA) degrades noticeably at scale.<a href="#refs"> [GQA, Ainslie 2023]</a></li>
+      </ul>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <h3>The actual code</h3>
+<pre><span class="c"># Qwen3-8B shapes, one layer, decoding 1 new token
+# x: [1, 4096]</span>
+q = x @ Wq      <span class="c"># [1, 4096] → 32 heads × 128</span>
+k = x @ Wk      <span class="c"># [1, 1024] →  8 heads × 128  ← only this is cached</span>
+v = x @ Wv      <span class="c"># [1, 1024] →  8 heads × 128  ← and this</span>
+cache_k.append(k); cache_v.append(v)
+
+<span class="c"># share each KV head with 4 query heads (no copy in fast kernels)</span>
+K = repeat_kv(cache_k, n_rep=32 // 8)   <span class="c"># [T, 32, 128] view</span>
+V = repeat_kv(cache_v, n_rep=4)
+
+scores = (q @ K.T) / sqrt(128)          <span class="c"># [32 heads, T]</span>
+out    = softmax(scores) @ V            <span class="c"># [32, 128] → [1, 4096]</span>
+out    = out @ Wo</pre>
+      <div class="callout"><b class="t">Worked: what GQA buys a 24 GB GPU</b><span id="gqaWorked"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 8. MLA ============ -->
+<section id="mla">
+  <div class="eyebrow">8 · DeepSeek</div>
+  <h2>Multi-head Latent Attention (MLA)</h2>
+  <p class="lede">GQA saves memory by making heads share keys, and pays for it in quality. DeepSeek asked a different question: what if each token stored <b>one small compressed vector</b>, and every head rebuilt its own full K and V from it when needed? You get MHA-like quality with a cache smaller than GQA's.</p>
+  <div class="split">
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="receipt" id="mlaReceipt"></div>
+<pre><span class="c"># DeepSeek-V3 shapes (hidden 7168, 128 heads)</span>
+c_kv  = h @ W_DKV        <span class="c"># [7168] → [512]   ← CACHED</span>
+k_rope= rope(h @ W_KR)   <span class="c"># [7168] → [64]    ← CACHED (shared by heads)</span>
+<span class="c"># per head i, rebuilt on the fly, never stored:</span>
+k_i   = c_kv @ W_UK[i]   <span class="c"># [512] → [128]</span>
+v_i   = c_kv @ W_UV[i]   <span class="c"># [512] → [128]</span>
+
+<span class="c"># the "absorption" trick: never even build k_i</span>
+score_i = q_i · (W_UK[i] c_kv)  =  (W_UK[i]ᵀ q_i) · c_kv
+<span class="c">#        fold W_UK into the query once, then dot with the 512-d latent</span></pre>
+    </div>
+    <div class="prose">
+      <h3>Why it works</h3>
+      <ul>
+        <li>The 128 heads' keys are highly redundant. A 512-number summary carries almost everything they need, so it is a learned compression.</li>
+        <li><b>Absorption</b> means decode never expands the latent. Each head's query is projected into the 512-d latent space once, and scores are dot products with the cached latents directly.</li>
+        <li><b>Why the separate 64-d RoPE key:</b> RoPE rotates keys by position, and a rotation sitting between W_UK and c_kv breaks the absorption trick. So position goes in a small separate key that all heads share, and the latent stays position-free.</li>
+        <li><b>Cost:</b> more matrix work per step. That is fine, because decode had spare compute and was short on bandwidth.</li>
+        <li><b>Engine cost:</b> MLA needs dedicated kernels. GQA works with any FlashAttention build, which is why MLA support arrived later in llama.cpp and other engines.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 9. SWA ============ -->
+<section id="swa">
+  <div class="eyebrow">9 · Gemma</div>
+  <h2>Sliding-window attention</h2>
+  <p class="lede">A different axis entirely. Instead of making each token's entry smaller, keep only the most recent <b>W</b> tokens in most layers. Gemma 3 and 4 use a 1024-token window in 5 of every 6 layers. The 6th layer is global and still sees everything.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl" for="swCtx">Context <output id="swCtxO"></output><input type="range" id="swCtx" min="0" max="8" value="5"></label>
+    </div>
+    <div class="receipt" id="swReceipt"></div>
+  </div>
+  <div class="prose">
+    <h3>How information still travels far</h3>
+    <ul>
+      <li>Every 6th layer is global, so any token can reach any other through those layers.</li>
+      <li>Windows also stack: layer 1 sees 1024 back, and layer 2 sees 1024 back from tokens that already saw 1024 back. The reach grows layer by layer.</li>
+      <li>In practice local layers handle grammar and nearby context, and global layers handle "what did the document say 50 pages ago". The Gemma 3 report found perplexity barely moved when the window shrank from 4096 to 1024.</li>
+      <li>The cache for a local layer is a <b>ring buffer</b>: token 1025 overwrites the slot of token 1.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 10. DSA ============ -->
+<section id="dsa">
+  <div class="eyebrow">10 · DeepSeek V3.2</div>
+  <h2>DeepSeek Sparse Attention (DSA)</h2>
+  <p class="lede">Everything so far shrank how much is <em>stored</em>. DSA shrinks how much is <em>read and computed</em> per step. A tiny, cheap "lightning indexer" scores every past token. Then the real attention (MLA) runs only on the <b>top 2048</b>.</p>
+  <div class="bench">
+    <div class="bench-head"><h3>One decode step at 128K context</h3><span class="tag">200 of the past tokens drawn</span></div>
+    <div class="controls">
+      <label class="ctl" for="dsCtx">Context <output id="dsCtxO"></output><input type="range" id="dsCtx" min="0" max="5" value="4"></label>
+      <label class="ctl" for="dsK">top-k <output id="dsKO"></output><input type="range" id="dsK" min="0" max="4" value="2"></label>
+      <button type="button" id="dsNew">Next token</button>
+    </div>
+    <canvas id="dsCanvas" width="1000" height="260" style="width:100%;height:auto;background:var(--sunk);border-radius:8px" aria-label="Index scores for past tokens with the top-k selected"></canvas>
+    <div class="legend"><span><i style="background:var(--steel)"></i>Indexer score (computed for every token, cheap)</span><span><i style="background:var(--copper)"></i>Selected: full MLA attention runs on these</span></div>
+    <div class="split">
+      <div class="receipt" id="dsReceipt"></div>
+<pre><span class="c"># per decode step, per layer</span>
+<span class="c"># 1) lightning indexer: 64 tiny heads, FP8, one shared 128-d key per token</span>
+I[s] = Σ_j  w_j · relu( q_idx[j] · k_idx[s] )   for every past s
+<span class="c"># 2) pick the winners</span>
+S = topk(I, k=2048)
+<span class="c"># 3) normal MLA attention, but only over S</span>
+out = MLA(q, c_kv[S], k_rope[S])</pre>
+    </div>
+  </div>
+  <div class="prose">
+    <h3>The catch: memory does not shrink</h3>
+    <ul>
+      <li>DSA still <b>stores</b> every token's latent, because a token ignored now may be selected later. The cache is the same size as plain MLA.</li>
+      <li>What drops is the work per step: the indexer reads 128 bytes per token instead of 1,152, and full attention touches only 2048 tokens.</li>
+      <li>Prefill goes from O(n²) to roughly O(n·k), which is why 128K-token prompts got much cheaper.</li>
+      <li>DeepSeek-V4 goes further and compresses the cache itself along the sequence axis (CSA/HCA). Its card reports 10% of V3.2's KV cache at 1M tokens.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 11. LINEAR ============ -->
+<section id="linear">
+  <div class="eyebrow">11 · Qwen3-Next / 3.5 / 3.6</div>
+  <h2>Linear attention: no cache at all</h2>
+  <p class="lede">Gated DeltaNet replaces "store every key and value" with one fixed matrix per head that is updated in place every token. Memory stops growing with context. Qwen3.5 uses it in 3 of every 4 layers and keeps full attention in the 4th for precise recall.</p>
+  <div class="bench">
+    <div class="controls"><label class="ctl" for="lnCtx">Context <output id="lnCtxO"></output><input type="range" id="lnCtx" min="0" max="9" value="3"></label></div>
+    <div class="receipt" id="lnReceipt"></div>
+  </div>
+  <div class="split">
+    <div class="prose">
+      <h3>What the state is, concretely</h3>
+      <ul>
+        <li>Per head, S is a 128 × 128 matrix (keys × values). Think of it as a lookup table compressed into a matrix: <code>S·q</code> retrieves the value associated with keys similar to q.</li>
+        <li><b>Write:</b> the delta rule first reads what S already returns for key k, then corrects it toward v. Old associations get overwritten instead of piling up.</li>
+        <li><b>Forget:</b> gate α (between 0 and 1) fades everything a little each step, so stale context decays.</li>
+        <li><b>Limit:</b> 16K numbers per head cannot hold a perfect copy of a 100K-token book. Exact quoting and needle-in-a-haystack recall need the real attention layers, hence the 3:1 hybrid.</li>
+      </ul>
+    </div>
+<pre><span class="c"># Gated DeltaNet, one head, one new token (Qwen3.5-9B sizes)</span>
+<span class="c"># S: [128 x 128] float32  ← the whole "cache" for this head</span>
+k = l2norm(x @ Wk)        <span class="c"># [128]</span>
+v = x @ Wv                <span class="c"># [128]</span>
+q = l2norm(x @ Wq)
+a = sigmoid(x @ Wa)       <span class="c"># forget gate α</span>
+b = sigmoid(x @ Wb)       <span class="c"># write strength β</span>
+
+S = a * S                       <span class="c"># fade</span>
+S = S + b * outer(v - S @ k, k) <span class="c"># delta rule: fix what k maps to</span>
+o = S @ q                       <span class="c"># read</span></pre>
+  </div>
+</section>
+
+<!-- ============ 12. ALL ============ -->
+<section id="all">
+  <div class="eyebrow">12 · Summary</div>
+  <h2>All of them, side by side</h2>
+  <p class="lede">The same Qwen3-8B-sized model (36 layers, 32 query heads, head_dim 128, BF16), with only the attention design changed. Move the context to see who wins where.</p>
+  <div class="controls"><label class="ctl" for="allCtx">Context <output id="allCtxO"></output><input type="range" id="allCtx" min="0" max="8" value="5"></label></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Design</th><th>Stored per token (36 layers)</th><th>Cache at this context</th><th>KV bytes read per step</th><th>Attention FLOPs per step</th><th>Shrinks</th><th>Used by</th></tr></thead>
+    <tbody id="allBody"></tbody>
+  </table></div>
+  <p class="note">Hypothetical variants of one shape, for comparison only. Real models change other dimensions too (DeepSeek-V3 has 128 heads and 61 layers, Gemma has head_dim 256). MLA and DSA rows use DeepSeek's 576-number latent. FLOPs count the score and mix only, not projections.</p>
+  <div class="callout c"><b class="t">The decision rule</b><span>Short chats on one GPU: GQA is plenty, and every engine supports it. Long context with many users: MLA or sliding windows cut the stored bytes. Very long prompts: DSA or linear attention cut the per-step work. A small model on a CPU: fewer, smaller KV heads plus a quantized cache (<code>-ctk q8_0</code>).</span></div>
+  <p class="note" id="refs">Sources: Vaswani 2017 (MHA) · Shazeer 2019 (MQA, arXiv 1911.02150) · Ainslie 2023 (GQA, arXiv 2305.13245) · DeepSeek-V2 (MLA, arXiv 2405.04434) · DeepSeek-V3 (arXiv 2412.19437) · DeepSeek-V3.2-Exp model card (DSA) · DeepSeek-V4-Pro model card · Gemma 3 report (arXiv 2503.19786) · Gated DeltaNet (arXiv 2412.06464) · Qwen3-8B and Qwen3.5-9B config.json · llama.cpp ggml-common.h block layouts. Full list in <a href="./#sources">part 1</a>.</p>
+</section>
+</main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const N=n=>Math.round(n).toLocaleString('en-US');
+const GB=1e9,GiB=1073741824,KiB=1024,MiB=1048576;
+const fB=b=>b>=1e9?(b/1e9).toFixed(2)+' GB':b>=1e6?(b/1e6).toFixed(1)+' MB':b>=1e3?(b/1e3).toFixed(1)+' KB':N(b)+' B';
+const fBi=b=>b>=GiB?(b/GiB).toFixed(2)+' GiB':b>=MiB?(b/MiB).toFixed(1)+' MiB':b>=KiB?(b/KiB).toFixed(1)+' KiB':N(b)+' B';
+const CTX=[1024,2048,4096,8192,16384,32768,65536,131072,262144];
+const fK=n=>n>=1048576?(n/1048576)+'M':n>=1024?(n/1024)+'K':String(n);
+
+/* ======== shared model data (Qwen3 dense family, from config.json) ======== */
+const Q3={
+ '0.6B':{L:28,h:1024,H:16,kv:8,d:128,ffn:3072,V:151936,tied:true},
+ '1.7B':{L:28,h:2048,H:16,kv:8,d:128,ffn:6144,V:151936,tied:true},
+ '4B':{L:36,h:2560,H:32,kv:8,d:128,ffn:9728,V:151936,tied:true},
+ '8B':{L:36,h:4096,H:32,kv:8,d:128,ffn:12288,V:151936,tied:false},
+ '14B':{L:40,h:5120,H:40,kv:8,d:128,ffn:17408,V:151936,tied:false},
+ '32B':{L:64,h:5120,H:64,kv:8,d:128,ffn:25600,V:151936,tied:false}
+};
+const FMT=[
+ {id:'f32',name:'FP32 · 4 bytes',bpw:32},
+ {id:'bf16',name:'BF16 · 2 bytes (as released)',bpw:16},
+ {id:'q8',name:'Q8_0 · 8.5 bits',bpw:8.5},
+ {id:'q6',name:'Q6_K · 6.5625 bits',bpw:6.5625},
+ {id:'q5',name:'Q5_K · 5.5 bits',bpw:5.5},
+ {id:'q4',name:'Q4_K · 4.5 bits',bpw:4.5},
+ {id:'q3',name:'Q3_K · 3.4375 bits',bpw:3.4375},
+ {id:'q2',name:'Q2_K · 2.625 bits',bpw:2.625}
+];
+function parts(m){
+  const qd=m.H*m.d, kd=m.kv*m.d;
+  const L={q:m.h*qd,k:m.h*kd,v:m.h*kd,o:qd*m.h,norms:2*m.h+2*m.d,gate:m.h*m.ffn,up:m.h*m.ffn,down:m.ffn*m.h};
+  const per=Object.values(L).reduce((a,b)=>a+b,0);
+  const emb=m.V*m.h, head=m.tied?0:m.V*m.h;
+  return {L,per,emb,head,final:m.h,total:emb+head+per*m.L+m.h};
+}
+const optHTML=(o,sel)=>Object.keys(o).map(k=>`<option value="${k}"${k===sel?' selected':''}>Qwen3-${k}</option>`).join('');
+
+/* ======== 1. weights receipt ======== */
+$('#wModel').innerHTML=optHTML(Q3,'8B');
+$('#wFmt').innerHTML=FMT.map(f=>`<option value="${f.id}"${f.id==='bf16'?' selected':''}>${f.name}</option>`).join('');
+function weights(){
+  const key=$('#wModel').value,m=Q3[key],P=parts(m),f=FMT.find(x=>x.id===$('#wFmt').value);
+  const by=n=>n*f.bpw/8;
+  const r=(a,b,c)=>`<div class="row"><span>${a}</span><span class="dim">${b}</span><span>${c}</span></div>`;
+  let h=`<div class="row dim"><span>matrix</span><span>shape</span><span>numbers</span></div>`;
+  h+=r('embed_tokens',`${N(m.V)} × ${m.h}`,N(P.emb));
+  h+=`<div class="row dim"><span>── one layer (× ${m.L}) ──</span><span></span><span></span></div>`;
+  h+=r('  q_proj',`${m.h} × ${m.H*m.d}`,N(P.L.q));
+  h+=r('  k_proj',`${m.h} × ${m.kv*m.d}`,N(P.L.k));
+  h+=r('  v_proj',`${m.h} × ${m.kv*m.d}`,N(P.L.v));
+  h+=r('  o_proj',`${m.H*m.d} × ${m.h}`,N(P.L.o));
+  h+=r('  gate_proj',`${m.h} × ${m.ffn}`,N(P.L.gate));
+  h+=r('  up_proj',`${m.h} × ${m.ffn}`,N(P.L.up));
+  h+=r('  down_proj',`${m.ffn} × ${m.h}`,N(P.L.down));
+  h+=r('  4 RMSNorms',`2×${m.h} + 2×${m.d}`,N(P.L.norms));
+  h+=r('  = one layer','',N(P.per));
+  h+=r(`× ${m.L} layers`,'',N(P.per*m.L));
+  h+=r('final norm',`${m.h}`,N(P.final));
+  h+=r('lm_head',m.tied?'tied to embed_tokens (shared)':`${m.h} × ${N(m.V)}`,m.tied?'0':N(P.head));
+  h+=`<div class="row sum"><span>TOTAL parameters</span><span></span><span>${N(P.total)}</span></div>`;
+  h+=`<div class="row sum"><span>× ${f.bpw/8} bytes each</span><span></span><span>${N(by(P.total))} B</span></div>`;
+  $('#wReceipt').innerHTML=h;
+  const mlp=P.L.gate+P.L.up+P.L.down, att=P.L.q+P.L.k+P.L.v+P.L.o;
+  $('#wOut').innerHTML=`
+   <div class="metric"><span class="k">File size</span><span class="v">${(by(P.total)/GB).toFixed(2)} GB</span><span class="s">= ${(by(P.total)/GiB).toFixed(2)} GiB</span></div>
+   <div class="metric"><span class="k">MLP share / layer</span><span class="v">${Math.round(100*mlp/P.per)}%</span><span class="s">attention ${Math.round(100*att/P.per)}%</span></div>
+   <div class="metric"><span class="k">Embeddings</span><span class="v">${Math.round(100*(P.emb+P.head)/P.total)}%</span><span class="s">of all weights${m.tied?' (tied, counted once)':''}</span></div>`;
+}
+['#wModel','#wFmt'].forEach(s=>$(s).addEventListener('input',weights));
+
+/* block layouts (ggml-common.h) */
+const BLK={
+ 'Q8_0':{n:32,parts:[['32 × int8 weights',32,'--copper'],['scale d (fp16)',2,'--gold']]},
+ 'Q4_K':{n:256,parts:[['256 × 4-bit weights',128,'--copper'],['12 bytes: 8 sub-block scales + mins (6-bit)',12,'--violet'],['d, dmin (fp16)',4,'--gold']]},
+ 'Q6_K':{n:256,parts:[['low 4 bits ×256',128,'--copper'],['high 2 bits ×256',64,'--teal'],['16 sub-block scales (int8)',16,'--violet'],['d (fp16)',2,'--gold']]},
+ 'Q2_K':{n:256,parts:[['256 × 2-bit weights',64,'--copper'],['16 scales + mins (4-bit)',16,'--violet'],['d, dmin (fp16)',4,'--gold']]}
+};
+let blkSel='Q4_K';
+$('#blkChips').innerHTML=Object.keys(BLK).map(k=>`<button type="button" data-k="${k}">${k}</button>`).join('');
+$('#blkChips').addEventListener('click',e=>{const b=e.target.closest('button');if(b){blkSel=b.dataset.k;blk();}});
+function blk(){
+  document.querySelectorAll('#blkChips button').forEach(b=>b.classList.toggle('on',b.dataset.k===blkSel));
+  const B=BLK[blkSel],tot=B.parts.reduce((a,p)=>a+p[1],0);
+  $('#blkBar').innerHTML=B.parts.map(p=>`<div title="${p[0]}" style="width:${100*p[1]/tot}%;background:var(${p[2]})"></div>`).join('');
+  $('#blkText').innerHTML=B.parts.map(p=>`<span style="color:var(${p[2]})">■</span> ${p[0]}: <b>${p[1]} B</b>`).join(' · ')+
+   `<br>One block = <b>${B.n} weights in ${tot} bytes</b> → ${tot} × 8 ÷ ${B.n} = <b>${(tot*8/B.n).toFixed(4).replace(/0+$/,'').replace(/\.$/,'')} bits per weight</b>. To use a weight, the kernel reads the block, multiplies each small integer by its scale (and subtracts the min), then does the dot product.`;
+}
+
+/* ======== 2. KV chain ======== */
+const KVP={
+ 'Qwen3-8B (GQA-8)':[36,8,128,2],
+ 'Qwen-7B 2023 (MHA)':[32,32,128,2],
+ 'Qwen3-1.7B':[28,8,128,2],
+ 'Qwen3-30B-A3B':[48,4,128,2],
+ 'Gemma 3 27B (global layers only)':[10,16,128,2],
+ 'Llama-3.1-70B':[80,8,128,2]
+};
+const DIMS=[64,128,256,512],BYTES=[2,1,0.5],BNAME=['F16','q8_0 (≈1)','q4_0 (≈0.5)'];
+$('#kvPreset').innerHTML=Object.keys(KVP).map(k=>`<option>${k}</option>`).join('');
+$('#kvPreset').addEventListener('input',()=>{const p=KVP[$('#kvPreset').value];$('#kvL').value=p[0];$('#kvH').value=p[1];$('#kvD').value=DIMS.indexOf(p[2]);$('#kvB').value=0;kv();});
+function f_(v,lab,hot){return `<span class="f${hot?' hot':''}">${v}<small>${lab}</small></span>`;}
+function kv(){
+  const L=+$('#kvL').value,H=+$('#kvH').value,D=DIMS[+$('#kvD').value],B=BYTES[+$('#kvB').value],T=CTX[+$('#kvT').value]||1024,U=+$('#kvU').value;
+  $('#kvLO').textContent=L;$('#kvHO').textContent=H;$('#kvDO').textContent=D;$('#kvBO').textContent=BNAME[+$('#kvB').value];$('#kvTO').textContent=N(T);$('#kvUO').textContent=U;
+  const perLayer=2*H*D*B, perTok=perLayer*L, perUser=perTok*T, all=perUser*U;
+  $('#kvChain1').innerHTML=`<b style="min-width:120px">One token, one layer</b>`+f_(2,'K and V')+'×'+f_(H,'KV heads')+'×'+f_(D,'head dim')+'×'+f_(B,'bytes')+'<span class="eq">=</span>'+f_(N(perLayer)+' B','',true);
+  $('#kvChain2').innerHTML=`<b style="min-width:120px">One token, all layers</b>`+f_(N(perLayer)+' B','per layer')+'×'+f_(L,'layers')+'<span class="eq">=</span>'+f_(fBi(perTok),N(perTok)+' bytes',true);
+  $('#kvChain3').innerHTML=`<b style="min-width:120px">The whole cache</b>`+f_(fBi(perTok),'per token')+'×'+f_(N(T),'tokens')+'×'+f_(U,U>1?'users':'user')+'<span class="eq">=</span>'+f_(fBi(all),(all/GB).toFixed(2)+' GB',true);
+  const w4=8.19*4.89/8*GB;
+  $('#kvNote').innerHTML=`For scale: Qwen3-8B weights at Q4_K_M are about ${(w4/GiB).toFixed(1)} GiB. This cache is <b>${(all/w4*100).toFixed(0)}%</b> of that.${all>w4?' The cache is now bigger than the model.':''}`;
+}
+['#kvL','#kvH','#kvD','#kvB','#kvT','#kvU'].forEach(s=>$(s).addEventListener('input',kv));
+
+/* ======== orbit + visibility helpers ======== */
+function orbit(canvas,cam,target,st,onChange){
+  let drag=null;
+  canvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,t:st.theta,p:st.phi};canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{if(!drag)return;st.theta=drag.t-(e.clientX-drag.x)*0.008;st.phi=Math.max(0.2,Math.min(1.5,drag.p-(e.clientY-drag.y)*0.006));onChange();});
+  const end=()=>{drag=null;};canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+  return ()=>{cam.position.set(target.x+st.r*Math.sin(st.phi)*Math.sin(st.theta),target.y+st.r*Math.cos(st.phi),target.z+st.r*Math.sin(st.phi)*Math.cos(st.theta));cam.lookAt(target);};
+}
+function visible(el,cb){if(!('IntersectionObserver' in window)){cb(true);return;}new IntersectionObserver(es=>es.forEach(e=>cb(e.isIntersecting)),{threshold:0.05}).observe(el);}
+function makeScene(canvasSel,stageSel,st,target){
+  const cv=$(canvasSel),stage=$(stageSel);
+  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(38,1,0.05,400);
+  scene.add(new THREE.AmbientLight(0xffffff,0.72));const dl=new THREE.DirectionalLight(0xffffff,0.6);dl.position.set(6,12,8);scene.add(dl);
+  const S={renderer,scene,cam,stage,st,target};
+  S.render=()=>renderer.render(scene,cam);
+  S.place=orbit(cv,cam,target,st,()=>{S.place();S.render();});
+  S.resize=()=>{const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();S.render();};
+  window.addEventListener('resize',S.resize);
+  visible(stage,v=>{S.vis=v;if(v)S.resize();});
+  return S;
+}
+const col=n=>new THREE.Color(css(n));
+const lam=(n,o)=>new THREE.MeshLambertMaterial(Object.assign({color:col(n)},o||{}));
+function clear(g){while(g.children.length){const c=g.children.pop();if(c.geometry)c.geometry.dispose();if(c.material&&c.material.dispose)c.material.dispose();if(c.children)clear(c);}}
+
+/* ======== 3. tank ======== */
+const GPUS=[['RTX 4060 · 8 GB',8],['RTX 3060 · 12 GB',12],['RTX 4060 Ti · 16 GB',16],['RTX 4090 · 24 GB',24],['RTX 5090 · 32 GB',32],['A100 · 80 GB',80]];
+$('#tModel').innerHTML=optHTML(Q3,'8B');
+$('#tFmt').innerHTML=FMT.slice(1).map(f=>`<option value="${f.id}"${f.id==='q4'?' selected':''}>${f.name}</option>`).join('');
+$('#tGpu').innerHTML=GPUS.map((g,i)=>`<option value="${i}"${i===3?' selected':''}>${g[0]}</option>`).join('');
+let TANK=null;
+function tankCalc(){
+  const m=Q3[$('#tModel').value],P=parts(m),f=FMT.find(x=>x.id===$('#tFmt').value);
+  const ctx=CTX[+$('#tCtx').value],U=+$('#tUsers').value,kvB=+$('#tKv').value,gpu=GPUS[+$('#tGpu').value];
+  const W=P.total*f.bpw/8;
+  const kvU=2*m.kv*m.d*kvB*m.L*ctx;
+  const logits=512*m.V*4, act=512*(m.ffn*3+m.h*4)*4;
+  const buf=logits+act, cuda=0.4*GiB;
+  const cap=gpu[1]*GiB;
+  return {m,P,f,ctx,U,kvB,gpu,W,kvU,buf,cuda,cap,total:W+kvU*U+buf+cuda,logits,act};
+}
+function tankText(c){
+  $('#tCtxO').textContent=N(c.ctx)+' tokens';$('#tUsersO').textContent=c.U;
+  const fits=c.total<=c.cap, tight=c.total>c.cap*0.92;
+  $('#tankOut').innerHTML=`<div class="metric"><span class="k">Total needed</span><span class="v">${(c.total/GiB).toFixed(2)} GiB</span><span class="s"><span class="pill ${fits?(tight?'warn':'good'):'bad'}">${fits?(tight?'Tight fit':'Fits'):'Does not fit'}</span> in ${c.gpu[1]} GiB</span></div>
+   <div class="metric"><span class="k">Max users at this context</span><span class="v">${Math.max(0,Math.floor((c.cap-c.W-c.buf-c.cuda)/c.kvU))}</span><span class="s">before spilling</span></div>`;
+  const r=(a,b)=>`<div class="row"><span>${a}</span><span>${b}</span></div>`;
+  $('#tankReceipt').innerHTML=
+    r('Weights',`${N(c.P.total)} × ${c.f.bpw}/8 B = ${(c.W/GiB).toFixed(2)} GiB`)+
+    r('KV per user',`2×${c.m.kv}×${c.m.d}×${c.kvB}B×${c.m.L}×${N(c.ctx)} = ${(c.kvU/GiB).toFixed(2)} GiB`)+
+    r(`KV × ${c.U} user${c.U>1?'s':''}`,`${(c.kvU*c.U/GiB).toFixed(2)} GiB`)+
+    r('Logits buffer',`512 tok × ${N(c.m.V)} vocab × 4 B = ${(c.logits/GiB).toFixed(2)} GiB`)+
+    r('Activations',`≈ ${(c.act/GiB).toFixed(2)} GiB`)+
+    r('CUDA context','≈ 0.40 GiB')+
+    `<div class="row sum"><span>Total</span><span>${(c.total/GiB).toFixed(2)} GiB</span></div>`+
+    `<div class="row dim"><span>Buffers assume llama.cpp's default 512-token batch</span><span></span></div>`;
+}
+function initTank(){
+  if(!window.THREE)return;
+  const st={theta:0.75,phi:1.15,r:13},target=new THREE.Vector3(0,3,0);
+  const S=makeScene('#tankCanvas','#tankStage',st,target);const g=new THREE.Group();S.scene.add(g);
+  TANK={S,g};
+  S.place();
+  const spin=()=>{if(S.vis&&!reduce&&!TANK.drag){st.theta+=0.0015;S.place();S.render();}requestAnimationFrame(spin);};
+  requestAnimationFrame(spin);
+  buildTank();S.resize();
+}
+function buildTank(){
+  const c=tankCalc();tankText(c);
+  if(!TANK)return;const g=TANK.g;clear(g);
+  const maxH=7, scale=maxH/Math.max(c.cap,c.total);
+  const w=3.2;
+  // container
+  const hC=c.cap*scale;
+  const box=new THREE.Mesh(new THREE.BoxGeometry(w+0.2,hC,w+0.2),new THREE.MeshBasicMaterial({color:col('--ink'),transparent:true,opacity:0.06,depthWrite:false}));box.position.y=hC/2;g.add(box);
+  const edges=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w+0.2,hC,w+0.2)),new THREE.LineBasicMaterial({color:col('--ink')}));edges.position.y=hC/2;g.add(edges);
+  let y=0;
+  const slab=(hgt,color,inset,opac)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w-inset,Math.max(0.005,hgt-0.02),w-inset),lam(color,opac?{transparent:true,opacity:opac}:{}));m.position.y=y+hgt/2;g.add(m);y+=hgt;return m;};
+  slab(c.cuda*scale,'--steel',0.2);
+  slab(c.buf*scale,'--muted',0.2);
+  slab(c.W*scale,'--copper',0);
+  for(let u=0;u<c.U;u++){const over=y+c.kvU*scale>hC;slab(c.kvU*scale,over?'--bad':(u%2?'--teal2':'--teal'),0.05);}
+  // floor
+  const fl=new THREE.Mesh(new THREE.BoxGeometry(w+1.2,0.06,w+1.2),lam('--line'));fl.position.y=-0.04;g.add(fl);
+  TANK.S.render();
+}
+['#tModel','#tFmt','#tGpu','#tKv','#tCtx','#tUsers'].forEach(s=>$(s).addEventListener('input',buildTank));
+
+/* ======== 4. speed from memory ======== */
+const SMC=[2048,4096,8192,16384,32768,65536,131072,262144];
+function speedmem(){
+  const ctx=SMC[+$('#smCtx').value],bw=+$('#smBw').value;
+  $('#smCtxO').textContent=N(ctx)+' tokens';
+  const W=8190735360*4.89/8, kvT=147456;
+  const kv=kvT*ctx, tot=W+kv, t=tot/(bw*GB*0.75);
+  const r=(a,b)=>`<div class="row"><span>${a}</span><span>${b}</span></div>`;
+  $('#smReceipt').innerHTML=
+   r('Weights read per token (Q4_K_M, 4.89 bpw)',`${(W/GB).toFixed(2)} GB`)+
+   r(`KV cache read per token: 147,456 B × ${N(ctx)}`,`${(kv/GB).toFixed(2)} GB`)+
+   `<div class="row sum"><span>Bytes moved for ONE token</span><span>${(tot/GB).toFixed(2)} GB</span></div>`+
+   r(`÷ achievable bandwidth (${bw} × 0.75)`,`${(bw*0.75).toFixed(0)} GB/s`)+
+   `<div class="row sum"><span>Time per token → tokens per second</span><span>${(t*1000).toFixed(1)} ms → ${(1/t).toFixed(1)} tok/s</span></div>`+
+   `<div class="row dim"><span>KV share of the work</span><span>${(100*kv/tot).toFixed(0)}%</span></div>`;
+  // chart
+  const cv=$('#smChart'),g=cv.getContext('2d'),Wd=cv.width,H=cv.height;g.clearRect(0,0,Wd,H);
+  const xs=[];for(let i=0;i<=80;i++)xs.push(1024*Math.pow(2,i/80*8));
+  const sp=c=>1/((W+kvT*c)/(bw*GB*0.75));
+  const ymax=sp(1024)*1.1, x0=60,x1=Wd-20,y0=H-36,y1=16;
+  const X=c=>x0+(Math.log2(c/1024)/8)*(x1-x0), Y=v=>y0-(v/ymax)*(y0-y1);
+  g.strokeStyle=css('--line');g.fillStyle=css('--muted');g.font='12px "IBM Plex Sans",sans-serif';g.lineWidth=1;
+  for(let i=0;i<=8;i++){const c=1024*Math.pow(2,i),x=X(c);g.beginPath();g.moveTo(x,y0);g.lineTo(x,y1);g.stroke();g.fillText(fK(c),x-10,H-14);}
+  const step=ymax>100?25:ymax>40?10:ymax>15?5:2;
+  for(let v=0;v<=ymax;v+=step){const y=Y(v);g.beginPath();g.moveTo(x0,y);g.lineTo(x1,y);g.stroke();g.fillText(String(v),x0-34,y+4);}
+  g.save();g.translate(14,H/2+30);g.rotate(-Math.PI/2);g.fillText('tok/s',0,0);g.restore();
+  g.strokeStyle=css('--copper');g.lineWidth=2.5;g.beginPath();xs.forEach((c,i)=>{const x=X(c),y=Y(sp(c));i?g.lineTo(x,y):g.moveTo(x,y);});g.stroke();
+  const wOnly=1/(W/(bw*GB*0.75));g.setLineDash([5,5]);g.strokeStyle=css('--muted');g.beginPath();g.moveTo(x0,Y(wOnly));g.lineTo(x1,Y(wOnly));g.stroke();g.setLineDash([]);
+  g.fillStyle=css('--muted');g.fillText('if the KV cache were free',x1-170,Y(wOnly)-6);
+  g.fillStyle=css('--copper');g.beginPath();g.arc(X(ctx),Y(sp(ctx)),6,0,7);g.fill();
+  g.fillStyle=css('--ink');g.font='600 13px "IBM Plex Sans",sans-serif';g.fillText((1/t).toFixed(1)+' tok/s',X(ctx)+10,Y(sp(ctx))-10);
+}
+['#smCtx','#smBw'].forEach(s=>$(s).addEventListener('input',speedmem));
+
+/* ======== 5. toy MHA ======== */
+const TOK=['The','cat','sat','on','mat'];
+let seed=7,toyKv=4;
+function rng(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+let X,Wq,Wk,Wv;
+function initToy(){const r=rng(seed);const M=(a,b)=>Array.from({length:a},()=>Array.from({length:b},()=>+((r()*2-1)).toFixed(2)));
+  X=M(5,8);Wq=M(8,8);Wk=M(8,8);Wv=M(8,8);}
+const mm=(v,W,cols)=>Array.from({length:cols},(_,j)=>v.reduce((s,x,i)=>s+x*W[i][j],0));
+$('#toyQ').innerHTML=TOK.map((t,i)=>`<option value="${i}"${i===4?' selected':''}>${i+1}. "${t}"</option>`).join('');
+$('#toyKv').innerHTML=[[4,'4 = MHA'],[2,'2 = GQA'],[1,'1 = MQA']].map(k=>`<button type="button" data-k="${k[0]}">${k[1]}</button>`).join('');
+$('#toyKv').addEventListener('click',e=>{const b=e.target.closest('button');if(b){toyKv=+b.dataset.k;toy();}});
+$('#toySeed').addEventListener('click',()=>{seed++;initToy();toy();});
+$('#toyQ').addEventListener('input',toy);
+const r2=v=>v.map(x=>x.toFixed(2)).join(', ');
+function toy(){
+  document.querySelectorAll('#toyKv button').forEach(b=>b.classList.toggle('on',+b.dataset.k===toyKv));
+  const qi=+$('#toyQ').value, Hq=4, d=2, rep=Hq/toyKv;
+  const Q=X.map(x=>mm(x,Wq,8)), K=X.map(x=>mm(x,Wk,toyKv*d)), V=X.map(x=>mm(x,Wv,toyKv*d));
+  $('#toySteps').innerHTML=`
+    <li>Token "${TOK[qi]}" has an 8-number residual vector x = [${r2(X[qi])}].</li>
+    <li>Multiply by W<sub>Q</sub> (8×8) to get 8 numbers, split into <b>4 heads × 2</b>. Multiply by W<sub>K</sub> and W<sub>V</sub> (8×${toyKv*d} each) to get <b>${toyKv} K head${toyKv>1?'s':''} and ${toyKv} V head${toyKv>1?'s':''}</b> of 2 numbers.</li>
+    <li>Each query head h uses K/V head ⌊h ÷ ${rep}⌋. ${rep>1?`So ${rep} query heads share every K/V head.`:'Every head has its own.'}</li>
+    <li>Score each past token: q·k ÷ √2. Softmax. Mix the V's with those weights. Only tokens 1…${qi+1} are visible (causal).</li>`;
+  let html='';
+  for(let h=0;h<Hq;h++){
+    const g=Math.floor(h/rep), q=Q[qi].slice(h*d,h*d+d);
+    const sc=[];for(let t=0;t<=qi;t++){const k=K[t].slice(g*d,g*d+d);sc.push((q[0]*k[0]+q[1]*k[1])/Math.SQRT2);}
+    const mx=Math.max(...sc),e=sc.map(s=>Math.exp(s-mx)),sum=e.reduce((a,b)=>a+b,0),w=e.map(x=>x/sum);
+    const out=[0,1].map(j=>w.reduce((s,wt,t)=>s+wt*V[t][g*d+j],0));
+    html+=`<div class="headcard"><b>Query head ${h+1} <span class="tag">→ uses KV head ${g+1}</span></b>
+      <span class="mono" style="font-family:var(--mono);font-size:.74rem">q = [${r2(q)}]</span>
+      <div class="bars">${w.map((wt,t)=>`<div class="b"><span>${TOK[t]}</span><i style="width:${(wt*100).toFixed(1)}%"></i><span>${(wt*100).toFixed(0)}%</span></div>`).join('')}</div>
+      <span style="font-family:var(--mono);font-size:.72rem;color:var(--muted)">scores [${r2(sc)}]<br>output = Σ w·v = [${r2(out)}]</span></div>`;
+  }
+  $('#toyHeads').innerHTML=html;
+  // cache table
+  const ck=css('--teal'),cv=css('--violet');
+  let t=`<table style="font-size:.76rem"><tr><th>token</th>`;
+  for(let g=0;g<toyKv;g++)t+=`<th style="color:${ck}">K${g+1}</th>`;
+  for(let g=0;g<toyKv;g++)t+=`<th style="color:${cv}">V${g+1}</th>`;
+  t+='</tr>';
+  TOK.forEach((tk,i)=>{t+=`<tr${i===qi?' class="hl"':''}><td>${tk}</td>`;for(let g=0;g<toyKv;g++)t+=`<td class="num">${r2(K[i].slice(g*d,g*d+d))}</td>`;for(let g=0;g<toyKv;g++)t+=`<td class="num">${r2(V[i].slice(g*d,g*d+d))}</td>`;t+='</tr>';});
+  $('#toyCache').innerHTML=t+'</table>';
+  const nums=5*toyKv*2*d;
+  $('#toyOut').innerHTML=`<div class="metric"><span class="k">Numbers cached</span><span class="v">${nums}</span><span class="s">5 tokens × ${toyKv} heads × 2 (K,V) × 2 dims</span></div>
+   <div class="metric"><span class="k">vs MHA</span><span class="v">${(nums/80*100).toFixed(0)}%</span><span class="s">${toyKv===4?'baseline':`${4/toyKv}× smaller cache`}</span></div>
+   <div class="metric"><span class="k">Score computations</span><span class="v">${4*(qi+1)}</span><span class="s">4 heads × ${qi+1} tokens: the same in every mode</span></div>`;
+}
+
+/* ======== 6. cache 3D ======== */
+const MODES={
+ MHA:{name:'MHA',kvH:32,per:256,desc:'Every one of the 32 query heads owns a K and a V of 128 numbers each. 32 tall, thin bars. The biggest cache. Qwen-7B (2023), Gemma 1 7B.'},
+ GQA:{name:'GQA-8',kvH:8,per:256,desc:'Each bar now serves 4 query heads (the 4 lines landing on it). The same 256 numbers per KV head, but only 8 heads, so the total area is ¼ of MHA. Qwen2/2.5/3, Gemma 2/3/4, Llama 3.'},
+ MQA:{name:'MQA',kvH:1,per:256,desc:'One shared K/V: a single flat sheet under all 32 heads. 1/32 of MHA. Gemma 1 2B, Gemma 3 1B, PaLM.'},
+ MLA:{name:'MLA',kvH:1,per:576,desc:'One shared sheet again, but it holds a 512-number learned latent plus a 64-number RoPE key: 576 per token, 1/14 of MHA. Each head rebuilds its own K and V from it (the ghost boxes at the front, computed and never stored). DeepSeek-V2/V3/R1.'},
+ SWA:{name:'GQA-8 + sliding window',kvH:8,per:256,win:1024,desc:'GQA-8 bars, but they stop growing at 1024 tokens. The outline behind them shows what a global layer would hold. Gemma 3/4 local layers (5 of every 6).'},
+ DSA:{name:'MLA + DSA',kvH:1,per:576,dsa:true,desc:'The full MLA sheet is still stored, but each step reads only the glowing top-k chunks. The thin steel strip alongside is the indexer\'s 128-byte FP8 key per token, which is read in full every step. DeepSeek-V3.2.'},
+ LIN:{name:'Gated DeltaNet',lin:true,desc:'No bars at all. Each head keeps a fixed 128×128 state (the cubes) that is overwritten in place. Its size is identical at token 10 and at token 1,000,000. Qwen3-Next, Qwen3.5 and 3.6 (3 of every 4 layers).'}
+};
+let c3Mode='GQA',C3=null,c3Playing=false;
+$('#c3Modes').innerHTML=Object.keys(MODES).map(k=>`<button type="button" data-k="${k}">${MODES[k].name}</button>`).join('');
+$('#c3Modes').addEventListener('click',e=>{const b=e.target.closest('button');if(b){c3Mode=b.dataset.k;buildC3();}});
+function c3Bytes(mode,ctx){
+  const M=MODES[mode];
+  if(M.lin)return {stored:32*128*128*4,read:32*128*128*4,perTok:0};
+  const perTok=M.kvH*M.per*2;
+  const kept=M.win?Math.min(ctx,M.win):ctx;
+  let read=perTok*kept;
+  if(M.dsa){read=Math.min(ctx,2048)*perTok+ctx*128;}
+  return {stored:perTok*kept+(M.dsa?ctx*128:0),read,perTok};
+}
+function initC3(){
+  if(!window.THREE)return;
+  const st={theta:-0.95,phi:1.1,r:14},target=new THREE.Vector3(-1.8,0.9,0);
+  const S=makeScene('#c3Canvas','#c3Stage',st,target);const g=new THREE.Group();S.scene.add(g);
+  C3={S,g,t:0};S.place();
+  let last=performance.now();
+  const tick=now=>{const dt=now-last;last=now;
+    if(S.vis){
+      if(c3Playing){C3.t+=dt;if(C3.t>420){C3.t=0;let v=+$('#c3Ctx').value;v=(v+1)%9;$('#c3Ctx').value=v;updC3();}}
+      if(C3.pulse){C3.pulse.forEach((p,i)=>{p.material.opacity=0.35+0.35*Math.sin(now/300+i);});S.render();}
+    }
+    requestAnimationFrame(tick);};
+  requestAnimationFrame(tick);
+  buildC3();S.resize();
+}
+const SP=0.25, QW=32*SP, AREA_MHA_HEAD=0.95*SP*0.85, LMAX=14;
+function buildC3(){
+  document.querySelectorAll('#c3Modes button').forEach(b=>b.classList.toggle('on',b.dataset.k===c3Mode));
+  const M=MODES[c3Mode];
+  $('#c3Text').textContent=M.desc;
+  $('#c3Legend').innerHTML=M.lin?`<span><i style="background:var(--copper)"></i>Query heads</span><span><i style="background:var(--teal)"></i>Fixed state per head</span>`:
+    `<span><i style="background:var(--copper)"></i>Query heads (new token)</span><span><i style="background:var(--teal)"></i>K stored</span><span><i style="background:var(--teal2)"></i>V stored</span>${M.dsa?'<span><i style="background:var(--gold)"></i>Read this step</span>':''}`;
+  if(!C3){updC3();return;}
+  const g=C3.g;clear(g);C3.bars=[];C3.pulse=null;C3.ghost=null;C3.segs=null;C3.idx=null;
+  const zc=i=>-QW/2+SP*(i+0.5);
+  // query spheres
+  const sg=new THREE.SphereGeometry(0.075,12,8),sm=lam('--copper');
+  for(let i=0;i<32;i++){const s=new THREE.Mesh(sg,sm);s.position.set(0.3,2.6,zc(i));g.add(s);}
+  // new-token plane marker
+  const lineMat=new THREE.LineBasicMaterial({color:col('--muted'),transparent:true,opacity:0.55});
+  if(M.lin){
+    const cg=new THREE.BoxGeometry(SP*0.8,SP*0.8,SP*0.8);C3.pulse=[];
+    for(let i=0;i<32;i++){const m=new THREE.Mesh(cg,lam('--teal',{transparent:true,opacity:0.7}));m.position.set(0,0.3,zc(i));g.add(m);C3.pulse.push(m);
+      const geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0.3,2.6,zc(i)),new THREE.Vector3(0,0.3+SP*0.4,zc(i))]);g.add(new THREE.Line(geo,lineMat));}
+  } else {
+    const n=M.kvH, span=QW/n, width=span*0.88;
+    const area=AREA_MHA_HEAD*M.per/256; // per KV head cross-section
+    const hTot=area/width; const hK=M.per===576?hTot*(512/576):hTot/2, hV=hTot-hK;
+    for(let j=0;j<n;j++){
+      const z=-QW/2+span*(j+0.5);
+      const k=new THREE.Mesh(new THREE.BoxGeometry(1,Math.max(0.006,hK),width),lam('--teal'));
+      const v=new THREE.Mesh(new THREE.BoxGeometry(1,Math.max(0.006,hV),width),lam(M.per===576?'--violet':'--teal2'));
+      k.userData.y=hK/2;v.userData.y=hK+hV/2;g.add(k);g.add(v);C3.bars.push(k,v);
+      const rep=32/n;
+      for(let i=j*rep;i<(j+1)*rep;i++){const geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0.3,2.6,zc(i)),new THREE.Vector3(0,hTot,z)]);g.add(new THREE.Line(geo,lineMat));}
+    }
+    C3.h=hTot;
+    if(c3Mode==='MLA'){ // ghosts: per-head rebuilt K/V, short, at front
+      const gm=new THREE.MeshBasicMaterial({color:col('--copper'),wireframe:true,transparent:true,opacity:0.35});
+      for(let i=0;i<32;i+=1){const b=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.95,SP*0.85),gm);b.position.set(0.55,1.35,zc(i));g.add(b);}
+    }
+    if(M.win){C3.ghost=new THREE.Mesh(new THREE.BoxGeometry(1,hTot,QW*0.98),new THREE.MeshBasicMaterial({color:col('--muted'),wireframe:true,transparent:true,opacity:0.25}));g.add(C3.ghost);}
+    if(M.dsa){
+      // hide continuous bars; build segments
+      C3.bars.forEach(b=>b.visible=false);
+      C3.segs=[];const NS=96;const sgeo=new THREE.BoxGeometry(1,hTot*1.6,QW*0.88);
+      C3.mOff=lam('--teal',{transparent:true,opacity:0.22});C3.mOn=new THREE.MeshBasicMaterial({color:col('--gold')});
+      for(let s=0;s<NS;s++){const m=new THREE.Mesh(sgeo,C3.mOff);g.add(m);C3.segs.push(m);}
+      C3.idx=new THREE.Mesh(new THREE.BoxGeometry(1,0.05,0.35),lam('--steel'));g.add(C3.idx);
+    }
+  }
+  // floor grid
+  const grid=new THREE.GridHelper(32,32,col('--line').getHex(),col('--line').getHex());grid.position.set(-LMAX/2,-0.02,0);g.add(grid);
+  // front-plane outline
+  const fr=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(QW,2.0)),new THREE.LineBasicMaterial({color:col('--copper'),transparent:true,opacity:0.5}));fr.rotation.y=Math.PI/2;fr.position.set(0.02,1.0,0);g.add(fr);
+  updC3();
+}
+function updC3(){
+  const ctx=CTX[+$('#c3Ctx').value];$('#c3CtxO').textContent=N(ctx)+' tokens';
+  const M=MODES[c3Mode];const B=c3Bytes(c3Mode,ctx);
+  const mha=c3Bytes('MHA',ctx);
+  $('#c3Out').innerHTML=`
+   <div class="metric"><span class="k">Stored, this layer</span><span class="v">${fBi(B.stored)}</span><span class="s">× 36 layers = ${fBi(B.stored*36)}</span></div>
+   <div class="metric"><span class="k">Per token</span><span class="v">${M.lin?'0':N(B.perTok)+' B'}</span><span class="s">${M.lin?'state is fixed':'K+V, BF16'}</span></div>
+   <div class="metric"><span class="k">Read per step</span><span class="v">${fBi(B.read)}</span><span class="s">${(100*B.read/mha.read).toFixed(1)}% of MHA</span></div>`;
+  if(!C3)return;
+  const len=Math.max(0.02,LMAX*ctx/262144);
+  const kept=M.win?Math.max(0.02,LMAX*Math.min(ctx,M.win)/262144):len;
+  C3.bars.forEach(b=>{b.scale.x=kept;b.position.set(-kept/2,b.userData.y,b.position.z||0);});
+  // fix z positions (bars store z in geometry? set from creation order)
+  let j=0;const n=M.kvH||1,span=QW/n;
+  for(let i=0;i<C3.bars.length;i+=2){const z=-QW/2+span*(j+0.5);C3.bars[i].position.z=z;C3.bars[i+1].position.z=z;j++;}
+  if(C3.ghost){C3.ghost.scale.x=len;C3.ghost.position.set(-len/2,C3.h/2,0);}
+  if(C3.segs){
+    const NS=C3.segs.length,segL=len/NS,frac=Math.min(1,2048/ctx);
+    const pick=new Set([NS-1,NS-2]);const want=Math.max(2,Math.round(frac*NS));const rr=rng(ctx+7);
+    while(pick.size<Math.min(NS,want))pick.add(Math.floor(rr()*NS));
+    C3.segs.forEach((s,i)=>{s.scale.x=Math.max(0.005,segL*0.92);s.position.set(-len+segL*(i+0.5),C3.h/2,0);
+      s.material=pick.has(i)?C3.mOn:C3.mOff;});
+    C3.idx.scale.x=len;C3.idx.position.set(-len/2,0.025,QW*0.44+0.3);
+  }
+  $('#c3Hint').textContent=`Length to scale: ${N(ctx)} tokens = ${len.toFixed(2)} units (262K = ${LMAX}). Drag to rotate.`;
+  C3.S.render();
+}
+$('#c3Ctx').addEventListener('input',updC3);
+$('#c3Play').addEventListener('click',()=>{c3Playing=!c3Playing;$('#c3Play').textContent=c3Playing?'Pause ❚❚':'Grow context ▶';});
+
+/* ======== 7. GQA worked ======== */
+function gqaWorked(){
+  const W=8190735360*4.89/8, free=24*GiB-W-0.9*GiB, ctx=32768;
+  const row=(n,lab)=>{const per=2*n*128*2*36*ctx;return `<b>${lab}</b>: ${fBi(per)} per 32K chat → <b>${Math.max(0,Math.floor(free/per))}</b> chat${Math.floor(free/per)===1?'':'s'} fit`;};
+  $('#gqaWorked').innerHTML=`Qwen3-8B Q4_K_M on an RTX 4090 leaves ≈ ${(free/GiB).toFixed(1)} GiB after weights and buffers. Each chat holds 32K tokens.<br>`+
+   row(32,'MHA (32 KV heads)')+'<br>'+row(8,'GQA-8 (what Qwen3 ships)')+'<br>'+row(1,'MQA (1 KV head)')+
+   `<br>Same weights, same FLOPs. Only the cache changed.`;
+}
+
+/* ======== 8. MLA receipt ======== */
+function mlaReceipt(){
+  const r=(a,b)=>`<div class="row"><span>${a}</span><span>${b}</span></div>`;
+  const mhaK=128*192, mhaV=128*128, mha=(mhaK+mhaV)*2*61, mla=576*2*61;
+  $('#mlaReceipt').innerHTML=`<div class="row dim"><span>DeepSeek-V3, per token, BF16</span><span></span></div>`+
+   r('If it were MHA: K = 128 heads × 192',N(mhaK)+' numbers')+
+   r('                V = 128 heads × 128',N(mhaV)+' numbers')+
+   r('  × 2 bytes × 61 layers',fBi(mha))+
+   r('MLA: latent 512 + rope key 64','576 numbers')+
+   r('  × 2 bytes × 61 layers',fBi(mla))+
+   `<div class="row sum"><span>Compression</span><span>${(mha/mla).toFixed(0)}× smaller</span></div>`+
+   r('At 128K tokens: MHA would need',fBi(mha*131072))+
+   r('                MLA needs',fBi(mla*131072))+
+   `<div class="row dim"><span>vs GQA-8 at the same shape (8×(192+128)×2×61)</span><span>${fBi(8*320*2*61)} / token</span></div>`;
+}
+
+/* ======== 9. SWA receipt (Gemma 3 4B) ======== */
+function swa(){
+  const ctx=CTX[+$('#swCtx').value];$('#swCtxO').textContent=N(ctx)+' tokens';
+  const per=2*4*256*2; // 4 KV heads × 256 dims
+  const g=5*per*ctx, l=29*per*Math.min(ctx,1024), all=34*per*ctx;
+  const r=(a,b)=>`<div class="row"><span>${a}</span><span>${b}</span></div>`;
+  $('#swReceipt').innerHTML=`<div class="row dim"><span>Gemma 3 4B: 34 layers = 29 local + 5 global · 4 KV heads × 256 dims · BF16</span><span></span></div>`+
+   r('Per token per layer: 2 × 4 × 256 × 2 B',N(per)+' B')+
+   r(`5 global layers × ${N(per)} B × ${N(ctx)} tokens`,fBi(g))+
+   r(`29 local layers × ${N(per)} B × min(${N(ctx)}, 1024)`,fBi(l))+
+   `<div class="row sum"><span>Gemma 3 4B actual cache</span><span>${fBi(g+l)}</span></div>`+
+   r('If all 34 layers were global',fBi(all))+
+   `<div class="row sum"><span>Saving</span><span>${(all/(g+l)).toFixed(1)}× smaller</span></div>`;
+}
+
+/* ======== 10. DSA ======== */
+const DSC=[8192,16384,32768,65536,131072,163840],DSK=[512,1024,2048,4096,8192];
+let dsSeed=3;
+function dsa(){
+  const ctx=DSC[+$('#dsCtx').value],k=DSK[+$('#dsK').value];
+  $('#dsCtxO').textContent=N(ctx)+' tokens';$('#dsKO').textContent=N(k);
+  const cv=$('#dsCanvas'),g=cv.getContext('2d'),W=cv.width,H=cv.height;g.clearRect(0,0,W,H);
+  const n=200,r=rng(dsSeed);const sc=[];
+  for(let i=0;i<n;i++){let v=Math.pow(r(),3)*0.55;if(i>n-12)v+=0.35*r()+0.25;if(r()<0.04)v+=0.5;sc.push(Math.min(1,v));}
+  const keep=Math.max(1,Math.round(n*Math.min(1,k/ctx)));
+  const sorted=sc.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,keep).map(x=>x[1]);const sel=new Set(sorted);
+  const bw=(W-40)/n;
+  for(let i=0;i<n;i++){const h=sc[i]*(H-50);g.fillStyle=css(sel.has(i)?'--copper':'--steel');g.globalAlpha=sel.has(i)?1:0.55;g.fillRect(20+i*bw,H-30-h,Math.max(1,bw-1),h);}
+  g.globalAlpha=1;g.fillStyle=css('--muted');g.font='12px "IBM Plex Sans",sans-serif';
+  g.fillText('oldest',20,H-10);g.fillText('newest →',W-80,H-10);
+  g.fillText(`${keep} of ${n} drawn tokens selected (= ${N(k)} of ${N(ctx)}, ${(100*Math.min(1,k/ctx)).toFixed(1)}%)`,W/2-150,16);
+  // receipt
+  const mla=1152,idx=128;
+  const dense=ctx*mla, dsr=ctx*idx+Math.min(ctx,k)*mla;
+  const fD=ctx*128*(576+512)*2, fI=ctx*64*128*2, fS=Math.min(ctx,k)*128*(576+512)*2;
+  const r2_=(a,b)=>`<div class="row"><span>${a}</span><span>${b}</span></div>`;
+  $('#dsReceipt').innerHTML=`<div class="row dim"><span>Per layer, per decode step (V3.2 sizes)</span><span></span></div>`+
+   r2_(`Dense MLA reads ${N(ctx)} × 1,152 B`,fBi(dense))+
+   r2_(`DSA: indexer keys ${N(ctx)} × 128 B (FP8)`,fBi(ctx*idx))+
+   r2_(`   + MLA on top-${N(k)} × 1,152 B`,fBi(Math.min(ctx,k)*mla))+
+   `<div class="row sum"><span>Bytes read</span><span>${(100*dsr/dense).toFixed(1)}% of dense</span></div>`+
+   r2_('Dense attention FLOPs (128 heads)',(fD/1e9).toFixed(2)+' GFLOP')+
+   r2_('DSA: indexer + sparse attention',((fI+fS)/1e9).toFixed(2)+' GFLOP')+
+   `<div class="row sum"><span>Compute</span><span>${(fD/(fI+fS)).toFixed(1)}× less</span></div>`+
+   r2_('Stored cache (unchanged + indexer keys)',fBi(ctx*(mla+idx)));
+}
+['#dsCtx','#dsK'].forEach(s=>$(s).addEventListener('input',dsa));
+$('#dsNew').addEventListener('click',()=>{dsSeed++;dsa();});
+
+/* ======== 11. linear ======== */
+function lin(){
+  const ctx=CTX[+$('#lnCtx').value]||1024;$('#lnCtxO').textContent=N(ctx)+' tokens';
+  const state=32*128*128*4, fullPerTok=2*4*256*2;
+  const r=(a,b)=>`<div class="row"><span>${a}</span><span>${b}</span></div>`;
+  const q35=8*fullPerTok*ctx+24*state, q3=147456*ctx;
+  $('#lnReceipt').innerHTML=`<div class="row dim"><span>Qwen3.5-9B · 32 layers = 24 Gated DeltaNet + 8 full attention</span><span></span></div>`+
+   r('DeltaNet state per layer: 32 heads × 128 × 128 × 4 B (fp32)',fBi(state))+
+   r('Full-attention KV per token per layer: 2 × 4 × 256 × 2 B',N(fullPerTok)+' B')+
+   r(`Break-even: one DeltaNet layer = one full layer at`,N(state/fullPerTok)+' tokens')+
+   r(`24 DeltaNet layers (fixed)`,fBi(24*state))+
+   r(`8 full layers × ${N(fullPerTok)} B × ${N(ctx)}`,fBi(8*fullPerTok*ctx))+
+   `<div class="row sum"><span>Qwen3.5-9B total at ${fK(ctx)}</span><span>${fBi(q35)}</span></div>`+
+   r(`Qwen3-8B at the same context (144 KiB/token)`,fBi(q3))+
+   `<div class="row sum"><span>Ratio</span><span>${(q3/q35).toFixed(1)}× ${q3>q35?'smaller':'larger'}</span></div>`;
+}
+$('#lnCtx').addEventListener('input',lin);
+
+/* ======== 12. all ======== */
+function all(){
+  const ctx=CTX[+$('#allCtx').value];$('#allCtxO').textContent=N(ctx)+' tokens';
+  const L=36,Hq=32,d=128;
+  const rows=[
+   ['MHA',2*32*d*2*L,c=>c,c=>c,'nothing','Qwen-7B (2023), Gemma 1 7B'],
+   ['GQA-8',2*8*d*2*L,c=>c,c=>c,'memory 4×','Qwen2–3, Gemma 2–4, Llama 3'],
+   ['MQA',2*1*d*2*L,c=>c,c=>c,'memory 32×','Gemma 1 2B, Gemma 3 1B'],
+   ['MLA (576 latent)',576*2*L,c=>c,c=>c,'memory 14×, keeps quality','DeepSeek V2, V3, R1'],
+   ['GQA-8 + 5:1 sliding (1024)',null,null,null,'memory at long context','Gemma 3, Gemma 4'],
+   ['MLA + DSA (top-2048)',null,null,null,'read & compute per step','DeepSeek V3.2'],
+   ['3:1 DeltaNet hybrid (GQA-8 full)',null,null,null,'memory & compute, fixed state','Qwen3-Next, 3.5, 3.6']
+  ];
+  const flops=(c)=>4*Hq*d*c; // per layer score+mix
+  let h='';
+  rows.forEach(r=>{
+    let per,cache,read,fl;
+    if(r[0].startsWith('GQA-8 +')){const pl=2*8*d*2;const nG=6,nL=30;per=`${N(pl*nG)} B + local`;cache=pl*(nG*ctx+nL*Math.min(ctx,1024));read=cache;fl=4*Hq*d*(nG*ctx+nL*Math.min(ctx,1024));}
+    else if(r[0].startsWith('MLA + DSA')){per=N((576*2+128)*L)+' B';cache=(1152+128)*L*ctx;read=L*(ctx*128+Math.min(ctx,2048)*1152);fl=L*(ctx*64*128*2+Math.min(ctx,2048)*Hq*(576+512)*2);}
+    else if(r[0].startsWith('3:1')){const pl=2*8*d*2;per=`${N(pl*9)} B + fixed`;const st=27*32*128*128*4;cache=pl*9*ctx+st;read=cache;fl=4*Hq*d*ctx*9+27*32*128*128*4;}
+    else if(r[0].startsWith('MLA')){per=N(r[1])+' B';cache=r[1]*ctx;read=cache;fl=L*Hq*(576+512)*2*ctx;}
+    else {per=N(r[1])+' B';cache=r[1]*ctx;read=cache;fl=L*flops(ctx);}
+    h+=`<tr><td><b>${r[0]}</b></td><td class="num">${per}</td><td class="num">${fBi(cache)}</td><td class="num">${fBi(read)}</td><td class="num">${(fl/1e9).toFixed(2)} GFLOP</td><td>${r[4]}</td><td>${r[5]}</td></tr>`;
+  });
+  $('#allBody').innerHTML=h;
+}
+$('#allCtx').addEventListener('input',all);
+
+/* ======== nav highlight ======== */
+const links=[...document.querySelectorAll('#rail a[href^="#"]')];
+if('IntersectionObserver' in window){const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+e.target.id));}),{rootMargin:'-35% 0px -60% 0px'});document.querySelectorAll('main section').forEach(s=>io.observe(s));}
+
+/* ======== boot ======== */
+initToy();
+function redraw(){weights();blk();kv();tankText(tankCalc());speedmem();toy();gqaWorked();mlaReceipt();swa();dsa();lin();all();updC3();}
+redraw();
+try{initTank();}catch(e){console.error(e);}
+try{initC3();}catch(e){console.error(e);}
+const retheme=()=>{redraw();if(TANK)buildTank();if(C3)buildC3();};
+const mq=window.matchMedia('(prefers-color-scheme: dark)');if(mq.addEventListener)mq.addEventListener('change',retheme);
+new MutationObserver(retheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+})();
+</script>
+</body>
+</html>

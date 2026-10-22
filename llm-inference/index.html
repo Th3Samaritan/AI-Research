@@ -183,6 +183,7 @@ svg text{font-family:var(--body)}
   <a href="#speed">Speed lab</a>
   <a href="#cpu">GPU vs CPU</a>
   <a href="#kv">KV cache &amp; attention</a>
+  <a href="attention-memory.html" style="color:var(--copper)">↳ Part 2: worked by hand</a>
   <a href="#quant">Quantization</a>
   <a href="#qwen">Qwen lineage</a>
   <a href="#deepseek">DeepSeek's path</a>
@@ -341,6 +342,7 @@ svg text{font-family:var(--body)}
 <section id="kv">
   <div class="eyebrow">04 · Attention</div>
   <h2>KV cache, and the race to shrink it</h2>
+  <div class="callout"><b class="t">Want every number worked by hand?</b><span><a href="attention-memory.html">Part 2: Attention &amp; Memory, Worked</a> counts Qwen3-8B's memory byte by byte, then rebuilds attention from multi-head through GQA, MQA, MLA, sliding windows, DSA and linear attention, with a toy model you can inspect and a 3D cache viewer.</span></div>
   <p class="lede">Each layer keeps a K and a V vector for every past token. At long contexts this cache becomes the biggest consumer of memory and bandwidth. Every recent architecture change in Qwen, Gemma and DeepSeek is an attack on it.</p>
   <div class="bench">
     <div class="bench-head"><h3>Who shares K/V with whom</h3><span class="tag">8 query heads shown</span></div>
