@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Token Journey in 3D</title>
+<meta name="description" content="Part 3 of the LLM Inference Field Guide. Follow one token from text to embedding, through every layer of Qwen, Gemma and DeepSeek architectures, to the LM head, in interactive 3D, with real shapes and timings. Plus activation surfaces, optimizers on a loss landscape and a live training run.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#EDF0F3">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-Research/llm-inference/token-journey.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Token Journey in 3D">
+<meta property="og:description" content="Watch one token travel through Qwen, Gemma and DeepSeek layer by layer in 3D: attention, KV cache, MoE router, residual stream, LM head, with real costs.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-Research/llm-inference/token-journey.html">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-Research/llm-inference/preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<script>
+(function(){
+  var KEY="site-theme",root=document.documentElement;
+  function preferred(){var s=null;try{s=localStorage.getItem(KEY)}catch(e){}
+    if(s==="light"||s==="dark")return s;
+    return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+  root.setAttribute("data-theme",preferred());
+  function apply(m){root.setAttribute("data-theme",m);
+    var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",m==="dark"?"#0D131A":"#EDF0F3");
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b){b.querySelector(".ico").textContent=m==="dark"?"☀":"☾";b.querySelector(".lbl").textContent=m==="dark"?"Light":"Dark";}}
+  document.addEventListener("DOMContentLoaded",function(){
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b)b.addEventListener("click",function(){var n=root.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(KEY,n)}catch(e){}apply(n);});
+    apply(root.getAttribute("data-theme"));});
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Same system as the Field Guide: steel paper, copper traces. Worked-number "receipts" are the signature element. */
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --sunk:#E3E8ED; --ink:#15202B; --muted:#586676; --line:#CFD7DF;
+  --copper:#B2532A; --steel:#8696A6; --teal:#1C7673; --teal2:#4FA6A2; --violet:#5A4AAE; --gold:#9A7210; --good:#2E7D4F; --warn:#A86A12; --bad:#B03A3A;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;margin:0}
+a{color:var(--copper)}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.1;margin:0}
+h2{font-size:clamp(1.6rem,3.2vw,2.3rem);font-stretch:112%;font-weight:760}
+h3{font-size:1.12rem;font-stretch:105%;font-weight:680}
+p{margin:0}
+code{font-family:var(--mono);font-size:.84em;background:var(--sunk);padding:.08em .35em;border-radius:4px}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px;max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 80px}
+nav.rail{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding-block:28px;display:flex;flex-direction:column;gap:2px;font-size:.88rem}
+nav.rail .brand{font-family:var(--display);font-stretch:118%;font-weight:800;font-size:1.02rem;line-height:1.15;margin-bottom:18px}
+nav.rail .brand span{color:var(--copper)}
+nav.rail a{color:var(--muted);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line)}
+nav.rail a:hover{color:var(--ink)}
+nav.rail a.on{color:var(--ink);border-left-color:var(--copper);font-weight:600}
+nav.rail a.hub{border-left:none;padding-left:0;margin-bottom:6px;font-size:.8rem}
+nav.rail .tools{margin-top:16px;padding-left:10px}
+nav.rail .tools button{font-size:.78rem;padding:4px 10px}
+main{min-width:0;display:flex;flex-direction:column;gap:88px;padding-top:40px}
+section{display:flex;flex-direction:column;gap:20px;scroll-margin-top:24px}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--copper)}
+.lede{font-size:1.08rem;color:var(--muted);max-width:68ch}
+.prose{max-width:70ch;display:flex;flex-direction:column;gap:12px}
+.prose ul,.prose ol{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px}
+.hero h1{font-size:clamp(2.1rem,5.4vw,3.9rem);font-stretch:120%;font-weight:800;letter-spacing:-.02em}
+.hero h1 em{font-style:normal;color:var(--copper)}
+.bench{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.bench-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px}
+.tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted)}
+.ctl output{font-family:var(--mono);color:var(--ink);font-size:.82rem}
+select,input[type=range]{accent-color:var(--copper)}
+select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;max-width:100%}
+input[type=range]{width:170px;max-width:100%}
+button{font:inherit;font-size:.85rem;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:6px 12px}
+button:hover{border-color:var(--copper)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button.on{border-color:var(--copper);color:var(--copper);font-weight:600}
+.split{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px}
+.split>*{min-width:0}
+.stage{position:relative;width:100%;height:480px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.stage canvas{width:100%;height:100%;display:block}
+.stage .hint{position:absolute;left:12px;bottom:10px;font-size:.75rem;color:var(--muted);pointer-events:none;max-width:80%}
+.stage .lbl3{position:absolute;font-family:var(--mono);font-size:.7rem;color:var(--muted);pointer-events:none;white-space:nowrap}
+/* receipt: the worked-number strip */
+.receipt{font-family:var(--mono);font-size:.82rem;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;overflow-x:auto}
+.receipt .row{display:flex;justify-content:space-between;gap:16px;white-space:nowrap}
+.receipt .row span:last-child{font-variant-numeric:tabular-nums}
+.receipt .sum{border-top:1px solid var(--ink);padding-top:6px;font-weight:600}
+.receipt .dim{color:var(--muted)}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-family:var(--mono);font-size:.86rem}
+.chain .f{background:var(--sunk);border-radius:6px;padding:4px 9px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.chain .f small{font-family:var(--body);font-size:.66rem;color:var(--muted)}
+.chain .f.hot{background:var(--copper);color:var(--surface)}
+.chain .f.hot small{color:var(--surface);opacity:.85}
+.chain .eq{font-weight:700;color:var(--copper)}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.metric{background:var(--bg);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.metric .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.metric .v{font-family:var(--display);font-stretch:108%;font-size:1.45rem;font-weight:740;font-variant-numeric:tabular-nums}
+.metric .s{font-size:.78rem;color:var(--muted)}
+.pill{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+.pill.good{color:var(--good)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.callout{border-left:3px solid var(--teal);background:var(--surface);padding:14px 18px;border-radius:0 8px 8px 0;max-width:74ch;display:flex;flex-direction:column;gap:6px}
+.callout.c{border-left-color:var(--copper)}
+.callout b.t{font-family:var(--display);font-stretch:108%}
+pre{margin:0;background:var(--sunk);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.79rem;line-height:1.55}
+pre .c{color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.86rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--sunk)}
+tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-size:.82rem;white-space:nowrap}
+tr.hl td{background:var(--sunk)}
+.grid-mat{display:grid;gap:2px;font-family:var(--mono);font-size:.72rem}
+.grid-mat div{padding:3px 4px;text-align:center;border-radius:3px;min-width:38px}
+.toy{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.headcard{background:var(--bg);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:.82rem}
+.headcard b{font-family:var(--display);font-stretch:106%}
+.bars{display:flex;flex-direction:column;gap:3px}
+.bars .b{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;align-items:center;font-family:var(--mono);font-size:.72rem}
+.bars .b i{display:block;height:10px;border-radius:2px;background:var(--copper)}
+.note{font-size:.8rem;color:var(--muted)}
+.steps{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.steps li::marker{font-family:var(--mono);color:var(--copper)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+@media (max-width:980px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:0}
+  nav.rail{position:sticky;top:0;height:auto;flex-direction:row;overflow-x:auto;padding-block:10px;background:var(--bg);z-index:5;border-bottom:1px solid var(--line);gap:0}
+  nav.rail .brand{display:none}
+  nav.rail a{white-space:nowrap;border-left:none;border-bottom:2px solid transparent}
+  nav.rail a.on{border-bottom-color:var(--copper)}
+  nav.rail .tools{margin-top:0}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .stage{height:400px}
+}
+@media (max-width:560px){.stage{height:340px}}
+
+/* ---- part 3 additions ---- */
+.howto{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-width:980px}
+.howto div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--muted)}
+.howto b{font-family:var(--display);font-stretch:108%;color:var(--ink);font-size:1rem}
+input[type=text]{font:inherit;font-size:.92rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 9px;width:100%}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+button.primary{background:var(--copper);border-color:var(--copper);color:var(--surface);font-weight:600}
+button.primary:hover{filter:brightness(1.08)}
+button.pulse{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--copper) 30%,transparent)}}
+@media (prefers-reduced-motion:reduce){button.pulse{animation:none;outline:2px solid var(--copper)}}
+.transport{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.ctl.inline{flex-direction:row;align-items:center;gap:6px}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted);cursor:pointer}
+.chk input{accent-color:var(--copper)}
+.chk i,.sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.chkrow{display:flex;flex-wrap:wrap;gap:6px 16px}
+.jgrid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,1fr);gap:16px}
+.jgrid>*{min-width:0}
+.stage.tall{height:640px}
+.lbls{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lbl3{position:absolute;left:0;top:0;font-family:var(--mono);font-size:.66rem;color:var(--muted);pointer-events:none;white-space:nowrap;text-shadow:0 0 3px var(--sunk),0 0 3px var(--sunk)}
+.lbl3.b{color:var(--ink);font-weight:600;font-size:.72rem}
+.toks{position:absolute;left:10px;top:10px;right:10px;display:flex;flex-wrap:wrap;gap:4px;pointer-events:none}
+.toks .tk{font-family:var(--mono);font-size:.72rem;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--muted)}
+.toks .tk.gen{border-color:var(--copper);color:var(--copper)}
+.toks .tk.cur{background:var(--gold);color:var(--surface);border-color:var(--gold)}
+.toks .tk.next{border-style:dashed}
+.now{position:absolute;left:10px;bottom:30px;display:flex;flex-direction:column;gap:0;background:color-mix(in srgb,var(--surface) 88%,transparent);border-radius:6px;padding:5px 9px;font-size:.82rem;pointer-events:none}
+.now b{font-family:var(--display);font-stretch:108%}
+.now span{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+.views{position:absolute;right:8px;bottom:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:70%}
+.views button{font-size:.72rem;padding:3px 8px;background:var(--surface)}
+.stage .hint{bottom:8px}
+.inspector{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;max-height:640px;overflow:auto;font-size:.88rem}
+.inspector h3{font-size:1.15rem}
+.inspector .what{display:flex;flex-direction:column;gap:8px}
+.inspector .what ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:3px}
+.inspector pre{font-size:.74rem}
+.inspector .receipt{font-size:.74rem;padding:10px 12px}
+.inspector .tablewrap table{font-size:.76rem}
+.inspector .tablewrap td,.inspector .tablewrap th{padding:4px 8px}
+.ins-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ins-head button{font-size:.72rem;padding:3px 8px}
+.toyv{display:flex;flex-direction:column;gap:5px}
+.vstrip{display:grid;grid-template-columns:70px 1fr;gap:6px;align-items:center;font-family:var(--mono);font-size:.68rem;color:var(--muted)}
+.vstrip>div{display:grid;gap:1px;height:16px}
+.vstrip i{display:block;border-radius:1px}
+.tkrow{display:flex;flex-wrap:wrap;gap:4px}
+.tkrow span{font-family:var(--mono);font-size:.74rem;background:var(--sunk);border-radius:4px;padding:2px 6px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.tkrow small{font-size:.6rem;color:var(--muted)}
+#jSpark{width:100%;max-width:420px}
+.stagechips{display:flex;gap:3px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.stagechips button{font-size:.68rem;padding:3px 7px;white-space:nowrap;flex:none}
+.stagechips button.mini{padding:3px 4px;min-width:22px;color:var(--muted)}
+.stagechips button.on{background:var(--copper);border-color:var(--copper);color:var(--surface)}
+.costbar{display:flex;height:22px;border-radius:6px;overflow:hidden;gap:1px;background:var(--line)}
+.costbar i{display:block;min-width:2px;opacity:.75;transition:opacity .2s}
+.costbar i.on{opacity:1;box-shadow:inset 0 0 0 2px var(--ink)}
+#jCostLegend span.on{color:var(--ink);font-weight:600}
+td.mono{font-family:var(--mono);font-size:.76rem}
+ol.src{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:5px;font-size:.88rem}
+@media (max-width:1100px){.jgrid{grid-template-columns:minmax(0,1fr)}.inspector{max-height:none}.stage.tall{height:560px}}
+@media (max-width:560px){.stage.tall{height:440px}.views{max-width:100%}.now{bottom:62px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="rail" id="rail">
+  <a class="hub" href="./">← Field Guide (part 1)</a>
+  <a class="hub" href="attention-memory.html">← Attention &amp; Memory (part 2)</a>
+  <div class="brand">Token Journey<br><span>in 3D</span></div>
+  <a href="#start">How to use this</a>
+  <a href="#journey">1 · Follow one token</a>
+  <a href="#act">2 · Activations in 3D</a>
+  <a href="#opt">3 · Optimizers on a landscape</a>
+  <a href="#train">4 · Train a tiny model</a>
+  <a href="#diff">5 · What changes per model</a>
+  <a href="#sources">Sources</a>
+  <div class="tools"><button type="button" data-theme-toggle aria-label="Switch theme"><span class="ico">☾</span> <span class="lbl">Dark</span></button></div>
+</nav>
+<main>
+
+<section id="start" class="hero">
+  <span class="eyebrow">LLM Inference Field Guide · Part 3</span>
+  <h1>Follow one token <em>through the whole model</em>, in 3D</h1>
+  <p class="lede">Type a prompt. Then watch the last token turn into an ID, then a vector, climb every layer of a real architecture (Qwen, Gemma or DeepSeek) and come out as a probability for the next word. Click any part to see what it does, its real shapes, and how long it takes on your hardware.</p>
+  <div class="howto">
+    <div><b>1 · Watch</b><span>Press play. The gold ball climbs the tower (the whole model). The magnified layer on the right runs every sub-step.</span></div>
+    <div><b>2 · Click</b><span>Click any block, cube or slab. The panel explains it with this run's actual numbers. Click a tower slab to magnify that layer.</span></div>
+    <div><b>3 · Change</b><span>Switch architecture, activation, hardware, quantization or context, then see what moves and what gets slower.</span></div>
+  </div>
+  <div class="callout c"><b class="t">What is real and what is a stand-in</b><p>The <b>structure</b> is real: layer count and pattern, head ratios, norms, RoPE, cache layout, router, LM head. So are the <b>costs</b>: bytes and times come from each model's official config. The <b>numbers flowing through</b> come from a 16-dimensional toy with the same wiring and random weights, so you can see every value. Because those weights are untrained, the toy's next word is noise. The math path is identical.</p></div>
+</section>
+
+<section id="journey">
+  <span class="eyebrow">1 · Follow one token</span>
+  <h2>From text to the next word</h2>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl" style="flex:1 1 260px">Architecture<select id="jArch"></select></label>
+      <label class="ctl" style="flex:2 1 280px">Prompt (press Enter)<input id="jPrompt" type="text" value="the model reads the cache and predicts the next" maxlength="160"></label>
+      <div class="ctl"><span>&nbsp;</span><div class="btnrow"><button type="button" id="jRun">Run prompt</button><button type="button" id="jNext" class="primary">Generate next token</button></div></div>
+    </div>
+    <p class="note" id="jArchBlurb"></p>
+    <div class="transport">
+      <button type="button" id="jRestart" title="Restart">⏮</button>
+      <button type="button" id="jPrev" title="Previous step">◀</button>
+      <button type="button" id="jPlay">▶ Play</button>
+      <button type="button" id="jStep" title="Next step">▶|</button>
+      <label class="ctl inline">Speed<select id="jSpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+      <label class="ctl inline">Pace<select id="jPace"><option value="explain">Explain (even steps)</option><option value="real">Real-time proportions</option></select></label>
+      <label class="ctl inline">Magnify<select id="jFocus"></select></label>
+      <label class="chk"><input type="checkbox" id="jAll"> Every layer in detail</label>
+      <label class="chk"><input type="checkbox" id="jFollow" checked> Camera follows</label>
+    </div>
+    <div class="jgrid">
+      <div class="stage tall" id="jStage">
+        <canvas id="jCanvas" aria-label="3D view of the model: a tower of layers, a magnified layer with attention and FFN, the residual stream, embedding table and LM head"></canvas>
+        <div id="jLabels" class="lbls"></div>
+        <div id="jToks" class="toks"></div>
+        <div class="now"><b id="jStageName"></b><span id="jReal"></span></div>
+        <div id="jViews" class="views"><button type="button" data-v="all">Whole</button><button type="button" data-v="tower">Tower</button><button type="button" data-v="emb">Embed</button><button type="button" data-v="attn">Attention</button><button type="button" data-v="ffn">FFN</button><button type="button" data-v="out">Output</button><button type="button" id="jZoomIn" aria-label="Zoom in">+</button><button type="button" id="jZoomOut" aria-label="Zoom out">−</button></div>
+        <span class="hint">Drag to orbit · click anything</span>
+      </div>
+      <aside class="inspector" id="jInspector" aria-live="polite"></aside>
+    </div>
+    <div id="jChips" class="stagechips" aria-label="Steps"></div>
+    <div class="legend"><span><i style="background:var(--copper)"></i>Full attention layer</span><span><i style="background:var(--teal)"></i>Local (sliding-window) layer</span><span><i style="background:var(--violet)"></i>Linear-attention layer · norms</span><span><i style="background:var(--gold)"></i>MoE stripe · residual adds · LM head</span><span><i style="background:linear-gradient(90deg,var(--teal),var(--copper))"></i>Vector values: negative → positive</span></div>
+  </div>
+
+  <div class="bench">
+    <div class="bench-head"><h3>Where the time goes for this token</h3><span class="tag">real model, ideal bandwidth</span></div>
+    <div class="controls">
+      <label class="ctl">Hardware<select id="jHw"></select></label>
+      <label class="ctl">Weights format<select id="jFmt"></select></label>
+      <label class="ctl">Context so far <output id="jCtxO"></output><input id="jCtx" type="range" min="0" max="7" value="2"></label>
+      <label class="ctl">Phase<select id="jPhase"><option value="decode">Decode (one new token)</option><option value="prefill">Prefill (whole prompt at once)</option></select></label>
+      <label class="ctl">Activation<select id="jAct"></select></label>
+      <label class="ctl">Temperature <output id="jTempO">1.0</output><input id="jTemp" type="range" min="1" max="20" value="10"></label>
+      <label class="chk"><input type="checkbox" id="jGreedy"> Greedy</label>
+    </div>
+    <div class="costbar" id="jCostBar"></div>
+    <div class="legend" id="jCostLegend"></div>
+    <div class="readout" id="jCostOut"></div>
+    <p class="note">The highlighted segment is the step now playing. In decode, almost every step is <b>memory-bound</b>: the GPU waits for weights and cache to arrive. Switch to prefill and the big matrix steps become compute-bound, because each weight is reused for every prompt token. Raise the context and watch the teal cache segment grow. Try Qwen3.5 or Gemma 3 to see it stay small.</p>
+  </div>
+</section>
+
+<section id="act">
+  <span class="eyebrow">2 · Activations in 3D</span>
+  <h2>The FFN's switch, as a surface</h2>
+  <p class="lede">A gated FFN neuron has <i>two</i> inputs, gate and up, so its activation is a surface, not a curve. Gold dots are the 32 toy neurons of the token you are following, at the magnified layer. Changing the function here changes it in the journey too.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl">Function<select id="aFn"></select></label>
+      <label class="chk"><input type="checkbox" id="aDeriv"> Show the gradient ∂h/∂gate</label>
+      <label class="chk"><input type="checkbox" id="aDots" checked> Show this token's neurons</label>
+      <label class="chk"><input type="checkbox" id="aSpin" checked> Slow spin</label>
+    </div>
+    <div class="split">
+      <div class="stage" id="aStage"><canvas id="aCanvas" aria-label="3D surface of the activation function over gate and up inputs"></canvas><div class="lbls"></div><span class="hint">Drag to orbit</span></div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <pre id="aFormula"></pre>
+        <div class="readout" id="aOut"></div>
+        <div class="prose note"><p><b>How to read it.</b> Along the gate axis the surface follows the activation's shape. Along the up axis it's a straight ramp, because up just scales the result. So the gate decides <i>whether</i> a neuron fires and up decides <i>what</i> it passes on. Turn on the gradient view with ReLU or ReGLU: the flat zero region is where neurons stop learning.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="opt">
+  <span class="eyebrow">3 · Optimizers on a landscape</span>
+  <h2>SGD vs momentum vs Adam vs AdamW, racing downhill</h2>
+  <p class="lede">Training looks for the lowest point of a loss surface with millions of dimensions. Here it has two, so you can watch it. All five optimizers start at the same spot, see the same noisy gradients, and differ only in their update rule. Click the surface to pick a new start.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl">Surface<select id="oSurf"></select></label>
+      <label class="ctl">Learning rate <output id="oLrO"></output><input id="oLr" type="range" min="0" max="100" value="57"></label>
+      <label class="ctl">β₁ momentum <output id="oB1O"></output><input id="oB1" type="range" min="0" max="0.99" step="0.01" value="0.9"></label>
+      <label class="ctl">β₂ <output id="oB2O"></output><input id="oB2" type="range" min="0.9" max="0.9999" step="0.0001" value="0.999"></label>
+      <label class="ctl">Weight decay λ <output id="oWdO"></output><input id="oWd" type="range" min="0" max="0.5" step="0.01" value="0"></label>
+      <label class="ctl">Gradient noise (mini-batch) <output id="oNoiseO"></output><input id="oNoise" type="range" min="0" max="1.5" step="0.05" value="0.2"></label>
+      <label class="ctl">LR schedule<select id="oSched"><option value="const">Constant</option><option value="step">Step decay (×0.3 at 50%, 80%)</option><option value="cos">Cosine decay</option><option value="wcos" selected>Warmup + cosine</option><option value="wsd">Warmup–stable–decay (WSD)</option></select></label>
+      <label class="ctl">Warmup steps <output id="oWarmO"></output><input id="oWarm" type="range" min="1" max="100" value="20"></label>
+      <label class="ctl">Total steps<select id="oTotal"><option>150</option><option selected>300</option><option>600</option></select></label>
+      <label class="ctl">Steps per frame<select id="oSpeed"><option>1</option><option selected>2</option><option>5</option></select></label>
+    </div>
+    <div id="oShow" class="chkrow"></div>
+    <div class="transport"><button type="button" id="oPlay" class="primary">▶ Run</button><button type="button" id="oReset">Reset</button><span class="note" id="oStep"></span></div>
+    <div class="split">
+      <div class="stage" id="oStage"><canvas id="oCanvas" aria-label="3D loss surface with optimizer balls rolling to the minimum"></canvas><div class="lbls"></div><span class="hint">Drag to orbit · click surface = new start</span></div>
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="tablewrap"><table id="oTable"></table></div>
+        <label class="ctl">Explain the update of<select id="oExplain"></select></label>
+        <div id="oReceipt"></div>
+        <canvas id="oSched2" width="460" height="110" style="width:100%;max-width:460px"></canvas>
+      </div>
+    </div>
+    <div class="callout"><b class="t">Things to try</b><ul class="steps"><li>Narrow valley, no noise: SGD zig-zags across the walls while Adam and RMSProp head straight down the floor.</li><li>Saddle point: SGD barely moves off the ridge, while momentum and Adam escape.</li><li>Set λ = 0.3: Adam with L2 and AdamW stop in different places. Both are pulled toward the origin, but AdamW's pull isn't rescaled by √v̂.</li><li>Raise the learning rate until SGD diverges. Then switch to warmup + cosine: small early steps, then decay so it settles in the minimum instead of bouncing around it.</li></ul></div>
+  </div>
+</section>
+
+<section id="train">
+  <span class="eyebrow">4 · Train a tiny model</span>
+  <h2>A real training run in your browser</h2>
+  <p class="lede">This is a genuine next-word model: two previous words → embedding → 48 hidden neurons → softmax over the vocabulary. It's trained from scratch on 24 sentences with real backpropagation. All five optimizers start from the same weights and see the same batches. Change the activation, weight decay or schedule and see what learns.</p>
+  <div class="bench">
+    <div class="controls">
+      <label class="ctl">Activation<select id="tAct"><option value="relu">ReLU</option><option value="gelu">GELU</option><option value="silu" selected>SiLU</option><option value="tanh">tanh</option></select></label>
+      <label class="ctl">Learning-rate multiplier <output id="tLrO"></output><input id="tLr" type="range" min="0" max="100" value="50"></label>
+      <label class="ctl">Weight decay <output id="tWdO"></output><input id="tWd" type="range" min="0" max="0.2" step="0.005" value="0.01"></label>
+      <label class="ctl">Schedule<select id="tSched"><option value="const">Constant</option><option value="cos">Cosine decay</option><option value="wcos" selected>Warmup + cosine</option><option value="wsd">WSD</option></select></label>
+      <label class="ctl">Steps<select id="tSteps"><option>300</option><option selected>600</option><option>1200</option></select></label>
+      <div class="ctl"><span>&nbsp;</span><div class="btnrow"><button type="button" id="tStart" class="primary">▶ Train</button><button type="button" id="tReset">Reset</button></div></div>
+    </div>
+    <span class="note" id="tStep"></span>
+    <canvas id="tCanvas" width="900" height="300" style="width:100%;height:auto;background:var(--bg);border-radius:8px"></canvas>
+    <div class="tablewrap"><table id="tTable"></table></div>
+    <p class="note">Each optimizer gets its usual base learning rate (SGD 0.3, momentum 0.05, RMSProp 0.003, Adam/AdamW 0.006), and the slider scales them all together. Choose ReLU with a high multiplier to see neurons die: they get pushed below zero, their gradient becomes 0, and they never recover. That's one reason modern LLMs use SiLU or GELU.</p>
+  </div>
+</section>
+
+<section id="diff">
+  <span class="eyebrow">5 · What changes per model</span>
+  <h2>Same journey, different parts</h2>
+  <p class="lede">Every model here does the same trip: embed → (norm → mix tokens → add → norm → FFN → add) × L → norm → LM head. What differs is how the "mix tokens" and FFN steps are built.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Model</th><th>Token mixing</th><th>Cache per token, all layers</th><th>FFN</th><th>Norms &amp; extras</th></tr>
+    <tr><td>Qwen-7B (2023)</td><td>MHA 32/32</td><td class="num">512 KiB</td><td>SwiGLU 11,008</td><td>Pre-norm RMSNorm, QKV bias</td></tr>
+    <tr><td>Gemma 2B (2024)</td><td>MQA 8/1, head 256</td><td class="num">18 KiB</td><td>GeGLU 16,384</td><td>Embedding × √d, tied LM head</td></tr>
+    <tr class="hl"><td>Qwen3-8B (2025)</td><td>GQA 32/8</td><td class="num">144 KiB</td><td>SwiGLU 12,288</td><td>QK-Norm, no QKV bias</td></tr>
+    <tr><td>Gemma 3 4B (2025)</td><td>GQA 8/4; 5 local (1,024) : 1 global</td><td class="num">136 KiB (local layers stop growing at 1,024 tokens)</td><td>GeGLU 10,240</td><td>Sandwich norms, QK-Norm, ×√d, tied</td></tr>
+    <tr><td>Qwen3-30B-A3B</td><td>GQA 32/4</td><td class="num">96 KiB</td><td>MoE 128 experts, top-8</td><td>Softmax router</td></tr>
+    <tr><td>Qwen3.5-9B (2026)</td><td>24 Gated DeltaNet + 8 gated full GQA 16/4</td><td class="num">32 KiB (+ fixed 48 MiB state)</td><td>SwiGLU 12,288</td><td>Output gate, gated RMSNorm</td></tr>
+    <tr><td>DeepSeek-V3</td><td>MLA, latent 512 + 64 RoPE</td><td class="num">68.6 KiB</td><td>3 dense, then 256 experts top-8 + 1 shared</td><td>Sigmoid router, bias balancing</td></tr>
+    <tr><td>DeepSeek-V3.2</td><td>MLA + DSA, top-2,048</td><td class="num">68.6 KiB (+ 7.6 KiB FP8 indexer keys)</td><td>Same as V3</td><td>Lightning indexer</td></tr>
+  </table></div>
+  <p class="note">Cache figures are BF16 K/V (or latent) × all attention layers. Qwen3-8B: 2 × 8 × 128 × 2 B × 36 = 147,456 B = 144 KiB, the same number as in part 2.</p>
+</section>
+
+<section id="sources">
+  <span class="eyebrow">Sources</span>
+  <h2>Where the numbers come from</h2>
+  <ol class="src" id="srcList"></ol>
+</section>
+</main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="tj-model.js?v=6"></script>
+<script src="tj-scene.js?v=6"></script>
+<script src="tj-labs.js?v=6"></script>
+<script>
+(function(){
+const S=[["Vaswani et al., Attention Is All You Need (2017)","https://arxiv.org/abs/1706.03762"],
+["Shazeer, GLU Variants Improve Transformer (2020)","https://arxiv.org/abs/2002.05202"],
+["Su et al., RoFormer: Rotary Position Embedding (2021)","https://arxiv.org/abs/2104.09864"],
+["Zhang & Sennrich, Root Mean Square Layer Normalization (2019)","https://arxiv.org/abs/1910.07467"],
+["Xiong et al., On Layer Normalization in the Transformer Architecture (pre-LN, 2020)","https://arxiv.org/abs/2002.04745"],
+["Elhage et al., A Mathematical Framework for Transformer Circuits (residual stream, 2021)","https://transformer-circuits.pub/2021/framework/index.html"],
+["Shazeer, Fast Transformer Decoding: One Write-Head Is All You Need (MQA, 2019)","https://arxiv.org/abs/1911.02150"],
+["Ainslie et al., GQA (2023)","https://arxiv.org/abs/2305.13245"],
+["DeepSeek-AI, DeepSeek-V2 (MLA, 2024)","https://arxiv.org/abs/2405.04434"],
+["DeepSeek-AI, DeepSeek-V3 Technical Report (2024)","https://arxiv.org/abs/2412.19437"],
+["DeepSeek-AI, DeepSeek-V3.2-Exp: DeepSeek Sparse Attention","https://github.com/deepseek-ai/DeepSeek-V3.2-Exp"],
+["Gemma Team, Gemma 3 Technical Report (2025)","https://arxiv.org/abs/2503.19786"],
+["google/gemma-2b config","https://huggingface.co/google/gemma-2b"],
+["Qwen Team, Qwen3 Technical Report (2025)","https://arxiv.org/abs/2505.09388"],
+["Qwen/Qwen3-8B config","https://huggingface.co/Qwen/Qwen3-8B"],
+["Qwen/Qwen3-30B-A3B config","https://huggingface.co/Qwen/Qwen3-30B-A3B"],
+["Qwen/Qwen3.5-9B model card and config","https://huggingface.co/Qwen/Qwen3.5-9B"],
+["Qwen/Qwen-7B (2023) config","https://huggingface.co/Qwen/Qwen-7B"],
+["Yang, Kautz & Hatamizadeh, Gated Delta Networks (2024)","https://arxiv.org/abs/2412.06464"],
+["Shazeer et al., Sparsely-Gated Mixture-of-Experts (2017)","https://arxiv.org/abs/1701.06538"],
+["Hendrycks & Gimpel, GELU (2016)","https://arxiv.org/abs/1606.08415"],
+["Ramachandran et al., Searching for Activation Functions (Swish/SiLU, 2017)","https://arxiv.org/abs/1710.05941"],
+["Kingma & Ba, Adam (2014)","https://arxiv.org/abs/1412.6980"],
+["Loshchilov & Hutter, Decoupled Weight Decay Regularization (AdamW, 2017)","https://arxiv.org/abs/1711.05101"],
+["Loshchilov & Hutter, SGDR: cosine schedules (2016)","https://arxiv.org/abs/1608.03983"],
+["Hinton, Neural Networks for ML, lecture 6 (RMSProp)","https://www.cs.toronto.edu/~tijmen/csc321/slides/lecture_slides_lec6.pdf"],
+["Hägele et al., Scaling Laws and Compute-Optimal Training Beyond Fixed Training Durations (WSD, 2024)","https://arxiv.org/abs/2405.18392"]];
+document.getElementById('srcList').innerHTML=S.map(([t,u])=>`<li><a href="${u}" rel="noopener">${t}</a></li>`).join('');
+try{TJ.initJourney();}catch(e){console.error(e);}
+TJ.initLabs();
+const links=[...document.querySelectorAll('#rail a[href^="#"]')];
+if('IntersectionObserver' in window){const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+e.target.id));}),{rootMargin:'-35% 0px -60% 0px'});document.querySelectorAll('main section').forEach(s=>io.observe(s));}
+const re=()=>{TJ.retheme();TJ.relabs();};
+const mq=window.matchMedia('(prefers-color-scheme: dark)');if(mq.addEventListener)mq.addEventListener('change',re);
+new MutationObserver(re).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+})();
+</script>
+</body>
+</html>
