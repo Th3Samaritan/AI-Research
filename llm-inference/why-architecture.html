@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Why It&#39;s Built This Way</title>
+<meta name="description" content="Part 4 of the LLM Inference Field Guide. Why MHA, MQA, GQA, MLA, sliding windows, DSA, linear attention, MoE, SwiGLU, RMSNorm, QK-Norm and RoPE exist, what each one trades, what changes if you turn the knob, with side-by-side 3D races on your hardware. Plus how abliteration works, step by step.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#EDF0F3">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-Research/llm-inference/why-architecture.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Why It's Built This Way">
+<meta property="og:description" content="Every architecture choice in Qwen, Gemma and DeepSeek: the problem, the mechanism, the price, and a live what-if lab with 3D races.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-Research/llm-inference/why-architecture.html">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-Research/llm-inference/preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<script>
+(function(){
+  var KEY="site-theme",root=document.documentElement;
+  function preferred(){var s=null;try{s=localStorage.getItem(KEY)}catch(e){}
+    if(s==="light"||s==="dark")return s;
+    return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+  root.setAttribute("data-theme",preferred());
+  function apply(m){root.setAttribute("data-theme",m);
+    var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",m==="dark"?"#0D131A":"#EDF0F3");
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b){b.querySelector(".ico").textContent=m==="dark"?"☀":"☾";b.querySelector(".lbl").textContent=m==="dark"?"Light":"Dark";}}
+  document.addEventListener("DOMContentLoaded",function(){
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b)b.addEventListener("click",function(){var n=root.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(KEY,n)}catch(e){}apply(n);});
+    apply(root.getAttribute("data-theme"));});
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Same system as the Field Guide: steel paper, copper traces. Worked-number "receipts" are the signature element. */
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --sunk:#E3E8ED; --ink:#15202B; --muted:#586676; --line:#CFD7DF;
+  --copper:#B2532A; --steel:#8696A6; --teal:#1C7673; --teal2:#4FA6A2; --violet:#5A4AAE; --gold:#9A7210; --good:#2E7D4F; --warn:#A86A12; --bad:#B03A3A;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;margin:0}
+a{color:var(--copper)}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.1;margin:0}
+h2{font-size:clamp(1.6rem,3.2vw,2.3rem);font-stretch:112%;font-weight:760}
+h3{font-size:1.12rem;font-stretch:105%;font-weight:680}
+p{margin:0}
+code{font-family:var(--mono);font-size:.84em;background:var(--sunk);padding:.08em .35em;border-radius:4px}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px;max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 80px}
+nav.rail{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding-block:28px;display:flex;flex-direction:column;gap:2px;font-size:.88rem}
+nav.rail .brand{font-family:var(--display);font-stretch:118%;font-weight:800;font-size:1.02rem;line-height:1.15;margin-bottom:18px}
+nav.rail .brand span{color:var(--copper)}
+nav.rail a{color:var(--muted);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line)}
+nav.rail a:hover{color:var(--ink)}
+nav.rail a.on{color:var(--ink);border-left-color:var(--copper);font-weight:600}
+nav.rail a.hub{border-left:none;padding-left:0;margin-bottom:6px;font-size:.8rem}
+nav.rail .tools{margin-top:16px;padding-left:10px}
+nav.rail .tools button{font-size:.78rem;padding:4px 10px}
+main{min-width:0;display:flex;flex-direction:column;gap:88px;padding-top:40px}
+section{display:flex;flex-direction:column;gap:20px;scroll-margin-top:24px}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--copper)}
+.lede{font-size:1.08rem;color:var(--muted);max-width:68ch}
+.prose{max-width:70ch;display:flex;flex-direction:column;gap:12px}
+.prose ul,.prose ol{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px}
+.hero h1{font-size:clamp(2.1rem,5.4vw,3.9rem);font-stretch:120%;font-weight:800;letter-spacing:-.02em}
+.hero h1 em{font-style:normal;color:var(--copper)}
+.bench{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.bench-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px}
+.tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted)}
+.ctl output{font-family:var(--mono);color:var(--ink);font-size:.82rem}
+select,input[type=range]{accent-color:var(--copper)}
+select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;max-width:100%}
+input[type=range]{width:170px;max-width:100%}
+button{font:inherit;font-size:.85rem;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:6px 12px}
+button:hover{border-color:var(--copper)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button.on{border-color:var(--copper);color:var(--copper);font-weight:600}
+.split{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px}
+.split>*{min-width:0}
+.stage{position:relative;width:100%;height:480px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.stage canvas{width:100%;height:100%;display:block}
+.stage .hint{position:absolute;left:12px;bottom:10px;font-size:.75rem;color:var(--muted);pointer-events:none;max-width:80%}
+.stage .lbl3{position:absolute;font-family:var(--mono);font-size:.7rem;color:var(--muted);pointer-events:none;white-space:nowrap}
+/* receipt: the worked-number strip */
+.receipt{font-family:var(--mono);font-size:.82rem;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;overflow-x:auto}
+.receipt .row{display:flex;justify-content:space-between;gap:16px;white-space:nowrap}
+.receipt .row span:last-child{font-variant-numeric:tabular-nums}
+.receipt .sum{border-top:1px solid var(--ink);padding-top:6px;font-weight:600}
+.receipt .dim{color:var(--muted)}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-family:var(--mono);font-size:.86rem}
+.chain .f{background:var(--sunk);border-radius:6px;padding:4px 9px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.chain .f small{font-family:var(--body);font-size:.66rem;color:var(--muted)}
+.chain .f.hot{background:var(--copper);color:var(--surface)}
+.chain .f.hot small{color:var(--surface);opacity:.85}
+.chain .eq{font-weight:700;color:var(--copper)}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.metric{background:var(--bg);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.metric .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.metric .v{font-family:var(--display);font-stretch:108%;font-size:1.45rem;font-weight:740;font-variant-numeric:tabular-nums}
+.metric .s{font-size:.78rem;color:var(--muted)}
+.pill{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+.pill.good{color:var(--good)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.callout{border-left:3px solid var(--teal);background:var(--surface);padding:14px 18px;border-radius:0 8px 8px 0;max-width:74ch;display:flex;flex-direction:column;gap:6px}
+.callout.c{border-left-color:var(--copper)}
+.callout b.t{font-family:var(--display);font-stretch:108%}
+pre{margin:0;background:var(--sunk);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.79rem;line-height:1.55}
+pre .c{color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.86rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--sunk)}
+tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-size:.82rem;white-space:nowrap}
+tr.hl td{background:var(--sunk)}
+.grid-mat{display:grid;gap:2px;font-family:var(--mono);font-size:.72rem}
+.grid-mat div{padding:3px 4px;text-align:center;border-radius:3px;min-width:38px}
+.toy{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.headcard{background:var(--bg);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:.82rem}
+.headcard b{font-family:var(--display);font-stretch:106%}
+.bars{display:flex;flex-direction:column;gap:3px}
+.bars .b{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;align-items:center;font-family:var(--mono);font-size:.72rem}
+.bars .b i{display:block;height:10px;border-radius:2px;background:var(--copper)}
+.note{font-size:.8rem;color:var(--muted)}
+.steps{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.steps li::marker{font-family:var(--mono);color:var(--copper)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+@media (max-width:980px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:0}
+  nav.rail{position:sticky;top:0;height:auto;flex-direction:row;overflow-x:auto;padding-block:10px;background:var(--bg);z-index:5;border-bottom:1px solid var(--line);gap:0}
+  nav.rail .brand{display:none}
+  nav.rail a{white-space:nowrap;border-left:none;border-bottom:2px solid transparent}
+  nav.rail a.on{border-bottom-color:var(--copper)}
+  nav.rail .tools{margin-top:0}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .stage{height:400px}
+}
+@media (max-width:560px){.stage{height:340px}}
+
+/* ---- part 4 ---- */
+[hidden]{display:none!important}
+.howto{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;max-width:1000px}
+.howto div,.meters div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--muted)}
+.howto b,.meters b{font-family:var(--display);font-stretch:108%;color:var(--ink);font-size:1rem}
+.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.meters div{background:var(--bg)}
+.setup{position:sticky;top:0;z-index:4;box-shadow:0 6px 18px -12px rgba(0,0,0,.5)}
+@media (max-width:980px){.setup{position:static}}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+button.primary{background:var(--copper);border-color:var(--copper);color:var(--surface);font-weight:600}
+.labcols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.labcol{background:var(--bg);border-radius:8px;padding:12px;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
+.labt{width:100%;font-family:var(--display);font-stretch:108%}
+.v3{position:relative;width:100%;height:420px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.v3.wide{height:440px}
+.v3 canvas{width:100%;height:100%;display:block;cursor:grab}
+.v3 .hint{position:absolute;left:10px;bottom:8px;font-size:.72rem;color:var(--muted);pointer-events:none}
+.lbls{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lbl3{position:absolute;left:0;top:0;white-space:nowrap;line-height:1.3;font-size:.72rem;color:var(--muted);background:color-mix(in srgb,var(--sunk) 84%,transparent);padding:1px 5px;border-radius:4px}
+.lbl3 b{color:var(--ink)}
+.lbl3.shape{font-family:var(--mono);font-size:.64rem;background:none;padding:0}
+.c4{gap:14px}
+.verdict{font-size:1.05rem;color:var(--muted);max-width:72ch;border-left:3px solid var(--copper);padding-left:12px}
+.c4grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:22px;align-items:start}
+.c4text{display:flex;flex-direction:column;gap:8px;max-width:66ch}
+.c4text h4{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--copper);margin:10px 0 0}
+.c4text ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:6px}
+.c4lab{display:flex;flex-direction:column;gap:12px;position:sticky;top:150px}
+@media (max-width:1100px){.c4grid{grid-template-columns:minmax(0,1fr)}.c4lab{position:static}}
+.analogy{background:var(--surface);border:1px dashed var(--line);border-radius:8px;padding:10px 14px;font-style:italic}
+.chainbox{display:flex;flex-direction:column;gap:10px}
+.because{font-size:.86rem;background:var(--surface);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 14px;line-height:1.55}
+.up{color:var(--good);font-weight:600}.dn{color:var(--bad);font-weight:600}.dz{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.mini4.wide{grid-column:1/-1}
+.mini4{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;font-size:.9rem}
+.cite{font-family:var(--mono);font-size:.68rem;vertical-align:super;margin-left:2px;text-decoration:none}
+ol.src{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:5px;font-size:.88rem}
+td.num{white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="rail" id="rail">
+  <a class="hub" href="./">← Field Guide (part 1)</a>
+  <a class="hub" href="token-journey.html">← Token Journey (part 3)</a>
+  <div class="brand">Why it's built<br><span>this way</span></div>
+  <a href="#start">The four meters</a>
+  <a href="#lab">Design lab (A vs B)</a>
+  <a href="#mha">1 · Multi-head</a>
+  <a href="#mqa">2 · Multi-query</a>
+  <a href="#gqa">3 · Grouped-query</a>
+  <a href="#mla">4 · Latent (MLA)</a>
+  <a href="#swa">5 · Sliding window</a>
+  <a href="#dsa">6 · Sparse (DSA)</a>
+  <a href="#lin">7 · Linear (DeltaNet)</a>
+  <a href="#moe">8 · Mixture of experts</a>
+  <a href="#act">9 · ReLU, GELU, SwiGLU</a>
+  <a href="#norm">10 · Norms &amp; RoPE</a>
+  <a href="#abl">11 · Abliteration</a>
+  <a href="#playbook">Modify &amp; find flaws</a>
+  <a href="#sources">Sources</a>
+  <div class="tools"><button type="button" data-theme-toggle aria-label="Switch theme"><span class="ico">☾</span> <span class="lbl">Dark</span></button></div>
+</nav>
+<main>
+
+<section id="start" class="hero">
+  <span class="eyebrow">LLM Inference Field Guide · Part 4</span>
+  <h1>Why each part is <em>built this way</em>, and what happens if you change it</h1>
+  <p class="lede">Every architecture choice in Qwen, Gemma and DeepSeek exists to fix a measurable problem, and each fix has a price. Every section here is laid out the same way, so you can reason like a designer: <i>if I change this, what goes up, what goes down, and why.</i></p>
+  <div class="howto">
+    <div><b>Problem</b><span>What breaks without it, with a number on your hardware.</span></div>
+    <div><b>Mechanism</b><span>Step by step, then an analogy.</span></div>
+    <div><b>Turn the knob</b><span>A live calculator and a side-by-side 3D view that animates the bytes each design reads per token.</span></div>
+    <div><b>Price &amp; users</b><span>The flaws, the evidence, and who chose it and why.</span></div>
+  </div>
+  <div class="bench">
+    <div class="bench-head"><h3>The four meters every design trades against</h3><span class="tag">used in every section</span></div>
+    <div class="meters">
+      <div><b>① Memory held</b><span>Weights + KV cache × number of chats. Decides whether it <i>fits</i> on the device at all.</span></div>
+      <div><b>② Bytes read per new token</b><span>Decode speed ≈ bandwidth ÷ bytes. Weights dominate at short context, the cache at long context.</span></div>
+      <div><b>③ Math per token</b><span>Sets prefill (prompt) speed and batch throughput. Matters on big GPUs and long prompts.</span></div>
+      <div><b>④ Quality</b><span>What the network can still represent and learn. Measured by benchmarks, not computed, so each section cites evidence.</span></div>
+    </div>
+    <p class="note">Almost every attention innovation from 2019 to 2026 attacks meter ② (and ① for many users) at long context, while trying to leave ④ untouched. MoE attacks ② and ③ for the weights. Activations and norms mostly move ④ and training stability.</p>
+  </div>
+  <div class="bench setup" id="setup">
+    <div class="bench-head"><h3>Your setup</h3><span class="tag">every number on this page follows these</span></div>
+    <div class="controls">
+      <label class="ctl">Model shape<select id="sBase"></select></label>
+      <label class="ctl">Device<select id="sDev"></select></label>
+      <label class="ctl">Context per chat <output id="sCtxO"></output><input id="sCtx" type="range" min="0" max="8" value="4"></label>
+      <label class="ctl">Weights<select id="sFmt"><option value="16">BF16 (16 bits)</option><option value="8.5">Q8_0 (8.5 bits)</option><option value="4.89" selected>Q4_K_M (≈4.89 bits)</option></select></label>
+      <label class="ctl">KV cache<select id="sKv"><option value="2" selected>BF16 (2 bytes)</option><option value="1">FP8 / Q8 (1 byte)</option></select></label>
+      <label class="ctl">Chats at once <output id="sUsersO"></output><input id="sUsers" type="range" min="1" max="32" value="1"></label>
+    </div>
+  </div>
+</section>
+
+<section id="lab">
+  <span class="eyebrow">Design lab</span>
+  <h2>Build two attention designs and race them</h2>
+  <p class="lede">Choose design A and design B. The 3D view shows one layer of each. Every cycle is one generated token: the meter fills as the weights are read, then a wave sweeps the cache. Each cycle lasts exactly as long as that design's bytes per token take on your device, so the faster design finishes more tokens. Change the context and watch the race change.</p>
+  <div class="bench">
+    <div class="labcols">
+      <div class="labcol" id="labA"><b class="labt">Design A</b></div>
+      <div class="labcol" id="labB"><b class="labt">Design B</b></div>
+    </div>
+    <div class="v3 wide" id="vLab"><canvas></canvas><div class="lbls"></div><span class="hint">Drag to orbit · one of the model's layers shown</span></div>
+    <div class="tablewrap"><table id="labTable"></table></div>
+    <div class="because" id="labWhy"></div>
+  </div>
+</section>
+
+<section id="mha" class="c4">
+  <span class="eyebrow">Attention · 1</span>
+  <h2>Multi-head attention (MHA): many readers, each with their own notes</h2>
+  <p class="verdict">The 2017 baseline. Best quality per head, and the most expensive cache possible.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p>One attention pattern per token is not enough. While reading "she gave him the book because <u>it</u>…", one relation links "it" → "book", another tracks grammar, another copies the previous word. A single softmax can only put its weight in one mix.</p>
+      <h4>How it works</h4>
+      <ol class="steps">
+        <li>Split the hidden vector (<span data-v="d"></span> numbers) into <span data-v="H"></span> heads of <span data-v="hd"></span>.</li>
+        <li>Each head has its <b>own</b> W_q, W_k, W_v slices, so it learns its own notion of "relevant".</li>
+        <li>Every head attends separately, the outputs are concatenated, and W_o mixes them back.</li>
+        <li>For later tokens, every head's K and V for every past token are kept in the KV cache.</li>
+      </ol>
+      <p>Interpretability work finds real specialists among heads: <b>previous-token heads</b> and <b>induction heads</b>, which find an earlier occurrence of the current token and copy what came after it (the basis of in-context copying).<a class="cite" href="#s-olsson">[Olsson 2022]</a></p>
+      <h4>Analogy</h4>
+      <p class="analogy">32 readers go through the same document, each with a different highlighter and each keeping a full private notebook. Rich, but 32 notebooks fill the shelf.</p>
+      <h4>Worked example on your setup</h4>
+      <div class="receipt" id="rxMha"></div>
+      <h4>The price (flaws)</h4>
+      <ul><li><b>Cache = 2 × d × bytes per token per layer.</b> It depends on the width d, not on how many heads you split it into. That's why sharing K/V is the only way to shrink it.</li>
+      <li>Many heads are redundant. Pruning studies removed a large share of heads at test time with little loss,<a class="cite" href="#s-michel">[Michel 2019]</a> which hints the K/V storage is wasteful.</li></ul>
+      <h4>Who uses it</h4>
+      <p>Original Transformer, GPT-2/3, Llama 1, Qwen-7B (2023). New large models have almost all moved away from it.</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vMha"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">Number of heads (same width d) <output id="kMhaO"></output><input id="kMha" type="range" min="0" max="3" value="2"></label></div>
+      <div class="chainbox" id="chMha"></div>
+      <p class="note">Try it: more heads gives more, smaller attention patterns. The cache, bytes and math stay <b>identical</b>, because H × head_dim = d.</p>
+    </div>
+  </div>
+</section>
+
+<section id="mqa" class="c4">
+  <span class="eyebrow">Attention · 2</span>
+  <h2>Multi-query attention (MQA): everyone shares one notebook</h2>
+  <p class="verdict">Smallest possible cache among softmax designs. Costs some quality and is awkward on multi-GPU.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p id="pMqa"></p>
+      <h4>How it works</h4>
+      <ol class="steps"><li>Keep all <span data-v="H"></span> query heads, so each still forms its own pattern.</li><li>Compute just <b>one</b> K head and <b>one</b> V head per token, shared by every query head.<a class="cite" href="#s-mqa">[Shazeer 2019]</a></li><li>The cache shrinks by a factor of <span data-v="H"></span>.</li></ol>
+      <h4>Analogy</h4>
+      <p class="analogy">32 readers, one shared notebook. Each reader still asks their own question, but they all look things up in the same notes.</p>
+      <h4>Worked example on your setup</h4>
+      <div class="receipt" id="rxMqa"></div>
+      <h4>The price (flaws)</h4>
+      <ul><li><b>Quality drops.</b> In the GQA paper's T5-XXL tests, MQA scored a little below MHA on their task average (46.6 vs 47.2), and training was less stable.<a class="cite" href="#s-gqa">[Ainslie 2023]</a></li>
+      <li><b>Tensor parallelism is wasteful.</b> When 8 GPUs split the heads, each GPU still needs the single K/V head, so it gets copied 8 times.</li>
+      <li>Every query head reads the same K, so heads find it harder to specialize.</li></ul>
+      <h4>Who uses it</h4>
+      <p>PaLM, Falcon-7B, StarCoder, Gemma 1 2B. Mostly replaced by GQA.</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vMqa"><canvas></canvas><div class="lbls"></div></div>
+      <div class="chainbox" id="chMqa"></div>
+    </div>
+  </div>
+</section>
+
+<section id="gqa" class="c4">
+  <span class="eyebrow">Attention · 3</span>
+  <h2>Grouped-query attention (GQA): one notebook per table of readers</h2>
+  <p class="verdict">The industry default. Nearly MHA quality at a fraction of the cache, and it splits cleanly across 8 GPUs.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p>MHA's cache is too big and MQA loses quality. Is there a middle ground?</p>
+      <h4>How it works</h4>
+      <ol class="steps"><li>Keep <span data-v="H"></span> query heads. Make <b>g</b> K/V heads, where g divides H.</li><li>Each group of H/g query heads shares one K/V pair. In code that's <code>repeat_kv</code>: the stored K/V are broadcast to each head in the group.</li><li>Cache ÷ (H/g). With g = 8 and H = 32, it's 4× smaller than MHA.</li></ol>
+      <h4>Why 8 K/V heads so often?</h4>
+      <p>Servers usually split a model across <b>8 GPUs</b> (tensor parallel). With 8 K/V heads, each GPU owns exactly one and nothing is duplicated. It's a hardware reason, not a magic quality number.</p>
+      <h4>Analogy</h4>
+      <p class="analogy">32 readers at 8 tables, one shared notebook per table. Readers at a table work on related questions, so sharing costs them little.</p>
+      <h4>Worked example on your setup</h4>
+      <div class="receipt" id="rxGqa"></div>
+      <h4>Evidence and price</h4>
+      <ul><li>T5-XXL averages: MHA 47.2, <b>GQA-8 47.1</b>, MQA 46.6. GQA was nearly as fast as MQA.<a class="cite" href="#s-gqa">[Ainslie 2023]</a></li>
+      <li>An existing MHA model can be <b>uptrained</b> into GQA (mean-pool the K/V heads in each group, then continue training on about 5% of the original compute).</li>
+      <li>The cache still holds full-size K/V vectors, and it still grows linearly with context.</li></ul>
+      <h4>Who uses it</h4>
+      <p>Llama 2 70B and Llama 3, Mistral, Qwen2/2.5/3 (Qwen3-8B: 32Q / 8KV), Gemma 3 (8Q / 4KV), Qwen3.5's full-attention layers.</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vGqa"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">K/V heads g <output id="kGqaO"></output><input id="kGqa" type="range" min="0" max="5" value="3"></label></div>
+      <div class="chainbox" id="chGqa"></div>
+    </div>
+  </div>
+</section>
+
+<section id="mla" class="c4">
+  <span class="eyebrow">Attention · 4</span>
+  <h2>Multi-head latent attention (MLA): store a zip file, read it directly</h2>
+  <p class="verdict">DeepSeek's answer: keep every head distinct but cache one small compressed vector per token.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p>GQA saves memory by making heads <i>share</i>, which limits them. MLA asks: can each head keep its own K and V while we store something much smaller?</p>
+      <h4>How it works</h4>
+      <ol class="steps">
+        <li><b>Compress:</b> c = W_DKV · x. A latent of <span data-v="lat"></span> numbers per token (DeepSeek uses 512). Only c is cached.</li>
+        <li><b>Expand (in principle):</b> each head's k = W_UK,h · c and v = W_UV,h · c, so every head still differs.</li>
+        <li><b>Absorb (in practice):</b> since q·(W_UK c) = (W_UKᵀ q)·c, fold W_UK into the query and W_UV into the output. Heads score the cached latent directly, and the full K/V are never built.</li>
+        <li><b>The RoPE catch:</b> RoPE rotates k by an angle that depends on position, so W_UK can't be folded through it. MLA adds a small separate <b>64-dim RoPE key</b> shared by all heads ("decoupled RoPE"). Cache = <span data-v="lat"></span> + 64 numbers.</li>
+      </ol>
+      <h4>Analogy</h4>
+      <p class="analogy">Instead of 32 notebooks, store one zipped page per token. Each reader has a personal decoder. With absorption, the readers learn to read the zip without unzipping.</p>
+      <h4>Worked example on your setup</h4>
+      <div class="receipt" id="rxMla"></div>
+      <h4>Evidence and price</h4>
+      <ul><li>DeepSeek-V2 reported <b>93.3% less KV cache</b> than DeepSeek 67B and up to <b>5.76× generation throughput</b>, and its ablation found MLA matching or beating MHA.<a class="cite" href="#s-dsv2">[DeepSeek-V2]</a></li>
+      <li><b>More math per token in attention:</b> each of 128 heads scores in 512+64 dims. That's fine for decode (memory-bound) but heavier for prefill.</li>
+      <li>It needs special kernels (FlashMLA etc.) and engine support, and converting an existing GQA model takes research-level retraining.</li></ul>
+      <h4>Who uses it</h4>
+      <p>DeepSeek-V2, V3, R1, V3.2; Kimi K2.</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vMla"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">Latent size <output id="kMlaO"></output><input id="kMla" type="range" min="0" max="4" value="2"></label></div>
+      <div class="chainbox" id="chMla"></div>
+    </div>
+  </div>
+</section>
+
+<section id="swa" class="c4">
+  <span class="eyebrow">Attention · 5</span>
+  <h2>Sliding-window + global layers: most layers only remember the last page</h2>
+  <p class="verdict">Caps the cache of most layers at a fixed window. Gemma 3 uses 5 local layers (window 1,024) per global layer.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p>In a normal model <i>every</i> layer's cache grows with context, yet most attention weight in most layers lands on nearby tokens. Why pay to store 100K tokens in every layer?</p>
+      <h4>How it works</h4>
+      <ol class="steps"><li><b>Local layers</b> attend only to the last W tokens. Their cache is a ring buffer of W slots, so it stops growing.</li><li>One in every N layers is <b>global</b> and attends to everything.</li><li>Distant information reaches a token through the global layers. In a model with no global layers, each layer extends the reach by W.</li></ol>
+      <h4>Analogy</h4>
+      <p class="analogy">Five of every six team members only remember the last page they read. The sixth keeps the whole book and briefs the others.</p>
+      <h4>Worked example on your setup</h4>
+      <div class="receipt" id="rxSwa"></div>
+      <h4>Evidence and price</h4>
+      <ul><li>The Gemma 3 team reported negligible perplexity change from local:global ratios like 5:1 with small windows, while KV memory dropped sharply.<a class="cite" href="#s-gemma3">[Gemma 3]</a></li>
+      <li>Long-range facts must survive through the few global layers, which is a bottleneck for exact retrieval far back.</li>
+      <li><b>No gain at short context:</b> below W tokens, local and global layers cost the same.</li></ul>
+      <h4>Who uses it</h4>
+      <p>Mistral 7B v0.1 (window 4,096 in all layers), Gemma 2 (1:1), Gemma 3 (5:1, window 1,024), gpt-oss (alternating).</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vSwa"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">Window W <output id="kSwaWO"></output><input id="kSwaW" type="range" min="0" max="4" value="1"></label><label class="ctl">Local : global <output id="kSwaNO"></output><input id="kSwaN" type="range" min="1" max="7" value="5"></label></div>
+      <div class="chainbox" id="chSwa"></div>
+    </div>
+  </div>
+</section>
+
+<section id="dsa" class="c4">
+  <span class="eyebrow">Attention · 6</span>
+  <h2>DeepSeek Sparse Attention (DSA): skim the index, read 2,048 lines</h2>
+  <p class="verdict">Keeps the whole cache but reads only the top-k tokens each step. Cuts bandwidth and math at long context, not memory.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p>Even with MLA's tiny cache, at 128K tokens every new token still reads and attends over all 128K entries in every layer. Per-token attention cost grows linearly with context, and prompt (prefill) cost grows quadratically.</p>
+      <h4>How it works</h4>
+      <ol class="steps"><li>A <b>lightning indexer</b> (a few small heads, FP8, ReLU) gives every past token a cheap relevance score: I(t,s) = Σ_h w_h · ReLU(q_h · k_s).</li><li>Keep the <b>top-k</b> (2,048 in V3.2).</li><li>Run full MLA attention only on those tokens.</li><li>All tokens stay cached, because any of them might be selected later.</li></ol>
+      <h4>Analogy</h4>
+      <p class="analogy">Before answering, you skim the book's index (cheap) and then read only the 2,048 most relevant lines carefully.</p>
+      <h4>Worked example on your setup</h4>
+      <div class="receipt" id="rxDsa"></div>
+      <h4>Evidence and price</h4>
+      <ul><li>DeepSeek-V3.2-Exp matched V3.1-Terminus on its benchmarks while long-context inference got much cheaper.<a class="cite" href="#s-dsa">[DeepSeek-V3.2]</a></li>
+      <li><b>The indexer is still linear in context.</b> It is cheap per token, not free.</li>
+      <li><b>Selection mistakes are silent:</b> if the indexer skips a needed token, attention never sees it. The indexer has to be trained (continued pretraining).</li>
+      <li>Memory is unchanged. Only meters ② and ③ improve, and only once the context is longer than k.</li></ul>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vDsa"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">Top-k tokens <output id="kDsaO"></output><input id="kDsa" type="range" min="0" max="4" value="2"></label></div>
+      <div class="chainbox" id="chDsa"></div>
+    </div>
+  </div>
+</section>
+
+<section id="lin" class="c4">
+  <span class="eyebrow">Attention · 7</span>
+  <h2>Linear attention (Gated DeltaNet): a whiteboard instead of a notebook</h2>
+  <p class="verdict">A fixed-size memory per layer, so cost does not grow with context. Weak at exact recall, so it's mixed 3:1 with full attention.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p>Every design above still has a cache that grows with context somewhere. At 256K–1M tokens that growth dominates both memory and speed.</p>
+      <h4>How it works (per head, per token)</h4>
+      <ol class="steps"><li><b>Forget a little:</b> S ← α·S (α ≈ 0.9–1, learned per token).</li><li><b>Predict, then correct:</b> the state predicts v from k as S·k. Only the error is written: S ← S + β (v − S·k) kᵀ. This is the delta rule.</li><li><b>Read:</b> o = S·q.</li><li>S has a fixed size (128×128 per head in Qwen3.5) whether the context is 10 or 1,000,000 tokens.</li></ol>
+      <h4>Analogy</h4>
+      <p class="analogy">A notebook (KV cache) grows a page per token. A whiteboard has fixed space: you smudge old notes a bit (α) and fix entries that are wrong (delta rule). It never runs out of room, but fine details get overwritten.</p>
+      <h4>Worked example on your setup</h4>
+      <div class="receipt" id="rxLin"></div>
+      <h4>Evidence and price</h4>
+      <ul><li>A d_k × d_v state can cleanly store only about d_k independent key→value pairs. Pure linear models do worse on <b>associative recall</b> (look up an exact earlier fact).<a class="cite" href="#s-zoology">[Arora 2023]</a></li>
+      <li>So production models are <b>hybrids</b>: Qwen3-Next and Qwen3.5 use 3 Gated DeltaNet layers per full-attention layer,<a class="cite" href="#s-gdn">[Yang 2024]</a><a class="cite" href="#s-q35">[Qwen3.5]</a> and Kimi Linear also uses 3:1.</li>
+      <li>Prefill can't use the standard FlashAttention kernel, so it needs chunked-scan kernels, and engine support arrives later.</li></ul>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vLin"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">Share of linear layers <output id="kLinO"></output><input id="kLin" type="range" min="0" max="4" value="2"></label></div>
+      <div class="chainbox" id="chLin"></div>
+    </div>
+  </div>
+</section>
+
+<section id="moe" class="c4">
+  <span class="eyebrow">FFN · 8</span>
+  <h2>Mixture of experts: a big library, but each token visits only a few shelves</h2>
+  <p class="verdict">Store many parameters (knowledge), read few per token (speed). The memory bill still covers all of them.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p>Quality grows with parameter count, but in a dense model every parameter is read for every token, so a 70B dense model is slow. MoE separates the parameters you <i>store</i> from the ones you <i>read</i>.</p>
+      <h4>How it works</h4>
+      <ol class="steps"><li>Replace the FFN with E small FFNs ("experts").</li><li>A router scores the experts for each token and keeps the top k (often 8). DeepSeek adds a shared expert that always runs.</li><li>Only those k experts' weights are read for this token.</li></ol>
+      <h4>Analogy</h4>
+      <p class="analogy">A hospital with 128 specialists. Each patient sees the 8 most relevant ones. The building must house all 128 (memory), but each visit costs only 8 consultations (speed).</p>
+      <h4>Worked example on your setup</h4>
+      <div class="receipt" id="rxMoe"></div>
+      <h4>The price (flaws)</h4>
+      <ul><li><b>Memory follows the total.</b> Qwen3-30B-A3B needs 30B parameters' worth of memory to run at roughly 3B speed.</li>
+      <li><b>Batching erodes the advantage:</b> with many users in a batch, different tokens pick different experts, so most experts get read every step anyway. Watch the batch slider.</li>
+      <li><b>Load balancing:</b> without an auxiliary loss or bias, a few experts get all the tokens ("collapse"). DeepSeek-V3 uses bias-based, aux-loss-free balancing.</li>
+      <li><b>A device win:</b> because each token touches few experts, engines can keep experts in CPU RAM and attention on the GPU (llama.cpp <code>--n-cpu-moe</code> / <code>-ot</code>). That's how 30B-A3B runs well on a laptop.</li></ul>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vMoe"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">Model<select id="kMoeM"></select></label><label class="ctl">Batch (tokens per step) <output id="kMoeBO"></output><input id="kMoeB" type="range" min="0" max="6" value="0"></label></div>
+      <div class="chainbox" id="chMoe"></div>
+    </div>
+  </div>
+</section>
+
+<section id="act" class="c4">
+  <span class="eyebrow">FFN · 9</span>
+  <h2>ReLU vs GELU vs SwiGLU: why almost everyone picked SwiGLU</h2>
+  <p class="verdict">SwiGLU gives the best quality at the same parameter count. ReLU gives exact zeros, which CPU engines can exploit.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem it solves</h4>
+      <p>Without a nonlinearity, the FFN is just one big matrix, and stacking layers adds nothing. The choice of nonlinearity changes three things: how well the model learns (quality), whether training stays healthy (dead neurons), and how many outputs are exactly zero (skippable at inference).</p>
+      <h4>The three, side by side</h4>
+      <ul>
+        <li><b>ReLU</b> max(0,z): cheap, and gives exact zeros. But any neuron pushed below zero for every input has gradient 0 forever (a <b>dead neuron</b>).</li>
+        <li><b>GELU</b> z·Φ(z): a smooth ReLU. Small negatives pass through slightly, so the gradient never dies. Used by GPT-2 and BERT.</li>
+        <li><b>SwiGLU</b> SiLU(x·W_g) ⊙ (x·W_u): two projections, one acting as a learned <b>gate</b> for the other. The network can multiply features, not just threshold them.</li>
+      </ul>
+      <h4>The parameter trick you must know</h4>
+      <p>SwiGLU has <b>3</b> matrices instead of 2. To keep the parameter count equal, the hidden width shrinks from 4d to <b>8/3·d</b>. That's why Llama-7B's FFN is 11,008 wide (≈ 2.69 × 4,096), not 16,384. Compare them at equal parameters or the comparison is unfair.</p>
+      <h4>Evidence</h4>
+      <p>Same parameter count, same training (T5, 65K steps), log-perplexity on C4 (lower is better):<a class="cite" href="#s-glu">[Shazeer 2020]</a></p>
+      <canvas id="gluChart" width="560" height="200" style="width:100%;max-width:560px"></canvas>
+      <h4>Analogy</h4>
+      <p class="analogy">ReLU is a light switch: off below a threshold, and it can get stuck off. GELU is a dimmer. SwiGLU is a dimmer controlled by a second sensor: one signal decides <i>how much</i> of the other gets through.</p>
+      <h4>The practical twist: sparsity</h4>
+      <p>ReLU's exact zeros mean those rows of W_down need not be read at all. CPU and phone engines (PowerInfer) exploit this, and "ReLU strikes back" showed models can be converted back to ReLU, cutting inference FLOPs severalfold with small quality loss.<a class="cite" href="#s-relu">[Mirzadeh 2023]</a> SwiGLU almost never outputs an exact zero, so it can't skip work this way.</p>
+    </div>
+    <div class="c4lab">
+      <canvas id="actCurves" width="520" height="230" style="width:100%"></canvas>
+      <div class="controls"><label class="ctl">Input mean μ <output id="aMuO"></output><input id="aMu" type="range" min="-20" max="20" value="0"></label><label class="ctl">Input spread σ <output id="aSdO"></output><input id="aSd" type="range" min="2" max="30" value="10"></label></div>
+      <canvas id="actHist" width="520" height="200" style="width:100%"></canvas>
+      <div class="chainbox" id="chAct"></div>
+      <p class="note">The 3D surface of SwiGLU vs GeGLU vs ReGLU, and a real training run comparing them, are in <a href="token-journey.html#act">Part 3</a>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="norm" class="c4">
+  <span class="eyebrow">Small choices, big effects · 10</span>
+  <h2>Pre-norm, RMSNorm, QK-Norm and the RoPE base</h2>
+  <p class="verdict">These rarely change speed. They decide whether a 60-layer model trains at all, and how far its context can stretch.</p>
+  <div class="grid2">
+    <div class="mini4"><h3>Pre-norm instead of post-norm</h3><p><b>Problem:</b> the original Transformer normalized <i>after</i> the residual add. Deep stacks then need careful learning-rate warmup and often diverge.<br><b>Change:</b> normalize the input to each block, and leave the residual path as pure addition. The gradient flows straight down the stream.<a class="cite" href="#s-preln">[Xiong 2020]</a><br><b>Effect:</b> 60+ layers train reliably. <b>Price:</b> the stream's size keeps growing with depth, which is why a final norm sits before the LM head.</p></div>
+    <div class="mini4"><h3>RMSNorm instead of LayerNorm</h3><p><b>Change:</b> drop the mean subtraction and bias, and only divide by the root mean square. <b>Effect:</b> the same quality with fewer operations. The authors measured 7–64% less norm runtime in their models.<a class="cite" href="#s-rms">[Zhang 2019]</a> <b>Price:</b> essentially none, which is why every model here uses it.</p></div>
+    <div class="mini4"><h3>QK-Norm</h3><p><b>Problem:</b> during training, q·k logits can drift huge, making the softmax one-hot and the loss spike ("attention logit growth").<a class="cite" href="#s-qkn">[Dehghani 2023]</a><br><b>Change:</b> RMS-normalize every q and k head before the dot product. <b>Effect:</b> scores stay bounded and training is stable. Qwen3 adopted it and dropped the QKV bias, and Gemma 3 used it to replace logit soft-capping. <b>Price:</b> a tiny amount of compute.</p></div>
+    <div class="mini4 wide"><h3>RoPE base θ: how far positions can reach</h3><p>RoPE rotates each pair of dimensions at a different speed. The slowest pair completes one turn every <b>2π·θ<sup>(d−2)/d</sup></b> tokens. Past that distance, positions start to look alike. A bigger θ gives slower rotations and a longer usable context. Qwen3 uses θ = 1,000,000. YaRN rescales the frequencies to stretch a trained 32K model to 128K.</p>
+      <div class="controls"><label class="ctl">θ <select id="ropeT"><option value="10000">10,000 (Llama 2)</option><option value="500000">500,000 (Llama 3)</option><option value="1000000" selected>1,000,000 (Qwen3)</option></select></label></div>
+      <canvas id="ropeCv" width="520" height="170" style="width:100%"></canvas><div class="note" id="ropeOut"></div></div>
+  </div>
+</section>
+
+<section id="abl" class="c4">
+  <span class="eyebrow">Editing a trained model · 11</span>
+  <h2>Abliteration: removing the "refuse" direction</h2>
+  <p class="verdict">Refusal in chat models is largely controlled by one direction in the residual stream. Remove it from every weight that writes to the stream, and the model loses its ability to refuse.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>Why it works</h4>
+      <p>Remember the residual stream (Part 3): every layer <i>adds</i> its output into one shared vector. Researchers found that when a chat model is about to refuse, the stream points noticeably along one particular direction <b>r</b>. If you push along r, harmless prompts get refused; if you remove r, harmful prompts get answered.<a class="cite" href="#s-arditi">[Arditi 2024]</a></p>
+      <h4>The procedure, step by step</h4>
+      <ol class="steps">
+        <li><b>Two prompt sets:</b> about a hundred instructions the model refuses, and a hundred similar ones it answers.</li>
+        <li><b>Record:</b> run both sets and save the residual-stream vector at the last prompt token, at a middle layer ℓ.</li>
+        <li><b>Find the direction:</b> r = mean(refused) − mean(answered), then normalize it to r̂ = r / ‖r‖. This is a difference of means, nothing more.</li>
+        <li><b>Choose the layer:</b> repeat for several layers and keep the r̂ whose removal works best on held-out prompts.</li>
+        <li><b>Remove it permanently:</b> for every matrix that <i>writes</i> into the stream (token embedding, each attention W_O, each FFN W_down), set W ← W − r̂ r̂ᵀ W. Now no layer can write anything along r̂.</li>
+        <li><b>Check:</b> refusal rate on held-out prompts, general benchmarks, and the KL divergence from the original model on harmless prompts.</li>
+      </ol>
+      <pre><span class="c"># the whole edit is one projection per matrix (r_hat: unit vector, shape [d_model])</span>
+P = torch.eye(d_model) - torch.outer(r_hat, r_hat)   <span class="c"># removes the r_hat component</span>
+W_O    = P @ W_O        <span class="c"># attention output, every layer</span>
+W_down = P @ W_down     <span class="c"># FFN output, every layer</span>
+E      = E @ P          <span class="c"># embedding rows (tokens × d_model)</span></pre>
+      <h4>Analogy</h4>
+      <p class="analogy">A mixing desk where one hidden fader, "refuse", is wired into every channel. Abliteration doesn't turn it down; it removes that wire from every input, so nothing can ever move the fader.</p>
+      <h4>Effects and flaws</h4>
+      <ul>
+        <li><b>It removes a behavior, not knowledge.</b> The model knows nothing new, it just loses its brake.</li>
+        <li><b>Collateral damage:</b> other behaviors that partly align with r̂ weaken too. Abliterated models often lose a little on math or reasoning, and people "heal" them with a short fine-tune.</li>
+        <li><b>It's a rank-1 edit:</b> the weights stay the same size and speed, so quantize after editing, as usual.</li>
+        <li><b>Responsibility:</b> it strips the safety behavior the developers trained in. Use it for interpretability and robustness research, and know the model license and your organization's policy.</li>
+      </ul>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vAbl"><canvas></canvas><div class="lbls"></div></div>
+      <div class="btnrow"><button type="button" id="ablGo" class="primary">▶ Remove direction r̂</button><button type="button" id="ablReset">Reset</button><button type="button" id="ablNew">New prompts</button></div>
+      <canvas id="ablHist" width="520" height="170" style="width:100%"></canvas>
+      <div class="receipt" id="rxAbl"></div>
+      <p class="note">This is a real computation on a toy 3D stream: 60 "answered" points and 60 "refused" points. The page computes r̂ as the difference of means, then projects. Real models do the same in 4,096 dimensions.</p>
+    </div>
+  </div>
+</section>
+
+<section id="playbook">
+  <span class="eyebrow">Modify &amp; find flaws</span>
+  <h2>If you want X, change Y, and watch Z</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Goal</th><th>Change</th><th>Expected effect</th><th>Watch for (the flaw)</th><th>How to measure</th></tr>
+    <tr><td>Long chats on a 24 GB GPU</td><td>FP8 KV cache; a GQA or SWA model; MLA if available</td><td>Cache ÷2 (FP8), ÷4 (GQA-8 vs MHA), most layers capped (SWA)</td><td>Quantized cache loses some quality on retrieval; SWA hurts far-back recall</td><td>Needle-in-a-haystack at 32K, plus perplexity</td></tr>
+    <tr><td>More users at once</td><td>Smaller cache per user; paged KV (vLLM)</td><td>Users ≈ (VRAM − weights) ÷ cache per user</td><td>For MoE, batching touches more experts, so bytes per step rise</td><td>Aggregate tok/s vs batch size</td></tr>
+    <tr><td>Faster on CPU / laptop</td><td>MoE with small active size; expert offload; Q4 weights; ReLU-sparse FFN</td><td>Speed follows active bytes</td><td>RAM must hold all experts; Q4 loses some quality (part 1)</td><td>llama-bench tg/pp at your context</td></tr>
+    <tr><td>Better quality, same size</td><td>SwiGLU, QK-Norm, more data or longer training</td><td>Lower perplexity at equal parameters</td><td>Compare at <i>equal parameters</i> (the 8/3 rule)</td><td>Perplexity + task benchmarks</td></tr>
+    <tr><td>Much longer context</td><td>Bigger RoPE θ / YaRN; hybrid linear; DSA</td><td>Usable positions beyond the training length; flat cost per token</td><td>Recall fades in linear layers; silent misses in DSA</td><td>RULER / needle tests at many lengths</td></tr>
+    <tr><td>Change model behavior without training</td><td>Direction ablation or steering (difference of means)</td><td>A targeted behavior goes away or appears</td><td>Collateral capability loss</td><td>Target-behavior rate + benchmark deltas + KL</td></tr>
+  </table></div>
+</section>
+
+<section id="sources">
+  <span class="eyebrow">Sources</span>
+  <h2>Evidence behind the claims</h2>
+  <ol class="src" id="srcList"></ol>
+</section>
+</main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="why.js?v=5"></script>
+</body>
+</html>
