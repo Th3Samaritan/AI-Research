@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Kernels and vLLM</title>
+<meta name="description" content="Part 5 of the LLM Inference Field Guide. How model architecture becomes speed: GPU kernels, the roofline, FlashAttention and fusion, batching, vLLM PagedAttention and continuous batching, and how serving is benchmarked (TTFT, TPOT, goodput), with 3D views and a live scheduler simulation.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#EDF0F3">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-Research/llm-inference/kernels-vllm.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Kernels and vLLM: math to silicon">
+<meta property="og:description" content="Roofline, FlashAttention, batching, PagedAttention, continuous batching and serving benchmarks, simulated on your hardware.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-Research/llm-inference/kernels-vllm.html">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-Research/llm-inference/preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<script>
+(function(){
+  var KEY="site-theme",root=document.documentElement;
+  function preferred(){var s=null;try{s=localStorage.getItem(KEY)}catch(e){}
+    if(s==="light"||s==="dark")return s;
+    return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+  root.setAttribute("data-theme",preferred());
+  function apply(m){root.setAttribute("data-theme",m);
+    var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",m==="dark"?"#0D131A":"#EDF0F3");
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b){b.querySelector(".ico").textContent=m==="dark"?"☀":"☾";b.querySelector(".lbl").textContent=m==="dark"?"Light":"Dark";}}
+  document.addEventListener("DOMContentLoaded",function(){
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b)b.addEventListener("click",function(){var n=root.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(KEY,n)}catch(e){}apply(n);});
+    apply(root.getAttribute("data-theme"));});
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Same system as the Field Guide: steel paper, copper traces. Worked-number "receipts" are the signature element. */
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --sunk:#E3E8ED; --ink:#15202B; --muted:#586676; --line:#CFD7DF;
+  --copper:#B2532A; --steel:#8696A6; --teal:#1C7673; --teal2:#4FA6A2; --violet:#5A4AAE; --gold:#9A7210; --good:#2E7D4F; --warn:#A86A12; --bad:#B03A3A;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;margin:0}
+a{color:var(--copper)}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.1;margin:0}
+h2{font-size:clamp(1.6rem,3.2vw,2.3rem);font-stretch:112%;font-weight:760}
+h3{font-size:1.12rem;font-stretch:105%;font-weight:680}
+p{margin:0}
+code{font-family:var(--mono);font-size:.84em;background:var(--sunk);padding:.08em .35em;border-radius:4px}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px;max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 80px}
+nav.rail{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding-block:28px;display:flex;flex-direction:column;gap:2px;font-size:.88rem}
+nav.rail .brand{font-family:var(--display);font-stretch:118%;font-weight:800;font-size:1.02rem;line-height:1.15;margin-bottom:18px}
+nav.rail .brand span{color:var(--copper)}
+nav.rail a{color:var(--muted);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line)}
+nav.rail a:hover{color:var(--ink)}
+nav.rail a.on{color:var(--ink);border-left-color:var(--copper);font-weight:600}
+nav.rail a.hub{border-left:none;padding-left:0;margin-bottom:6px;font-size:.8rem}
+nav.rail .tools{margin-top:16px;padding-left:10px}
+nav.rail .tools button{font-size:.78rem;padding:4px 10px}
+main{min-width:0;display:flex;flex-direction:column;gap:88px;padding-top:40px}
+section{display:flex;flex-direction:column;gap:20px;scroll-margin-top:24px}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--copper)}
+.lede{font-size:1.08rem;color:var(--muted);max-width:68ch}
+.prose{max-width:70ch;display:flex;flex-direction:column;gap:12px}
+.prose ul,.prose ol{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px}
+.hero h1{font-size:clamp(2.1rem,5.4vw,3.9rem);font-stretch:120%;font-weight:800;letter-spacing:-.02em}
+.hero h1 em{font-style:normal;color:var(--copper)}
+.bench{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.bench-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px}
+.tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted)}
+.ctl output{font-family:var(--mono);color:var(--ink);font-size:.82rem}
+select,input[type=range]{accent-color:var(--copper)}
+select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;max-width:100%}
+input[type=range]{width:170px;max-width:100%}
+button{font:inherit;font-size:.85rem;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:6px 12px}
+button:hover{border-color:var(--copper)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button.on{border-color:var(--copper);color:var(--copper);font-weight:600}
+.split{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px}
+.split>*{min-width:0}
+.stage{position:relative;width:100%;height:480px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.stage canvas{width:100%;height:100%;display:block}
+.stage .hint{position:absolute;left:12px;bottom:10px;font-size:.75rem;color:var(--muted);pointer-events:none;max-width:80%}
+.stage .lbl3{position:absolute;font-family:var(--mono);font-size:.7rem;color:var(--muted);pointer-events:none;white-space:nowrap}
+/* receipt: the worked-number strip */
+.receipt{font-family:var(--mono);font-size:.82rem;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;overflow-x:auto}
+.receipt .row{display:flex;justify-content:space-between;gap:16px;white-space:nowrap}
+.receipt .row span:last-child{font-variant-numeric:tabular-nums}
+.receipt .sum{border-top:1px solid var(--ink);padding-top:6px;font-weight:600}
+.receipt .dim{color:var(--muted)}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-family:var(--mono);font-size:.86rem}
+.chain .f{background:var(--sunk);border-radius:6px;padding:4px 9px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.chain .f small{font-family:var(--body);font-size:.66rem;color:var(--muted)}
+.chain .f.hot{background:var(--copper);color:var(--surface)}
+.chain .f.hot small{color:var(--surface);opacity:.85}
+.chain .eq{font-weight:700;color:var(--copper)}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.metric{background:var(--bg);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.metric .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.metric .v{font-family:var(--display);font-stretch:108%;font-size:1.45rem;font-weight:740;font-variant-numeric:tabular-nums}
+.metric .s{font-size:.78rem;color:var(--muted)}
+.pill{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+.pill.good{color:var(--good)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.callout{border-left:3px solid var(--teal);background:var(--surface);padding:14px 18px;border-radius:0 8px 8px 0;max-width:74ch;display:flex;flex-direction:column;gap:6px}
+.callout.c{border-left-color:var(--copper)}
+.callout b.t{font-family:var(--display);font-stretch:108%}
+pre{margin:0;background:var(--sunk);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.79rem;line-height:1.55}
+pre .c{color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.86rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--sunk)}
+tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-size:.82rem;white-space:nowrap}
+tr.hl td{background:var(--sunk)}
+.grid-mat{display:grid;gap:2px;font-family:var(--mono);font-size:.72rem}
+.grid-mat div{padding:3px 4px;text-align:center;border-radius:3px;min-width:38px}
+.toy{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.headcard{background:var(--bg);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:.82rem}
+.headcard b{font-family:var(--display);font-stretch:106%}
+.bars{display:flex;flex-direction:column;gap:3px}
+.bars .b{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;align-items:center;font-family:var(--mono);font-size:.72rem}
+.bars .b i{display:block;height:10px;border-radius:2px;background:var(--copper)}
+.note{font-size:.8rem;color:var(--muted)}
+.steps{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.steps li::marker{font-family:var(--mono);color:var(--copper)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+@media (max-width:980px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:0}
+  nav.rail{position:sticky;top:0;height:auto;flex-direction:row;overflow-x:auto;padding-block:10px;background:var(--bg);z-index:5;border-bottom:1px solid var(--line);gap:0}
+  nav.rail .brand{display:none}
+  nav.rail a{white-space:nowrap;border-left:none;border-bottom:2px solid transparent}
+  nav.rail a.on{border-bottom-color:var(--copper)}
+  nav.rail .tools{margin-top:0}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .stage{height:400px}
+}
+@media (max-width:560px){.stage{height:340px}}
+
+/* ---- part 4 ---- */
+[hidden]{display:none!important}
+.howto{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;max-width:1000px}
+.howto div,.meters div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--muted)}
+.howto b,.meters b{font-family:var(--display);font-stretch:108%;color:var(--ink);font-size:1rem}
+.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.meters div{background:var(--bg)}
+.setup{position:sticky;top:0;z-index:4;box-shadow:0 6px 18px -12px rgba(0,0,0,.5)}
+@media (max-width:980px){.setup{position:static}}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+button.primary{background:var(--copper);border-color:var(--copper);color:var(--surface);font-weight:600}
+.labcols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.labcol{background:var(--bg);border-radius:8px;padding:12px;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
+.labt{width:100%;font-family:var(--display);font-stretch:108%}
+.v3{position:relative;width:100%;height:420px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.v3.wide{height:440px}
+.v3 canvas{width:100%;height:100%;display:block;cursor:grab}
+.v3 .hint{position:absolute;left:10px;bottom:8px;font-size:.72rem;color:var(--muted);pointer-events:none}
+.lbls{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lbl3{position:absolute;left:0;top:0;white-space:nowrap;line-height:1.3;font-size:.72rem;color:var(--muted);background:color-mix(in srgb,var(--sunk) 84%,transparent);padding:1px 5px;border-radius:4px}
+.lbl3 b{color:var(--ink)}
+.lbl3.shape{font-family:var(--mono);font-size:.64rem;background:none;padding:0}
+.c4{gap:14px}
+.verdict{font-size:1.05rem;color:var(--muted);max-width:72ch;border-left:3px solid var(--copper);padding-left:12px}
+.c4grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:22px;align-items:start}
+.c4text{display:flex;flex-direction:column;gap:8px;max-width:66ch}
+.c4text h4{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--copper);margin:10px 0 0}
+.c4text ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:6px}
+.c4lab{display:flex;flex-direction:column;gap:12px;position:sticky;top:150px}
+@media (max-width:1100px){.c4grid{grid-template-columns:minmax(0,1fr)}.c4lab{position:static}}
+.analogy{background:var(--surface);border:1px dashed var(--line);border-radius:8px;padding:10px 14px;font-style:italic}
+.chainbox{display:flex;flex-direction:column;gap:10px}
+.because{font-size:.86rem;background:var(--surface);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 14px;line-height:1.55}
+.up{color:var(--good);font-weight:600}.dn{color:var(--bad);font-weight:600}.dz{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.mini4.wide{grid-column:1/-1}
+.mini4{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;font-size:.9rem}
+.cite{font-family:var(--mono);font-size:.68rem;vertical-align:super;margin-left:2px;text-decoration:none}
+ol.src{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:5px;font-size:.88rem}
+td.num{white-space:nowrap}
+
+.split2{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px}
+.split2>*{min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;font-size:.9rem}
+.panel h4{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--copper);margin:8px 0 0}
+.v3.tall{height:460px}
+.steps.big{font-size:.95rem;gap:16px}
+.steps.big pre{margin-top:8px}
+input[type=number]{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:120px}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
+@media (max-width:1100px){.split2{grid-template-columns:minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="rail" id="rail">
+  <a class="hub" href="./">← Field Guide (part 1)</a>
+  <a class="hub" href="why-architecture.html">← Why it's built (part 4)</a>
+  <div class="brand">Kernels &amp; vLLM<br><span>math → silicon</span></div>
+  <a href="#start">The five-layer stack</a>
+  <a href="#gpu">1 · What a kernel is</a>
+  <a href="#roof">2 · Roofline: why decode is slow</a>
+  <a href="#flash">3 · Fusion &amp; FlashAttention</a>
+  <a href="#map">4 · Architecture → kernels</a>
+  <a href="#batch">5 · Batching: the free lunch</a>
+  <a href="#paged">6 · PagedAttention</a>
+  <a href="#sched">7 · Continuous batching</a>
+  <a href="#tricks">8 · Other engine tricks</a>
+  <a href="#bench">9 · How it's benchmarked</a>
+  <a href="#eff">10 · Is my number good?</a>
+  <a href="#recipe">11 · Benchmark plan for Qwen3-8B</a>
+  <a href="#engines">12 · Which engine when</a>
+  <a href="#sources">Sources</a>
+  <div class="tools"><button type="button" data-theme-toggle aria-label="Switch theme"><span class="ico">☾</span> <span class="lbl">Dark</span></button></div>
+</nav>
+<main>
+
+<section id="start" class="hero">
+  <span class="eyebrow">LLM Inference Field Guide · Part 5</span>
+  <h1>Kernels &amp; vLLM: how the <em>math becomes speed</em></h1>
+  <p class="lede">The architecture (parts 2–4) says <i>what</i> to compute. Kernels decide <i>how fast</i> one GPU does each piece. Engines like vLLM decide <i>what to compute when</i> for many users at once. Benchmarks tell you whether all of it works. This page follows a request through all five layers, with numbers for your hardware.</p>
+  <div class="bench setup" id="setup">
+    <div class="bench-head"><h3>Your setup</h3><span class="tag">every number on this page follows these</span></div>
+    <div class="controls">
+      <label class="ctl">Device<select id="sDev"></select></label>
+      <label class="ctl">Model<select id="sModel"></select></label>
+      <label class="ctl">Weights<select id="sFmt"><option value="16">BF16</option><option value="8">FP8 / Q8</option><option value="4.5" selected>4-bit (Marlin / Q4_K)</option></select></label>
+    </div>
+  </div>
+  <div class="split2">
+    <div class="v3 tall" id="vStack"><canvas></canvas><div class="lbls"></div><span class="hint">Click a layer · drag to orbit</span></div>
+    <div class="panel" id="stackPanel"></div>
+  </div>
+</section>
+
+<section id="gpu" class="c4">
+  <span class="eyebrow">1 · Kernels</span>
+  <h2>What a kernel is: one recipe, run by thousands of cooks at once</h2>
+  <p class="verdict">A kernel is one GPU function, such as "multiply this matrix" or "do attention". A forward pass of Qwen3-8B launches several hundred of them.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The hardware it runs on</h4>
+      <ul><li><b>SMs (streaming multiprocessors):</b> the GPU's cores. The RTX 4090 has 128, the H100 has 132. Each SM has <b>tensor cores</b> (matrix-multiply units) and a small, very fast <b>SRAM</b> (shared memory / L1, roughly 100–228 KB per SM).</li>
+      <li><b>HBM / GDDR:</b> the big, slow memory (24–80 GB) that holds the weights and KV cache. It's slow compared with SRAM: about 1–3 TB/s, versus tens of TB/s in aggregate SRAM bandwidth.</li>
+      <li>A <b>kernel launch</b> splits the work into <b>thread blocks</b>, one or more per SM. Each block loads a tile of data from HBM into SRAM, computes on it with the tensor cores, and writes the result back.</li></ul>
+      <h4>Analogy</h4>
+      <p class="analogy">HBM is the warehouse, SRAM is each cook's countertop, tensor cores are the cooks' hands, and the kernel is the recipe card handed to all 128 kitchens. Trips to the warehouse are what take the time.</p>
+      <h4>The three rules of a fast kernel</h4>
+      <ol class="steps"><li><b>Touch HBM as little as possible:</b> load each byte once and reuse it from SRAM.</li><li><b>Keep every SM busy:</b> enough blocks, balanced across SMs.</li><li><b>Launch few kernels:</b> each launch costs a few microseconds of CPU/driver time, and hundreds per token add up. That's why <b>fusion</b> and <b>CUDA graphs</b> exist.</li></ol>
+      <h4>Where kernels come from</h4>
+      <p>Hand-written CUDA (FlashAttention, Marlin), CUTLASS/CuTe templates, <b>Triton</b> (Python-like GPU kernels; vLLM's fused MoE is written in it), vendor libraries (cuBLAS for GEMMs), and <code>torch.compile</code>, which fuses small ops automatically. llama.cpp writes its own for CUDA, Metal, Vulkan and CPU SIMD.</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vGpu"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">Operation<select id="kOp"><option value="gemv">Decode: weights × 1 token (GEMV)</option><option value="gemm">Prefill: weights × 2,048 tokens (GEMM)</option><option value="norm">RMSNorm, unfused</option></select></label></div>
+      <div class="chainbox" id="chGpu"></div>
+    </div>
+  </div>
+</section>
+
+<section id="roof" class="c4">
+  <span class="eyebrow">2 · Roofline</span>
+  <h2>The roofline: is this kernel waiting on memory or on math?</h2>
+  <p class="verdict">Every kernel's time ≈ max(bytes ÷ bandwidth, FLOPs ÷ peak). Arithmetic intensity, FLOPs per byte, says which one wins.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The rule</h4>
+      <p><b>Arithmetic intensity</b> I = FLOPs ÷ bytes moved from HBM. The device's <b>ridge point</b> is peak FLOPs ÷ bandwidth. Below the ridge, a kernel is memory-bound: faster math won't help, only fewer bytes will. Above it, the kernel is compute-bound.</p>
+      <div class="receipt" id="rxRoof"></div>
+      <h4>Why decode is memory-bound</h4>
+      <p>Generating one token multiplies every weight by a single vector: 2 FLOPs per weight (multiply + add), and each BF16 weight is 2 bytes. So I ≈ <b>1 FLOP/byte</b>, about 100× below a modern GPU's ridge. The tensor cores sit mostly idle while HBM streams weights. That's part 1's whole speed equation, seen from the kernel's side.</p>
+      <h4>Why quantized weights help decode, but less for prefill</h4>
+      <p>4-bit weights move 4× fewer bytes, so a memory-bound GEMV gets up to ~4× faster, provided the kernel dequantizes inside SRAM (Marlin, llama.cpp's MMVQ). A compute-bound prefill GEMM gains little from fewer bytes unless the math itself runs in lower precision (FP8/INT8 tensor cores).</p>
+      <h4>Analogy</h4>
+      <p class="analogy">A kitchen where the cooks can chop 100 onions per second but the delivery truck brings only one per second. Hiring faster cooks changes nothing. Bring more onions per trip (batching), or smaller onions (quantization).</p>
+    </div>
+    <div class="c4lab">
+      <canvas id="roofCv" width="560" height="340" style="width:100%"></canvas>
+      <div class="controls"><label class="ctl">Tokens per weight read (batch / prompt length) <output id="kBO"></output><input id="kB" type="range" min="0" max="12" value="0"></label></div>
+      <div class="chainbox" id="chRoof"></div>
+    </div>
+  </div>
+</section>
+
+<section id="flash" class="c4">
+  <span class="eyebrow">3 · Fusion</span>
+  <h2>Kernel fusion and FlashAttention: never write what you can keep</h2>
+  <p class="verdict">Same math, far fewer HBM bytes. FlashAttention never stores the N×N score matrix, which makes long prompts feasible.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem</h4>
+      <p>Textbook attention runs as separate kernels: S = QKᵀ (written to HBM) → softmax(S) (read, written back) → P·V (read again). For an N-token prompt the score matrix S is <b>N × N per head</b>. At long N, those reads and writes dwarf the useful work.</p>
+      <h4>How FlashAttention works</h4>
+      <ol class="steps"><li>Split Q into row blocks and K, V into column blocks that fit in SRAM.</li><li>For one Q block, stream every K/V block through SRAM and compute that tile of scores.</li><li><b>Online softmax:</b> keep a running max and a running sum per row, so the earlier partial outputs can be rescaled when a larger score appears. Softmax never needs the whole row at once.</li><li>Accumulate P·V in SRAM, and write only the final output (N × d) to HBM.</li></ol>
+      <p>HBM traffic drops from O(N²) to roughly O(N·d) per pass. FLOPs are unchanged (slightly more, for the rescaling). FlashAttention-2 reaches 50–73% of A100 peak; FlashAttention-3 reaches about 75% of H100 FP16 peak.<a class="cite" href="#s-fa2">[FA2]</a><a class="cite" href="#s-fa3">[FA3]</a></p>
+      <div class="receipt" id="rxFlash"></div>
+      <h4>Decode needs a different split: Flash-Decoding</h4>
+      <p>With one query token, FlashAttention would occupy only a few SMs (one block per head). <b>Flash-Decoding</b> splits the <i>cache</i> across SMs, so each SM handles a chunk of past tokens, and then merges the partial softmaxes. All SMs share the cache read.<a class="cite" href="#s-fd">[Flash-Decoding]</a></p>
+      <h4>Other fusions every engine does</h4>
+      <ul><li><b>Residual add + RMSNorm</b> in one kernel (one read, one write instead of three).</li><li><b>SiLU(gate) × up</b> fused into one kernel, often into the GEMM's epilogue.</li><li><b>RoPE</b> applied inside the QKV or attention kernel.</li><li><b>Dequantize inside the GEMM</b>: 4-bit weights are expanded in SRAM and never written back as BF16 (Marlin, GGUF kernels).</li></ul>
+      <h4>Analogy</h4>
+      <p class="analogy">Naive attention: chop all vegetables, carry them to the warehouse, bring them back to season, carry them back, bring them back to cook. FlashAttention: chop, season and cook one tray at a time on the countertop, and only plates go to the warehouse.</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vFlash"><canvas></canvas><div class="lbls"></div></div>
+      <div class="controls"><label class="ctl">Prompt length N <output id="kNO"></output><input id="kN" type="range" min="0" max="6" value="3"></label></div>
+      <div class="chainbox" id="chFlash"></div>
+    </div>
+  </div>
+</section>
+
+<section id="map">
+  <span class="eyebrow">4 · Architecture → kernels</span>
+  <h2>Every architecture feature needs a kernel before it's fast</h2>
+  <p class="lede">This is why a new architecture can be "supported" in an engine and still slow for months. The math runs on generic kernels until a specialized one is written. When you read an architecture paper, ask: <b>which kernel makes this fast, and does my engine have it?</b></p>
+  <div class="tablewrap"><table>
+    <tr><th>Architecture feature (parts 2–4)</th><th>Kernel that makes it fast</th><th>What the kernel exploits</th><th>If it's missing</th></tr>
+    <tr><td>Dense FFN / projections</td><td>cuBLAS / CUTLASS GEMM; GEMV for decode</td><td>Tensor cores, tiled reuse in SRAM</td><td>—</td></tr>
+    <tr><td>4-bit / 8-bit weights</td><td>Marlin, Machete (vLLM); MMQ/MMVQ (llama.cpp); FP8 GEMM</td><td>Dequantize in registers; only quantized bytes cross HBM</td><td>Dequantizing to BF16 first destroys the bandwidth win</td></tr>
+    <tr><td>GQA / MQA</td><td>FlashAttention / FlashInfer with GQA support</td><td>Load each shared K/V tile once for the whole query group</td><td>K/V get copied per head (repeat_kv), and the cache saving is lost in bandwidth</td></tr>
+    <tr><td>Sliding window</td><td>FlashAttention local-window mask; ring-buffer KV in the engine</td><td>Skip tiles outside the window</td><td>Masked tiles still get computed; the memory saving needs engine support</td></tr>
+    <tr><td>MLA (DeepSeek)</td><td>FlashMLA; FlashInfer MLA</td><td>Attention directly on the 576-dim latent (absorbed weights)</td><td>Expanding K/V per head brings back MHA-sized traffic</td></tr>
+    <tr><td>DSA</td><td>Sparse FlashMLA + FP8 indexer kernels (DeepGEMM)</td><td>Gather only the top-k cache rows</td><td>Dense attention over everything: correct, but no saving</td></tr>
+    <tr><td>Gated DeltaNet / linear</td><td>Chunked-scan kernels (flash-linear-attention, Triton)</td><td>Process chunks of tokens in parallel, carry the state across chunks</td><td>Token-by-token recurrence: very slow prefill</td></tr>
+    <tr><td>MoE</td><td>Fused MoE / grouped GEMM (Triton fused_moe, DeepGEMM); expert-parallel all-to-all (DeepEP)</td><td>Sort tokens by expert, run all experts in one launch</td><td>One small GEMM per expert: launch overhead and idle SMs</td></tr>
+    <tr><td>Sampling</td><td>Fused top-k/top-p (FlashInfer)</td><td>Avoids sorting the full 152K vocabulary</td><td>A visible slice of time per token at small batch</td></tr>
+  </table></div>
+</section>
+
+<section id="batch" class="c4">
+  <span class="eyebrow">5 · Batching</span>
+  <h2>Batching: the closest thing to a free lunch</h2>
+  <p class="verdict">Reading the weights once and using them for B tokens costs almost the same as for one token, until you reach the ridge or run out of KV memory.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>Why it works</h4>
+      <p>One decode step reads all the weights (W bytes) plus each user's KV cache. With B users in the same step, the <b>weights are read once</b> and multiplied by B vectors (a GEMM instead of B GEMVs). Arithmetic intensity rises to about B FLOPs/byte. Step time grows slowly, so total throughput grows almost linearly with B.</p>
+      <h4>What stops it</h4>
+      <ul><li><b>The ridge:</b> past roughly ridge-point users, weight GEMMs become compute-bound and step time grows with B.</li><li><b>KV memory:</b> each user's cache must fit (parts 2 and 4). Usually this limit comes first.</li><li><b>KV bandwidth:</b> each user's cache is still read once per step, and batching doesn't share it. At long contexts the cache dominates and the free lunch shrinks.</li><li><b>Latency:</b> each user's token arrives once per step, so bigger steps mean slower tokens per user.</li></ul>
+      <h4>Analogy</h4>
+      <p class="analogy">A bus. The trip costs about the same with 1 passenger or 50 (the weights). Each passenger's luggage (their KV cache) still has to be loaded, and the bus has only so much trunk space (VRAM).</p>
+      <div class="receipt" id="rxBatch"></div>
+    </div>
+    <div class="c4lab">
+      <canvas id="batchCv" width="560" height="320" style="width:100%"></canvas>
+      <div class="controls"><label class="ctl">Context per user <output id="kCtxO"></output><input id="kCtx" type="range" min="0" max="6" value="2"></label></div>
+      <div class="chainbox" id="chBatch"></div>
+    </div>
+  </div>
+</section>
+
+<section id="paged" class="c4">
+  <span class="eyebrow">6 · vLLM's core idea</span>
+  <h2>PagedAttention: virtual memory for the KV cache</h2>
+  <p class="verdict">Store the cache in small fixed-size blocks, allocated as tokens arrive. Waste drops from most of the memory to almost none, so many more users fit.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem</h4>
+      <p>Before vLLM, servers reserved one <b>contiguous</b> slab per request, sized for the maximum possible length, because they couldn't know how long the answer would be. Most of each slab stayed empty, and leftover gaps between slabs couldn't be used. The vLLM paper measured existing systems using only about 20–38% of KV memory for real tokens.<a class="cite" href="#s-vllm">[Kwon 2023]</a></p>
+      <h4>How it works</h4>
+      <ol class="steps"><li>Split GPU KV memory into <b>blocks</b> of 16 tokens.</li><li>Each request has a <b>block table</b>: a list of physical block IDs in logical order. It's like an operating system's page table.</li><li>A new block is allocated only when the last one fills, so waste is under one block per request.</li><li>The attention kernel follows the block table to gather K/V from scattered blocks. That kernel is the "PagedAttention" part.</li><li>Blocks can be <b>shared</b>: requests with the same system prompt point to the same blocks (prefix caching), copied on write.</li></ol>
+      <h4>Analogy</h4>
+      <p class="analogy">A restaurant that used to reserve a 12-seat table for every party "in case more friends come". PagedAttention seats people at 2-seat tables wherever there's room and keeps a note of which tables belong to which party.</p>
+      <h4>Evidence</h4>
+      <p>The paper reported <b>2–4× higher throughput</b> than FasterTransformer and Orca at the same latency, with near-zero KV waste.<a class="cite" href="#s-vllm">[Kwon 2023]</a></p>
+      <h4>The price</h4>
+      <ul><li>The attention kernel must gather from scattered blocks: a little indirection per block. Block size trades indirection overhead against waste.</li><li>When memory runs out, the engine must <b>preempt</b> a request: swap its blocks to CPU or recompute them later. A latency spike for that user.</li></ul>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vPaged"><canvas></canvas><div class="lbls"></div></div>
+      <div class="btnrow"><button type="button" id="pgPlay" class="primary">▶ Generate tokens</button><button type="button" id="pgReset">Reset</button><label class="chk"><input type="checkbox" id="pgShare" checked> Shared system prompt (prefix caching)</label></div>
+      <div class="chainbox" id="chPaged"></div>
+    </div>
+  </div>
+</section>
+
+<section id="sched" class="c4">
+  <span class="eyebrow">7 · vLLM's scheduler</span>
+  <h2>Continuous batching: never let a finished seat sit empty</h2>
+  <p class="verdict">Re-form the batch at every single step. New requests join immediately and finished ones leave, so the GPU stays full.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The problem</h4>
+      <p><b>Static batching</b> collects B requests, runs them until the <i>longest</i> finishes, then starts the next batch. Short answers wait for long ones, and new arrivals wait for the whole batch.</p>
+      <h4>How it works</h4>
+      <ol class="steps"><li>At every step the scheduler looks at the waiting queue and admits requests while KV blocks are free.</li><li>New requests are prefilled. With <b>chunked prefill</b>, a long prompt is split into chunks mixed with other users' decode tokens, under a per-step token budget, so running users don't freeze.<a class="cite" href="#s-sarathi">[Sarathi-Serve]</a></li><li>Every running request gets one token, and finished requests free their blocks at once.</li></ol>
+      <p>This idea, iteration-level scheduling, came from Orca.<a class="cite" href="#s-orca">[Orca 2022]</a> vLLM combined it with paged memory.</p>
+      <h4>Analogy</h4>
+      <p class="analogy">A bus that waits until the last passenger gets off before boarding anyone new, compared with a bus that picks people up and drops them off at every stop.</p>
+      <h4>The simulator below is real</h4>
+      <p>It runs a step-by-step schedule of requests arriving at random (Poisson) times on your device and model. Step time comes from the roofline above: weight bytes + every running user's cache bytes, or compute for prefill tokens. It reports exactly the metrics real benchmarks report.</p>
+    </div>
+    <div class="c4lab">
+      <div class="controls">
+        <label class="ctl">Requests per second <output id="qRateO"></output><input id="qRate" type="range" min="0" max="11" value="5"></label>
+        <label class="ctl">Prompt tokens <output id="qInO"></output><input id="qIn" type="range" min="0" max="5" value="2"></label>
+        <label class="ctl">Output tokens <output id="qOutO"></output><input id="qOut" type="range" min="0" max="4" value="2"></label>
+      </div>
+      <div class="v3" id="vSched"><canvas></canvas><div class="lbls"></div><span class="hint">Each bar is one request over time: grey = waiting, violet = prefill, copper = decoding</span></div>
+      <div class="chainbox" id="chSched"></div>
+    </div>
+  </div>
+</section>
+
+<section id="tricks">
+  <span class="eyebrow">8 · Other engine tricks</span>
+  <h2>What else an engine does, and what each one buys</h2>
+  <div class="grid2">
+    <div class="mini4"><h3>CUDA graphs</h3><p><b>Problem:</b> a decode step launches hundreds of small kernels, and at a few µs each the CPU can't keep up. With batch 1 on a fast GPU, the GPU idles between launches.<br><b>Fix:</b> record the whole step once, then replay it with a single launch. vLLM captures graphs for common batch sizes.<br><b>Effect:</b> often a double-digit % gain in small-batch decode. <b>Price:</b> fixed shapes, extra memory per captured size, and slower startup.</p><div class="receipt" id="rxGraph"></div></div>
+    <div class="mini4"><h3>Prefix caching</h3><p>Hash each full KV block by its tokens. A new request whose prompt starts with the same blocks (system prompt, few-shot examples, a long document) reuses them, so that part of prefill is skipped. SGLang generalizes this with a radix tree of prefixes (RadixAttention).<a class="cite" href="#s-sglang">[SGLang]</a> <b>Effect:</b> much shorter time to first token (TTFT) on repeated context.</p></div>
+    <div class="mini4"><h3>Speculative decoding</h3><p>A cheap drafter (a small model, EAGLE heads, or DeepSeek's MTP layer) guesses k tokens, and the big model checks all k in <b>one</b> forward pass, which costs about the same as one memory-bound decode step. With acceptance rate α, each step yields on average (1−α<sup>k+1</sup>)/(1−α) tokens.<a class="cite" href="#s-spec">[Leviathan 2023]</a><a class="cite" href="#s-eagle">[EAGLE]</a></p>
+      <div class="controls"><label class="ctl">Acceptance α <output id="spAO"></output><input id="spA" type="range" min="30" max="95" value="70"></label><label class="ctl">Draft length k <output id="spKO"></output><input id="spK" type="range" min="1" max="8" value="4"></label></div><div class="receipt" id="rxSpec"></div></div>
+    <div class="mini4"><h3>Tensor / pipeline / expert parallel</h3><p><b>Tensor parallel (TP):</b> split every matrix across GPUs, so each reads 1/N of the weights. It needs an all-reduce twice per layer, so fast links (NVLink) matter. <b>Pipeline parallel:</b> split the layers instead; less communication, but bubbles at small batch. <b>Expert parallel:</b> put different experts on different GPUs and exchange tokens with all-to-all (DeepEP). GQA with 8 K/V heads splits cleanly at TP = 8 (part 4).</p></div>
+  </div>
+</section>
+
+<section id="bench" class="c4">
+  <span class="eyebrow">9 · Benchmarking</span>
+  <h2>How serving speed is measured, and why one number is never enough</h2>
+  <p class="verdict">Users feel latency, owners pay for throughput, and you can only trade one for the other. A benchmark sweeps the load and reports both.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The metrics</h4>
+      <ul>
+        <li><b>TTFT</b> (time to first token): queueing + prefill. It's what users feel as "it started answering".</li>
+        <li><b>TPOT / ITL</b> (time per output token / inter-token latency): the gap between tokens while streaming. 1 ÷ TPOT is the per-user tokens/s.</li>
+        <li><b>E2E latency</b> = TTFT + TPOT × (output tokens − 1).</li>
+        <li><b>Throughput:</b> output tokens/s (or requests/s) summed over all users.</li>
+        <li><b>Percentiles:</b> report p50 <i>and</i> p99. Averages hide the unlucky users.</li>
+        <li><b>Goodput:</b> requests per second that meet a service-level objective (SLO), such as TTFT &lt; 2 s and TPOT &lt; 100 ms.<a class="cite" href="#s-dist">[DistServe]</a> This is the honest capacity number.</li>
+      </ul>
+      <h4>The method</h4>
+      <ol class="steps"><li><b>Fix the workload:</b> prompt and output length distributions (or a real dataset), plus the arrival pattern.</li><li><b>Warm up</b> (CUDA graphs, caches), then measure.</li><li><b>Sweep the request rate</b> from low to past saturation, and plot latency against throughput. The <b>knee</b> is where latency explodes.</li><li><b>Report everything:</b> GPU, driver, engine version, flags, quantization, max context.</li><li><b>Check quality:</b> a faster setting that drops accuracy isn't a win (perplexity, lm-eval).</li><li><b>Profile</b> where time goes: Nsight Systems for the timeline (gaps = launch overhead), Nsight Compute for per-kernel bandwidth vs peak.</li></ol>
+      <h4>Analogy</h4>
+      <p class="analogy">Testing a highway: you don't report "cars per hour" at 3 a.m. You ramp up traffic and record both the flow and the travel time, and the capacity is the flow just before the jam.</p>
+    </div>
+    <div class="c4lab">
+      <canvas id="curveCv" width="560" height="330" style="width:100%"></canvas>
+      <div class="controls"><label class="ctl">SLO: TTFT under <output id="sloTO"></output><input id="sloT" type="range" min="1" max="10" value="2"></label><label class="ctl">SLO: TPOT under <output id="sloPO"></output><input id="sloP" type="range" min="20" max="200" step="10" value="80"></label></div>
+      <div class="chainbox" id="chCurve"></div>
+    </div>
+  </div>
+</section>
+
+<section id="eff" class="c4">
+  <span class="eyebrow">10 · Sanity check</span>
+  <h2>Is my benchmark number good? Compare it with the roofline</h2>
+  <div class="c4grid">
+    <div class="c4text">
+      <p>For single-user decode, the ceiling is <b>bandwidth ÷ bytes per token</b>. Divide your measured tok/s by that ceiling, or multiply measured tok/s by bytes per token and compare with peak bandwidth. That's the <b>achieved bandwidth</b>: how well the kernels and engine use the hardware.</p>
+      <ul><li><b>≥ 70% of peak:</b> excellent. The kernels are near the roofline, so only fewer bytes (quantization, MLA, MoE) will help.</li><li><b>40–70%:</b> normal for small models or long contexts. Check CUDA graphs and the attention kernel.</li><li><b>&lt; 40%:</b> something's wrong: CPU launch overhead, PCIe offload (layers on CPU), a dequantize-then-GEMM path, or a debug/eager mode.</li></ul>
+      <p>The same check works for prefill, against peak FLOPs: measured prompt tok/s × 2 × active parameters ÷ peak FLOPs.</p>
+    </div>
+    <div class="c4lab">
+      <div class="controls"><label class="ctl">Your measured decode tok/s<input id="eTps" type="number" value="95" min="1" step="1"></label><label class="ctl">Context during the test<select id="eCtx"><option value="512">512</option><option value="4096" selected>4K</option><option value="16384">16K</option><option value="32768">32K</option></select></label></div>
+      <div class="chainbox" id="chEff"></div>
+    </div>
+  </div>
+</section>
+
+<section id="recipe">
+  <span class="eyebrow">11 · Your plan</span>
+  <h2>A benchmark plan for Qwen3-8B on Dahir's server</h2>
+  <p class="lede">Run these in order. Each step answers one question, and together they tell you which engine and which quantization to use for which job.</p>
+  <ol class="steps big">
+    <li><b>Baseline single-user speed (llama.cpp):</b> how fast is one user, at short and long context?
+<pre>llama-bench -m Qwen3-8B-BF16.gguf   -ngl 99 -p 512,2048 -n 128 -r 5
+llama-bench -m Qwen3-8B-Q4_K_M.gguf -ngl 99 -p 512,2048 -n 128 -r 5
+<span class="c"># newer builds: add -d 0,8192,32768 to measure decode with an already-filled context</span></pre></li>
+    <li><b>Check it against the roofline:</b> put the tg128 number into section 10. Below about 60% of peak bandwidth, investigate before going further.</li>
+    <li><b>Quality of each quant:</b> is Q4 still good enough?
+<pre>llama-perplexity -m Qwen3-8B-Q4_K_M.gguf -f wiki.test.raw -ngl 99
+lm_eval --model vllm --model_args pretrained=Qwen/Qwen3-8B --tasks gsm8k,mmlu --batch_size auto</pre></li>
+    <li><b>Serving capacity (vLLM):</b> how many users, at what latency?
+<pre>vllm serve Qwen/Qwen3-8B --max-model-len 32768 --gpu-memory-utilization 0.90
+<span class="c"># in another terminal: sweep the load (repeat for request rates 1, 2, 4, 8, 16, inf)</span>
+vllm bench serve --model Qwen/Qwen3-8B --dataset-name random \
+  --random-input-len 2048 --random-output-len 256 --num-prompts 300 \
+  --request-rate 4 --percentile-metrics ttft,tpot,itl,e2el --metric-percentiles 50,99</pre></li>
+    <li><b>Offline throughput ceiling:</b> the maximum tokens/s with no latency target.
+<pre>vllm bench throughput --model Qwen/Qwen3-8B --input-len 2048 --output-len 256 --num-prompts 500</pre></li>
+    <li><b>Where the time goes (profile one decode run):</b>
+<pre>nsys profile -t cuda,nvtx -o qwen3_decode \
+  vllm bench latency --model Qwen/Qwen3-8B --batch-size 1 --input-len 1024 --output-len 64</pre>
+Open the trace and look for gaps between kernels (launch overhead) and which kernels take the most time (GEMMs, attention, sampling).</li>
+    <li><b>Write it up:</b> plot latency against throughput per engine and quant, mark the SLO, and report goodput. That's the decision table for the team.</li>
+  </ol>
+</section>
+
+<section id="engines">
+  <span class="eyebrow">12 · Choosing</span>
+  <h2>Which engine when</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Engine</th><th>Built for</th><th>Key techniques</th><th>Use it when</th></tr>
+    <tr><td>llama.cpp</td><td>One or a few users, any hardware</td><td>GGUF k-quants, CPU+GPU split, Metal/Vulkan/CPU kernels</td><td>Local / edge, CPU offload, Macs, quick quant experiments</td></tr>
+    <tr><td>vLLM</td><td>Many users on NVIDIA/AMD GPUs</td><td>PagedAttention, continuous batching, chunked prefill, CUDA graphs, Marlin/FP8, spec decode</td><td>Serving an API to a team or the public</td></tr>
+    <tr><td>SGLang</td><td>Many users, heavy prompt reuse</td><td>RadixAttention prefix cache, fast scheduler, strong DeepSeek/MLA support</td><td>Agents and multi-turn chat with shared context; large MoE</td></tr>
+    <tr><td>TensorRT-LLM</td><td>Maximum NVIDIA performance</td><td>Compiled engines, FP8/FP4, in-flight batching</td><td>Fixed production models where setup cost is worth it</td></tr>
+    <tr><td>HF Transformers</td><td>Research and correctness</td><td>Eager PyTorch, every architecture first</td><td>Checking outputs and prototyping, not speed</td></tr>
+  </table></div>
+</section>
+
+<section id="sources">
+  <span class="eyebrow">Sources</span>
+  <h2>Evidence behind the claims</h2>
+  <ol class="src" id="srcList"></ol>
+</section>
+</main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="kv.js?v=2"></script>
+</body>
+</html>
