@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Building Kernels and Engines</title>
+<meta name="description" content="Part 6 of the LLM Inference Field Guide. How kernels and inference engines are built: the theory-to-code process, kernel anatomy and tiling, RMSNorm, fused SiLU and 4-bit GEMV kernels in Triton and CUDA with tests and benchmarks, how vLLM is structured, building a mini engine, and extending vLLM with your own quantization method.">
+<meta name="author" content="Abdulsamad Teniola Muyideen">
+<meta name="theme-color" content="#EDF0F3">
+<link rel="canonical" href="https://th3samaritan.github.io/AI-Research/llm-inference/build-it.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Build it: kernels and engines from theory to code">
+<meta property="og:description" content="Write, test and benchmark GPU kernels, see how vLLM is structured, build a mini engine, and plug your own 4-bit kernel into vLLM.">
+<meta property="og:url" content="https://th3samaritan.github.io/AI-Research/llm-inference/build-it.html">
+<meta property="og:image" content="https://th3samaritan.github.io/AI-Research/llm-inference/preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<script>
+(function(){
+  var KEY="site-theme",root=document.documentElement;
+  function preferred(){var s=null;try{s=localStorage.getItem(KEY)}catch(e){}
+    if(s==="light"||s==="dark")return s;
+    return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}
+  root.setAttribute("data-theme",preferred());
+  function apply(m){root.setAttribute("data-theme",m);
+    var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",m==="dark"?"#0D131A":"#EDF0F3");
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b){b.querySelector(".ico").textContent=m==="dark"?"☀":"☾";b.querySelector(".lbl").textContent=m==="dark"?"Light":"Dark";}}
+  document.addEventListener("DOMContentLoaded",function(){
+    var b=document.querySelector("[data-theme-toggle]");
+    if(b)b.addEventListener("click",function(){var n=root.getAttribute("data-theme")==="dark"?"light":"dark";try{localStorage.setItem(KEY,n)}catch(e){}apply(n);});
+    apply(root.getAttribute("data-theme"));});
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Same system as the Field Guide: steel paper, copper traces. Worked-number "receipts" are the signature element. */
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --sunk:#E3E8ED; --ink:#15202B; --muted:#586676; --line:#CFD7DF;
+  --copper:#B2532A; --steel:#8696A6; --teal:#1C7673; --teal2:#4FA6A2; --violet:#5A4AAE; --gold:#9A7210; --good:#2E7D4F; --warn:#A86A12; --bad:#B03A3A;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D131A; --surface:#141C25; --sunk:#1A2430; --ink:#E2E8EE; --muted:#93A0AE; --line:#263240;
+  --copper:#E2874F; --steel:#55677A; --teal:#4CB2AE; --teal2:#2F7C79; --violet:#9C8EF2; --gold:#D6AC45; --good:#5BBF85; --warn:#E0A64A; --bad:#E06A6A; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;margin:0}
+a{color:var(--copper)}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.1;margin:0}
+h2{font-size:clamp(1.6rem,3.2vw,2.3rem);font-stretch:112%;font-weight:760}
+h3{font-size:1.12rem;font-stretch:105%;font-weight:680}
+p{margin:0}
+code{font-family:var(--mono);font-size:.84em;background:var(--sunk);padding:.08em .35em;border-radius:4px}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px;max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 80px}
+nav.rail{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding-block:28px;display:flex;flex-direction:column;gap:2px;font-size:.88rem}
+nav.rail .brand{font-family:var(--display);font-stretch:118%;font-weight:800;font-size:1.02rem;line-height:1.15;margin-bottom:18px}
+nav.rail .brand span{color:var(--copper)}
+nav.rail a{color:var(--muted);text-decoration:none;padding:5px 10px;border-left:2px solid var(--line)}
+nav.rail a:hover{color:var(--ink)}
+nav.rail a.on{color:var(--ink);border-left-color:var(--copper);font-weight:600}
+nav.rail a.hub{border-left:none;padding-left:0;margin-bottom:6px;font-size:.8rem}
+nav.rail .tools{margin-top:16px;padding-left:10px}
+nav.rail .tools button{font-size:.78rem;padding:4px 10px}
+main{min-width:0;display:flex;flex-direction:column;gap:88px;padding-top:40px}
+section{display:flex;flex-direction:column;gap:20px;scroll-margin-top:24px}
+.eyebrow{font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;color:var(--copper)}
+.lede{font-size:1.08rem;color:var(--muted);max-width:68ch}
+.prose{max-width:70ch;display:flex;flex-direction:column;gap:12px}
+.prose ul,.prose ol{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px}
+.hero h1{font-size:clamp(2.1rem,5.4vw,3.9rem);font-stretch:120%;font-weight:800;letter-spacing:-.02em}
+.hero h1 em{font-style:normal;color:var(--copper)}
+.bench{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.bench-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px}
+.tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted)}
+.ctl output{font-family:var(--mono);color:var(--ink);font-size:.82rem}
+select,input[type=range]{accent-color:var(--copper)}
+select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;max-width:100%}
+input[type=range]{width:170px;max-width:100%}
+button{font:inherit;font-size:.85rem;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:6px 12px}
+button:hover{border-color:var(--copper)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button.on{border-color:var(--copper);color:var(--copper);font-weight:600}
+.split{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px}
+.split>*{min-width:0}
+.stage{position:relative;width:100%;height:480px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.stage canvas{width:100%;height:100%;display:block}
+.stage .hint{position:absolute;left:12px;bottom:10px;font-size:.75rem;color:var(--muted);pointer-events:none;max-width:80%}
+.stage .lbl3{position:absolute;font-family:var(--mono);font-size:.7rem;color:var(--muted);pointer-events:none;white-space:nowrap}
+/* receipt: the worked-number strip */
+.receipt{font-family:var(--mono);font-size:.82rem;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;overflow-x:auto}
+.receipt .row{display:flex;justify-content:space-between;gap:16px;white-space:nowrap}
+.receipt .row span:last-child{font-variant-numeric:tabular-nums}
+.receipt .sum{border-top:1px solid var(--ink);padding-top:6px;font-weight:600}
+.receipt .dim{color:var(--muted)}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-family:var(--mono);font-size:.86rem}
+.chain .f{background:var(--sunk);border-radius:6px;padding:4px 9px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.chain .f small{font-family:var(--body);font-size:.66rem;color:var(--muted)}
+.chain .f.hot{background:var(--copper);color:var(--surface)}
+.chain .f.hot small{color:var(--surface);opacity:.85}
+.chain .eq{font-weight:700;color:var(--copper)}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.metric{background:var(--bg);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.metric .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.metric .v{font-family:var(--display);font-stretch:108%;font-size:1.45rem;font-weight:740;font-variant-numeric:tabular-nums}
+.metric .s{font-size:.78rem;color:var(--muted)}
+.pill{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+.pill.good{color:var(--good)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.callout{border-left:3px solid var(--teal);background:var(--surface);padding:14px 18px;border-radius:0 8px 8px 0;max-width:74ch;display:flex;flex-direction:column;gap:6px}
+.callout.c{border-left-color:var(--copper)}
+.callout b.t{font-family:var(--display);font-stretch:108%}
+pre{margin:0;background:var(--sunk);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.79rem;line-height:1.55}
+pre .c{color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.86rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--sunk)}
+tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-size:.82rem;white-space:nowrap}
+tr.hl td{background:var(--sunk)}
+.grid-mat{display:grid;gap:2px;font-family:var(--mono);font-size:.72rem}
+.grid-mat div{padding:3px 4px;text-align:center;border-radius:3px;min-width:38px}
+.toy{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.headcard{background:var(--bg);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:.82rem}
+.headcard b{font-family:var(--display);font-stretch:106%}
+.bars{display:flex;flex-direction:column;gap:3px}
+.bars .b{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;align-items:center;font-family:var(--mono);font-size:.72rem}
+.bars .b i{display:block;height:10px;border-radius:2px;background:var(--copper)}
+.note{font-size:.8rem;color:var(--muted)}
+.steps{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.steps li::marker{font-family:var(--mono);color:var(--copper)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+@media (max-width:980px){
+  .shell{grid-template-columns:minmax(0,1fr);gap:0}
+  nav.rail{position:sticky;top:0;height:auto;flex-direction:row;overflow-x:auto;padding-block:10px;background:var(--bg);z-index:5;border-bottom:1px solid var(--line);gap:0}
+  nav.rail .brand{display:none}
+  nav.rail a{white-space:nowrap;border-left:none;border-bottom:2px solid transparent}
+  nav.rail a.on{border-bottom-color:var(--copper)}
+  nav.rail .tools{margin-top:0}
+  .split{grid-template-columns:minmax(0,1fr)}
+  .stage{height:400px}
+}
+@media (max-width:560px){.stage{height:340px}}
+
+/* ---- part 4 ---- */
+[hidden]{display:none!important}
+.howto{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;max-width:1000px}
+.howto div,.meters div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--muted)}
+.howto b,.meters b{font-family:var(--display);font-stretch:108%;color:var(--ink);font-size:1rem}
+.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.meters div{background:var(--bg)}
+.setup{position:sticky;top:0;z-index:4;box-shadow:0 6px 18px -12px rgba(0,0,0,.5)}
+@media (max-width:980px){.setup{position:static}}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+button.primary{background:var(--copper);border-color:var(--copper);color:var(--surface);font-weight:600}
+.labcols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.labcol{background:var(--bg);border-radius:8px;padding:12px;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
+.labt{width:100%;font-family:var(--display);font-stretch:108%}
+.v3{position:relative;width:100%;height:420px;border-radius:8px;background:var(--sunk);overflow:hidden;touch-action:pan-y}
+.v3.wide{height:440px}
+.v3 canvas{width:100%;height:100%;display:block;cursor:grab}
+.v3 .hint{position:absolute;left:10px;bottom:8px;font-size:.72rem;color:var(--muted);pointer-events:none}
+.lbls{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lbl3{position:absolute;left:0;top:0;white-space:nowrap;line-height:1.3;font-size:.72rem;color:var(--muted);background:color-mix(in srgb,var(--sunk) 84%,transparent);padding:1px 5px;border-radius:4px}
+.lbl3 b{color:var(--ink)}
+.lbl3.shape{font-family:var(--mono);font-size:.64rem;background:none;padding:0}
+.c4{gap:14px}
+.verdict{font-size:1.05rem;color:var(--muted);max-width:72ch;border-left:3px solid var(--copper);padding-left:12px}
+.c4grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:22px;align-items:start}
+.c4text{display:flex;flex-direction:column;gap:8px;max-width:66ch}
+.c4text h4{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--copper);margin:10px 0 0}
+.c4text ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:6px}
+.c4lab{display:flex;flex-direction:column;gap:12px;position:sticky;top:150px}
+@media (max-width:1100px){.c4grid{grid-template-columns:minmax(0,1fr)}.c4lab{position:static}}
+.analogy{background:var(--surface);border:1px dashed var(--line);border-radius:8px;padding:10px 14px;font-style:italic}
+.chainbox{display:flex;flex-direction:column;gap:10px}
+.because{font-size:.86rem;background:var(--surface);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 14px;line-height:1.55}
+.up{color:var(--good);font-weight:600}.dn{color:var(--bad);font-weight:600}.dz{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.mini4.wide{grid-column:1/-1}
+.mini4{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;font-size:.9rem}
+.cite{font-family:var(--mono);font-size:.68rem;vertical-align:super;margin-left:2px;text-decoration:none}
+ol.src{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:5px;font-size:.88rem}
+td.num{white-space:nowrap}
+
+.split2{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px}
+.split2>*{min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;font-size:.9rem}
+.panel h4{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--copper);margin:8px 0 0}
+.v3.tall{height:460px}
+.steps.big{font-size:.95rem;gap:16px}
+.steps.big pre{margin-top:8px}
+input[type=number]{font:inherit;font-size:.9rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:120px}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
+@media (max-width:1100px){.split2{grid-template-columns:minmax(0,1fr)}}
+/* ---- part 6 ---- */
+.code{background:var(--sunk);border-radius:8px;padding:10px 0;overflow-x:auto;font-family:var(--mono);font-size:.77rem;line-height:1.62}
+.code .ln{display:block;padding:0 14px 0 0;white-space:pre;border-left:3px solid transparent;min-width:max-content}
+.code .ln.has{cursor:pointer}
+.code .ln i{display:inline-block;width:2.4em;text-align:right;margin-right:12px;color:var(--muted);font-style:normal;user-select:none}
+.code .ln.has i{color:var(--copper)}
+.code .ln.has:hover{background:color-mix(in srgb,var(--copper) 8%,transparent)}
+.code .ln.on{background:color-mix(in srgb,var(--copper) 18%,transparent);border-left-color:var(--copper)}
+.code .ln .cm{color:var(--muted)}
+.annot{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px;align-items:start}
+.annot .note-p{position:sticky;top:20px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--copper);border-radius:0 10px 10px 0;padding:14px 16px;font-size:.9rem;display:flex;flex-direction:column;gap:8px;min-height:120px}
+.annot .note-p .k{font-family:var(--mono);font-size:.7rem;color:var(--copper);letter-spacing:.08em;text-transform:uppercase}
+@media (max-width:1100px){.annot{grid-template-columns:minmax(0,1fr)}.annot .note-p{position:static}}
+.qs{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px;display:flex;flex-direction:column;gap:6px;font-size:.9rem;max-width:80ch}
+.qs b.t{font-family:var(--mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--violet)}
+.qs ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:4px}
+.ladder{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px}
+.ladder button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:8px 10px;font-size:.8rem;line-height:1.25}
+.ladder button small{font-family:var(--mono);font-size:.64rem;color:var(--muted)}
+.ladder button.on{border-color:var(--copper);background:var(--surface);box-shadow:inset 0 -3px 0 var(--copper)}
+.qdcf{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.qdcf div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:.88rem;display:flex;flex-direction:column;gap:4px}
+.qdcf div>b{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase}
+.qdcf .q>b{color:var(--violet)} .qdcf .d>b{color:var(--copper)} .qdcf .c>b{color:var(--good)} .qdcf .f>b{color:var(--bad)}
+.trace{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:1100px){.trace{grid-template-columns:minmax(0,1fr)}}
+.state{display:flex;flex-direction:column;gap:12px}
+.state h4{font-family:var(--mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0}
+.blocks{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.blocks div{height:34px;border-radius:5px;background:var(--bg);border:1px dashed var(--line);font-family:var(--mono);font-size:.7rem;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600}
+.blocks div.u{border-style:solid;border-color:transparent}
+.qrow{display:flex;flex-wrap:wrap;gap:6px;min-height:30px;align-items:center}
+.sq{font-family:var(--mono);font-size:.74rem;padding:3px 8px;border-radius:5px;color:#fff;font-weight:600;white-space:nowrap}
+.sq.ghost{background:none!important;color:var(--muted);border:1px dashed var(--line);font-weight:400}
+.vars{font-family:var(--mono);font-size:.78rem;background:var(--bg);border-radius:8px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:4px 18px}
+.vars b{color:var(--copper)}
+.tlog{font-size:.84rem;background:var(--surface);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 14px;min-height:64px}
+.tree{font-size:.76rem;line-height:1.55}
+.paths{display:flex;flex-direction:column;gap:10px}
+.paths ol{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:10px}
+.paths li b.s{font-family:var(--display);font-stretch:106%}
+.paths li .m{font-size:.84rem;color:var(--muted);display:block}
+.lc{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px}
+.lc button{text-align:left;font-size:.78rem;padding:6px 9px;line-height:1.3}
+.lc button.on{border-color:var(--copper);color:var(--copper);font-weight:600}
+.bits{display:grid;grid-template-columns:repeat(32,minmax(0,1fr));gap:1px;font-family:var(--mono);font-size:.62rem;text-align:center}
+.bits span{background:var(--bg);padding:3px 0;border-radius:2px}
+.bits span.on{background:var(--copper);color:var(--surface)}
+.bits span.sep{margin-left:3px}
+.nib{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px;font-family:var(--mono);font-size:.74rem;text-align:center}
+.nib button{padding:6px 0;font-family:var(--mono)}
+.nib button.on{border-color:var(--copper);background:var(--copper);color:var(--surface)}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="rail" id="rail">
+  <a class="hub" href="./">← Field Guide (part 1)</a>
+  <a class="hub" href="kernels-vllm.html">← Kernels &amp; vLLM (part 5)</a>
+  <div class="brand">Build it<br><span>theory → working code</span></div>
+  <a href="#start">What you build</a>
+  <a href="#process">1 · The process</a>
+  <a href="#anatomy">2 · Anatomy of a kernel</a>
+  <a href="#tiling">3 · Tiling: the big decision</a>
+  <a href="#k1">4 · Build: RMSNorm</a>
+  <a href="#k2">5 · Build: fused SiLU × mul</a>
+  <a href="#k3">6 · Build: 4-bit GEMV</a>
+  <a href="#kbench">7 · Is my kernel good?</a>
+  <a href="#vllm">8 · How vLLM is built</a>
+  <a href="#mini">9 · Build a mini engine</a>
+  <a href="#extend">10 · Extending vLLM</a>
+  <a href="#path">11 · Your project: which path</a>
+  <a href="#ship">12 · Test &amp; ship</a>
+  <a href="#learn">13 · Learning path</a>
+  <a href="#sources">Sources</a>
+  <div class="tools"><button type="button" data-theme-toggle aria-label="Switch theme"><span class="ico">☾</span> <span class="lbl">Dark</span></button></div>
+</nav>
+<main>
+
+<section id="start" class="hero">
+  <span class="eyebrow">LLM Inference Field Guide · Part 6</span>
+  <h1>Build it: kernels and engines, <em>from theory to working code</em></h1>
+  <p class="lede">Part 5 showed what kernels and vLLM do. This page shows how they're built: the process, the questions you answer at each step, how the code is structured, and how to apply it to the Qwen3-8B quantization work. Every kernel here is real, tested-pattern code you can run, and every design choice comes with the number that justifies it.</p>
+  <div class="howto">
+    <div><b>A · A kernel</b>One GPU function, e.g. RMSNorm or a 4-bit matrix-vector product. Built in Triton first, CUDA if needed. Sections 2–7.</div>
+    <div><b>B · An engine</b>The loop that batches requests, manages KV memory and calls the model. How vLLM is put together, and how to build a small one yourself. Sections 8–9.</div>
+    <div><b>C · An extension</b>Plugging your kernel or quant format into vLLM so the whole team can serve it. Sections 10–11.</div>
+  </div>
+  <div class="bench setup" id="setup">
+    <div class="bench-head"><h3>Your GPU</h3><span class="tag">tiling, kernel targets and benchmarks follow this</span></div>
+    <div class="controls"><label class="ctl">Device<select id="sDev"></select></label><span class="note" id="devNote"></span></div>
+  </div>
+</section>
+
+<section id="process">
+  <span class="eyebrow">1 · The process</span>
+  <h2>From theory to shipped: ten steps, each with a question and a pass/fail check</h2>
+  <p class="verdict">Every kernel and engine feature in vLLM was built the same way: predict the best possible number from theory, write the obviously-correct slow version, write the fast version, and prove it matches both. Click a step.</p>
+  <div class="ladder" id="ladder"></div>
+  <div class="qdcf" id="ladderOut"></div>
+  <div class="bench">
+    <div class="bench-head"><h3>Step 10's trap: Amdahl's law</h3><span class="tag">will my faster kernel make serving faster?</span></div>
+    <p class="note">A kernel that's 5× faster only helps by the share of time that kernel took. Read the share from an <code>nsys</code> profile of a real run.</p>
+    <div class="controls">
+      <label class="ctl">Kernel's share of step time <output id="amSO"></output><input type="range" id="amS" min="1" max="90" value="12"></label>
+      <label class="ctl">Kernel speedup <output id="amXO"></output><input type="range" id="amX" min="11" max="100" value="30"></label>
+    </div>
+    <div class="receipt" id="rxAm"></div>
+  </div>
+</section>
+
+<section id="anatomy" class="c4">
+  <span class="eyebrow">2 · Structure</span>
+  <h2>Anatomy of a kernel: grid → block → warp → thread</h2>
+  <p class="verdict">You decide how to split the work. The GPU runs a <b>grid</b> of <b>blocks</b>; each block lands on one SM and runs as <b>warps</b> of 32 threads that execute in lockstep.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The hierarchy, using RMSNorm as the example</h4>
+      <ul><li><b>Grid:</b> one block per token row. A 2,048-token prefill launches 2,048 blocks; the hardware deals them out to the SMs.</li>
+      <li><b>Block:</b> 1,024 threads sharing one SM's SRAM. They cooperate on one row of 4,096 numbers.</li>
+      <li><b>Warp:</b> 32 threads issuing the same instruction. They can swap registers directly (<code>__shfl_xor_sync</code>), which is the fastest way to add numbers together.</li>
+      <li><b>Thread:</b> each handles elements <code>i, i+1024, i+2048, i+3072</code>. Neighbouring threads touch neighbouring addresses, so each warp's load is one wide, <b>coalesced</b> memory transaction.</li></ul>
+      <h4>Triton vs CUDA: who writes what</h4>
+      <div class="tablewrap"><table>
+        <tr><th></th><th>Triton</th><th>CUDA</th></tr>
+        <tr><td>You write code for</td><td>one <b>program</b> (= one block), as vector operations</td><td>one <b>thread</b></td></tr>
+        <tr><td>Threads, warps, shuffles</td><td>compiler decides</td><td>you write them</td></tr>
+        <tr><td>Shared memory</td><td>compiler manages</td><td>you declare and sync it</td></tr>
+        <tr><td>Typical speed vs best hand-written</td><td>70–95%</td><td>up to 100%</td></tr>
+        <tr><td>Time to first working kernel</td><td>an hour</td><td>a day</td></tr>
+        <tr><td>Used in vLLM for</td><td>fused MoE, some attention, many fused ops</td><td>Marlin, FlashAttention, cache ops, all-reduce</td></tr>
+      </table></div>
+      <h4>Analogy</h4>
+      <p class="analogy">The grid is the whole catering order, a block is one kitchen, a warp is a row of 32 cooks who must all do the same move at the same time, and a thread is one cook. Triton lets you write the kitchen's recipe; CUDA makes you choreograph every cook.</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vHier"><canvas></canvas><div class="lbls"></div><span class="hint">Drag to orbit</span></div>
+      <div class="btnrow"><button type="button" id="hiPlay" class="primary">▶ Run one block</button><span class="note" id="hiPhase"></span></div>
+      <div class="because" id="hiText"></div>
+    </div>
+  </div>
+</section>
+
+<section id="tiling" class="c4">
+  <span class="eyebrow">3 · The main design decision</span>
+  <h2>Tiling: what does one program compute?</h2>
+  <p class="verdict">For a matrix multiply C = A·B, each program computes one <b>BLOCK_M × BLOCK_N</b> tile of C, walking along K in <b>BLOCK_K</b> chunks. The tile size decides SRAM use, how many SMs get work, and how often data is re-read.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>The questions this lab answers</h4>
+      <ul><li><b>Does the tile fit?</b> SRAM per program = stages × (BLOCK_M·BLOCK_K + BLOCK_K·BLOCK_N) × 2 bytes. Too big, and the kernel won't launch.</li>
+      <li><b>Is every SM busy?</b> Programs = ⌈M/BLOCK_M⌉ × ⌈N/BLOCK_N⌉ × split-K. Fewer programs than SMs leaves silicon idle and memory unsaturated.</li>
+      <li><b>How full is the last wave?</b> 130 programs on 128 SMs takes two waves, the second 2% full. That's the <b>tail effect</b>.</li>
+      <li><b>How much is wasted?</b> With M = 1 (decode) and BLOCK_M = 64, 63 of every 64 rows are padding.</li>
+      <li><b>How often is data re-read?</b> A is needed once per column of tiles and B once per row of tiles. Bigger tiles and an L2-friendly visiting order (groups of tiles that share rows and columns) keep those re-reads out of HBM.</li></ul>
+      <h4>Try these</h4>
+      <ol class="steps"><li>M = 1, gate_up_proj, BLOCK 64×128: 98% of the tile is padding, yet the time hardly moves. Decode is memory-bound, so wasted math is free; wasted bytes are not.</li>
+      <li>M = 1, down_proj (N = 4,096), BLOCK_N = 256: only 16 programs. Raise split-K to 8.</li>
+      <li>M = 4,096 (prefill), BLOCK 128×128×64, stages 4: check it fits on your GPU. On the 4090 it doesn't; on the H100 it does.</li></ol>
+      <h4>What real kernels do</h4>
+      <p>Triton's <code>@triton.autotune</code> benchmarks a list of tile configs per shape and caches the winner. vLLM ships tuned configs for its fused-MoE kernel per GPU. Marlin uses fixed tiles designed for M ≤ 16 and splits K across SMs.</p>
+    </div>
+    <div class="c4lab">
+      <div class="v3" id="vTile"><canvas></canvas><div class="lbls"></div><span class="hint">Colors = waves · drag to orbit</span></div>
+      <div class="controls">
+        <label class="ctl">Qwen3-8B layer<select id="tLayer"></select></label>
+        <label class="ctl">Tokens M <output id="tMO"></output><input type="range" id="tM" min="0" max="7" value="0"></label>
+        <label class="ctl">BLOCK_M<select id="tBM"><option>1</option><option>16</option><option>32</option><option selected>64</option><option>128</option><option>256</option></select></label>
+        <label class="ctl">BLOCK_N<select id="tBN"><option>32</option><option>64</option><option selected>128</option><option>256</option></select></label>
+        <label class="ctl">BLOCK_K<select id="tBK"><option>32</option><option selected>64</option><option>128</option></select></label>
+        <label class="ctl">Stages<select id="tST"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+        <label class="ctl">Split-K<select id="tSK"><option selected>1</option><option>2</option><option>4</option><option>8</option></select></label>
+      </div>
+      <div class="chainbox" id="tOut"></div>
+    </div>
+  </div>
+</section>
+
+<section id="k1">
+  <span class="eyebrow">4 · Build kernel 1</span>
+  <h2>RMSNorm in Triton: write → test → benchmark → (optionally) CUDA</h2>
+  <p class="verdict">The simplest useful kernel, and the one Qwen3 runs 73 times per token (2 per layer plus the final norm, ignoring the QK-norms). Click any numbered line to see what it does on the GPU.</p>
+  <div class="qs"><b class="t">Questions answered before writing it</b><ul>
+    <li><b>Bound?</b> Memory: 1 multiply-add per byte. Best time = bytes ÷ bandwidth.</li>
+    <li><b>What does one program do?</b> One token row. 4,096 elements fit in registers, so the whole row is read once.</li>
+    <li><b>Minimum traffic?</b> Read x (8 KB), write y (8 KB); the weight comes from cache. 16 KB per token.</li>
+    <li><b>Precision?</b> Sum of squares in fp32, output in bf16, same as Hugging Face's <code>Qwen3RMSNorm</code>.</li></ul></div>
+  <div class="annot" data-ann="rms"></div>
+  <h3>Step 6–7: test it against the reference, then benchmark it</h3>
+<pre><span class="c"># test_rmsnorm.py — the PyTorch reference is the "truth"</span>
+import torch, triton
+from my_kernels.triton.rmsnorm import rmsnorm
+
+def ref(x, w, eps=1e-6):
+    xf = x.float()
+    return (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps) * w.float()).to(x.dtype)
+
+for tokens in [1, 7, 128, 2048, 8192]:           <span class="c"># decode, odd size, prefill</span>
+    for N in [4096, 5120]:                        <span class="c"># Qwen3-8B, Qwen3-32B (masked lanes)</span>
+        x = torch.randn(tokens, N, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(N, device="cuda", dtype=torch.bfloat16)
+        torch.testing.assert_close(rmsnorm(x, w), ref(x, w), atol=2e-2, rtol=2e-2)
+
+x = torch.randn(8192, 4096, device="cuda", dtype=torch.bfloat16); w = torch.ones(4096, device="cuda", dtype=torch.bfloat16)
+ms = triton.testing.do_bench(lambda: rmsnorm(x, w))             <span class="c"># median time in ms</span>
+gbs = 2 * x.numel() * x.element_size() / ms / 1e6                <span class="c"># read x + write y</span>
+print(f"{ms*1e3:.1f} µs, {gbs:.0f} GB/s")                        <span class="c"># compare with your GPU's peak</span>
+ms_eager = triton.testing.do_bench(lambda: ref(x, w))           <span class="c"># unfused PyTorch baseline</span></pre>
+  <div class="bench">
+    <div class="bench-head"><h3>What the benchmark should say on your GPU</h3><span class="tag">theory before you run it</span></div>
+    <div class="controls"><label class="ctl">Tokens<select id="rmT"><option>1</option><option>128</option><option>2048</option><option selected>8192</option></select></label></div>
+    <div class="receipt" id="rxRms"></div>
+  </div>
+  <h3>The same kernel in CUDA, for comparison</h3>
+  <p class="note">Here you write the reduction yourself: each thread sums its four elements, warps combine with shuffles, then one warp combines the 32 warp totals through shared memory. Click the lines.</p>
+  <div class="annot" data-ann="cuda"></div>
+<pre><span class="c"># build and call it from Python without a setup.py (JIT compile, cached after the first time)</span>
+from torch.utils.cpp_extension import load
+load(name="my_kernels", sources=["csrc/rmsnorm.cu"], extra_cuda_cflags=["-O3"], is_python_module=False)
+y = torch.ops.my_kernels.rmsnorm(x, w, 1e-6)        <span class="c"># run the same test_rmsnorm.py checks against it</span></pre>
+</section>
+
+<section id="k2" class="c4">
+  <span class="eyebrow">5 · Build kernel 2</span>
+  <h2>Fused SiLU × mul: what fusion buys, in bytes</h2>
+  <p class="verdict">SwiGLU computes <code>silu(gate) * up</code>. vLLM's <code>SiluAndMul</code> does it in one kernel over the fused gate_up output, whose first half is gate and second half is up.</p>
+  <div class="c4grid">
+    <div class="c4text">
+<pre>@triton.jit
+def silu_mul_kernel(GU, Y, N, BLOCK: tl.constexpr):
+    row, blk = tl.program_id(0), tl.program_id(1)    <span class="c"># 2-D grid: token × chunk</span>
+    cols = blk * BLOCK + tl.arange(0, BLOCK)
+    m = cols &lt; N
+    g = tl.load(GU + row * 2 * N + cols,     mask=m).to(tl.float32)   <span class="c"># gate half</span>
+    u = tl.load(GU + row * 2 * N + N + cols, mask=m).to(tl.float32)   <span class="c"># up half</span>
+    y = g * tl.sigmoid(g) * u                          <span class="c"># silu(g) * u, in registers</span>
+    tl.store(Y + row * N + cols, y.to(Y.dtype.element_ty), mask=m)
+
+def silu_mul(gu):                                      <span class="c"># gu: [tokens, 2N]</span>
+    T, N = gu.shape[0], gu.shape[1] // 2
+    y = torch.empty(T, N, device=gu.device, dtype=gu.dtype)
+    silu_mul_kernel[(T, triton.cdiv(N, 1024))](gu, y, N, BLOCK=1024)
+    return y</pre>
+      <h4>Why the grid is 2-D</h4>
+      <p>N = 12,288 for Qwen3-8B. One program per row would give only 1 program for a decode step, on a GPU with 128 SMs. Splitting each row into 1,024-wide chunks gives 12 programs for one token and 24,576 for a 2,048-token prefill.</p>
+      <h4>Questions to ask</h4>
+      <ul><li>Unfused: <code>F.silu(g)</code> writes a temporary, and <code>* u</code> reads it back. How many bytes is that per token?</li><li>When does fusion matter most? When the op runs on many tokens (prefill), or when launch overhead dominates (decode without CUDA graphs).</li></ul>
+    </div>
+    <div class="c4lab">
+      <div class="bench">
+        <div class="bench-head"><h3>Fused vs unfused</h3><span class="tag">bytes + launches</span></div>
+        <div class="controls"><label class="ctl">Tokens <output id="fuTO"></output><input type="range" id="fuT" min="0" max="6" value="4"></label><label class="chk"><input type="checkbox" id="fuG"> CUDA graphs (no launch cost)</label></div>
+        <div class="receipt" id="rxFu"></div>
+        <div class="because" id="fuWhy"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="k3">
+  <span class="eyebrow">6 · Build kernel 3 · your quantization kernel</span>
+  <h2>A 4-bit weight × 16-bit activation GEMV (W4A16), from scratch</h2>
+  <p class="verdict">This is what Marlin and llama.cpp's Q4 kernels do at heart: keep the weights packed in HBM, unpack and dequantize them in registers, and multiply. Decode reads 4× fewer bytes, so it can run up to about 4× faster.</p>
+  <div class="grid2">
+    <div class="mini4">
+      <h3>The format: 8 weights per 32-bit word, one scale per group of 128</h3>
+      <p class="note">Pick which of the 8 nibbles to unpack. Row k of the weight lives in word k // 8, at bit offset (k % 8) × 4.</p>
+      <div class="nib" id="nib"></div>
+      <div class="bits" id="bits"></div>
+      <div class="receipt" id="rxNib"></div>
+    </div>
+    <div class="mini4">
+      <h3>Why it's faster: bytes for one Qwen3-8B layer's gate_up_proj</h3>
+      <div class="receipt" id="rxW4"></div>
+      <div class="because" id="w4Why"></div>
+    </div>
+  </div>
+  <div class="qs"><b class="t">Design questions, answered</b><ul>
+    <li><b>What does one program compute?</b> BN = 64 outputs for one token, looping over all of K. Grid = (N / 64, tokens) = 384 programs for gate_up, about 3 per SM on a 4090.</li>
+    <li><b>Where does dequantization happen?</b> In registers, right after the load. The bf16 weights never exist in memory.</li>
+    <li><b>Why fp32 accumulation?</b> 4,096 products summed in fp16 lose about 3 significant digits.</li>
+    <li><b>What's deliberately simple?</b> Each 32-bit word gets loaded 8 times (the extra 7 hit L1). A tuned kernel loads it once and unpacks all 8. That's iteration 2, after this version passes its tests.</li></ul></div>
+  <div class="annot" data-ann="w4"></div>
+  <h3>Quantize, test, benchmark</h3>
+<pre><span class="c"># reference quantizer + dequantizer: slow, obviously correct</span>
+def quantize_w4(W, group=128):                         <span class="c"># W: [K, N] float → packed int32 [K/8, N], scales [K/G, N]</span>
+    K, N = W.shape
+    Wg = W.float().view(K // group, group, N)
+    s = (Wg.abs().amax(dim=1) / 7).clamp(min=1e-8)     <span class="c"># symmetric: map max |w| to 7</span>
+    q = (torch.round(Wg / s[:, None]) + 8).clamp(0, 15).to(torch.int32).view(K // 8, 8, N)
+    qw = torch.zeros(K // 8, N, dtype=torch.int32, device=W.device)
+    for j in range(8):
+        qw |= q[:, j, :] &lt;&lt; (4 * j)                      <span class="c"># nibble j of each word = row 8·i + j</span>
+    return qw, s.half()
+
+def dequant_w4(qw, s, group=128):
+    shifts = torch.arange(0, 32, 4, device=qw.device, dtype=torch.int32)
+    q = (qw[:, None, :] >> shifts[None, :, None]) &amp; 0xF  <span class="c"># [K/8, 8, N]</span>
+    return (q.reshape(-1, qw.shape[1]).float() - 8) * s.float().repeat_interleave(group, dim=0)
+
+K, N = 4096, 24576                                      <span class="c"># Qwen3-8B gate_up_proj</span>
+W = torch.randn(K, N, device="cuda") * 0.02
+qw, s = quantize_w4(W)
+x = torch.randn(1, K, device="cuda", dtype=torch.float16)
+ref = (x.float() @ dequant_w4(qw, s)).half()             <span class="c"># compare against the DEQUANTIZED weights:</span>
+torch.testing.assert_close(w4a16_gemv(x, qw, s), ref, atol=2e-2, rtol=1e-2)   <span class="c"># kernel error, not quant error</span>
+
+Wh = W.half()
+ms_w4   = triton.testing.do_bench(lambda: w4a16_gemv(x, qw, s))
+ms_fp16 = triton.testing.do_bench(lambda: x @ Wh)                              <span class="c"># cuBLAS baseline</span>
+bytes_w4 = qw.numel() * 4 + s.numel() * 2 + x.numel() * 2 + N * 2
+print(f"W4: {ms_w4*1e3:.0f} µs ({bytes_w4/ms_w4/1e6:.0f} GB/s) · FP16: {ms_fp16*1e3:.0f} µs")</pre>
+  <div class="callout c"><b class="t">Two different errors. Keep them apart.</b><p><b>Kernel error</b> (does my kernel compute what the format says?) is tested against the dequantized reference with tight tolerances. <b>Quantization error</b> (does 4-bit hurt the model?) is measured with perplexity and lm-eval on the whole model (Part 5, section 11). Mixing them hides kernel bugs inside "quantization noise".</p></div>
+</section>
+
+<section id="kbench" class="c4">
+  <span class="eyebrow">7 · Verdict</span>
+  <h2>Is my kernel good? Achieved bandwidth vs the roofline</h2>
+  <p class="verdict">Enter what <code>do_bench</code> printed. Memory-bound kernels are judged by achieved GB/s as a share of peak, compute-bound ones by TFLOP/s.</p>
+  <div class="c4grid">
+    <div class="c4text">
+      <h4>Rules of thumb</h4>
+      <ul><li><b>Above 80% of peak bandwidth:</b> done. Move on to the next bottleneck in the profile.</li>
+      <li><b>50–80%:</b> tune. Try other tile sizes with autotune, vectorize loads (128-bit), add split-K if there are few programs.</li>
+      <li><b>Below 50%:</b> something structural. Check uncoalesced access (a strided or transposed layout), too few programs, register spills (<code>ncu</code>: "local memory"), or the launch overhead on tiny inputs.</li>
+      <li><b>Tiny inputs (under ~10 µs):</b> you're measuring launch overhead. Benchmark inside a CUDA graph, or judge the kernel at realistic sizes.</li></ul>
+      <h4>Profile commands</h4>
+<pre>ncu --set full -k regex:w4a16 -o w4 python bench_w4.py   <span class="c"># one kernel, every counter</span>
+<span class="c"># look at: Memory Throughput %, Achieved Occupancy, Warp Stall reasons, L1/L2 hit rate</span>
+nsys profile -o step python serve_one_step.py              <span class="c"># whole step: which kernels, gaps between them</span></pre>
+    </div>
+    <div class="c4lab">
+      <div class="bench">
+        <div class="controls">
+          <label class="ctl">Kernel<select id="kbK"><option value="rms">RMSNorm · 8,192 × 4,096 bf16</option><option value="silu">SiLU×mul · 2,048 × 12,288 bf16</option><option value="w4" selected>W4A16 GEMV · 4,096 × 24,576</option><option value="gemm">BF16 GEMM · 2,048 × 24,576 × 4,096</option></select></label>
+          <label class="ctl">Measured time (µs)<input type="number" id="kbT" value="80" min="0.5" step="0.5"></label>
+        </div>
+        <div class="receipt" id="rxKb"></div>
+        <div class="because" id="kbWhy"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="vllm">
+  <span class="eyebrow">8 · Structure of an engine</span>
+  <h2>How vLLM is built: three kinds of process, one loop</h2>
+  <p class="verdict">vLLM (V1 architecture) splits the work so the GPU never waits on Python: an API process handles HTTP and text, an engine-core process runs the scheduler loop, and one worker process per GPU runs the model. Click a box, or step through one request's life.</p>
+  <div class="split2">
+    <div class="v3 tall" id="vMap"><canvas></canvas><div class="lbls"></div><span class="hint">Click a component · drag to orbit</span></div>
+    <div class="panel" id="mapPanel"></div>
+  </div>
+  <div class="bench">
+    <div class="bench-head"><h3>Life of one request</h3><span class="tag" id="lcN"></span></div>
+    <div class="lc" id="lcList"></div>
+    <div class="btnrow"><button type="button" id="lcPrev">◀ Prev</button><button type="button" id="lcPlay" class="primary">▶ Play</button><button type="button" id="lcNext">Next ▶</button></div>
+    <div class="because" id="lcText"></div>
+  </div>
+  <h3>Where to change what</h3>
+  <div class="tablewrap"><table>
+    <tr><th>You want to…</th><th>Touch this</th><th>Without forking vLLM?</th></tr>
+    <tr><td>Serve a new architecture</td><td><code>model_executor/models/&lt;name&gt;.py</code> + registry</td><td>Yes: <code>ModelRegistry.register_model</code> in a plugin</td></tr>
+    <tr><td>Add a quantization format</td><td><code>model_executor/layers/quantization/</code></td><td>Yes: <code>@register_quantization_config</code></td></tr>
+    <tr><td>Swap one op's kernel (norm, activation)</td><td>the layer's <code>CustomOp</code> (<code>forward_cuda</code> / <code>forward_native</code>)</td><td>Partly: subclass the layer in your model file</td></tr>
+    <tr><td>New attention variant</td><td><code>v1/attention/backends/</code> + the attention layer</td><td>Hard: usually a fork or upstream PR</td></tr>
+    <tr><td>Change scheduling policy</td><td><code>v1/core/sched/scheduler.py</code></td><td>Mostly flags: <code>--max-num-seqs</code>, <code>--max-num-batched-tokens</code>, <code>--scheduling-policy</code></td></tr>
+    <tr><td>Change sampling</td><td><code>v1/sample/</code> (sampler, logits processors)</td><td>Yes for logits processors</td></tr>
+  </table></div>
+  <p class="note">File paths are from vLLM's V1 code layout (2025). The project moves fast, so check the paths against the version you install; the structure has been stable even when files get renamed.</p>
+</section>
+
+<section id="mini">
+  <span class="eyebrow">9 · Build an engine</span>
+  <h2>Build a mini vLLM: nine stages, then trace its scheduler line by line</h2>
+  <p class="verdict">The best way to understand vLLM is to build a small one. <a href="https://github.com/GeeeekExplorer/nano-vllm" rel="noopener">nano-vllm</a> does it in about 1,200 lines of Python with throughput close to vLLM's. Each stage below adds one idea from part 5 and has a check you can measure.</p>
+  <div class="tablewrap"><table>
+    <tr><th>#</th><th>Stage</th><th>What you add</th><th>Check (pass when…)</th><th>Teaches</th></tr>
+    <tr><td class="num">1</td><td>Naive generate</td><td>HF model, loop: forward the whole sequence, take argmax</td><td>Text is correct; time per token grows with length</td><td>Why a KV cache exists</td></tr>
+    <tr><td class="num">2</td><td>KV cache</td><td>Keep K and V per layer; forward only the new token</td><td>Time per token flat; ≈ weight bytes ÷ bandwidth</td><td>Decode is memory-bound</td></tr>
+    <tr><td class="num">3</td><td>Own model code</td><td>Qwen3 from <code>safetensors</code>: RMSNorm, RoPE, GQA, QK-norm, SwiGLU; fuse QKV and gate_up</td><td>Logits match HF: max |Δ| &lt; 1e-2 in bf16, same top-1 on 100 prompts</td><td>Every shape in the model</td></tr>
+    <tr><td class="num">4</td><td>Static batching</td><td>Pad prompts, run B together</td><td>Throughput ≈ B× at small B (part 5, section 5)</td><td>Weight reads are shared</td></tr>
+    <tr><td class="num">5</td><td>Paged KV</td><td>Block pool, block tables, slot mapping; attention that reads through the table (<code>flash_attn_with_kvcache(block_table=…)</code> or your own Triton kernel)</td><td>Same outputs as stage 4; 2–3× more sequences fit</td><td>PagedAttention</td></tr>
+    <tr><td class="num">6</td><td>Continuous batching</td><td>The scheduler traced below: decode first, admit prefills by budget, preempt when out of blocks</td><td>TTFT stays low under load (part 5, section 7)</td><td>The engine loop</td></tr>
+    <tr><td class="num">7</td><td>CUDA graphs</td><td>Capture decode for batch sizes 1, 2, 4, 8 … 256; pad to the nearest one</td><td>Small-batch decode 1.5–3× faster; <code>nsys</code> shows no gaps</td><td>Launch overhead</td></tr>
+    <tr><td class="num">8</td><td>Prefix cache + API</td><td>Hash full blocks to reuse them; sampling params; streaming OpenAI endpoint</td><td>Second request with the same system prompt: TTFT drops</td><td>Production features</td></tr>
+    <tr><td class="num">9</td><td>Benchmark vs vLLM</td><td>Same model, same workload, <code>vllm bench serve</code> against both</td><td>Within ~20% at low load; you can explain the gap</td><td>Where vLLM's extra speed comes from</td></tr>
+  </table></div>
+<pre class="tree"><span class="c"># the mini engine's structure: same split as vLLM, one process</span>
+mini_engine/
+  config.py         <span class="c"># read config.json: layers, heads, kv heads, rope θ, eps</span>
+  loader.py         <span class="c"># safetensors → tensors; fuse q/k/v and gate/up; shard for tensor parallel</span>
+  model/qwen3.py    <span class="c"># RMSNorm, RoPE, GQA attention, SwiGLU, decoder layer, lm_head</span>
+  kernels/          <span class="c"># rmsnorm.py, silu_mul.py, w4a16_gemv.py (sections 4–6)</span>
+  kv_cache.py       <span class="c"># block pool, block tables, slot mapping, prefix-hash table</span>
+  scheduler.py      <span class="c"># waiting / running queues, token budget, preemption ← traced below</span>
+  model_runner.py   <span class="c"># build input_ids, positions, slot_mapping; CUDA graphs; run forward</span>
+  sampler.py        <span class="c"># temperature, top-p, top-k</span>
+  engine.py         <span class="c"># add_request(), step(), generate()</span>
+  server.py         <span class="c"># OpenAI-compatible streaming endpoint</span>
+  tests/  bench/</pre>
+  <h3>The scheduler, running live</h3>
+  <p class="note">Six requests, 14 KV blocks of 16 tokens, and a budget of 96 tokens per step. The JavaScript runs exactly this Python logic and highlights each line as it executes. Watch for the moment memory runs out and a request gets preempted.</p>
+  <div class="trace">
+    <div class="code" id="trCode"></div>
+    <div class="state">
+      <div class="btnrow"><button type="button" id="trLine">Next line</button><button type="button" id="trStep" class="primary">Next engine step</button><button type="button" id="trPlay">▶ Play</button><button type="button" id="trReset">Reset</button></div>
+      <div class="vars" id="trVars"></div>
+      <h4>Waiting</h4><div class="qrow" id="trWait"></div>
+      <h4>Running</h4><div class="qrow" id="trRun"></div>
+      <h4>KV block pool (14 × 16 tokens)</h4><div class="blocks" id="trBlocks"></div>
+      <h4>This step's batch</h4><div class="qrow" id="trBatch"></div>
+      <div class="tlog" id="trLog"></div>
+    </div>
+  </div>
+</section>
+
+<section id="extend">
+  <span class="eyebrow">10 · Application</span>
+  <h2>Extending vLLM: your kernel, your format, your model</h2>
+  <p class="verdict">vLLM is built to be extended from outside: a pip package with an entry point gets loaded into every vLLM process. You don't need to fork it to add a quantization method or a model.</p>
+  <h3>a · Wrap the kernel as a PyTorch op</h3>
+  <p class="note">So <code>torch.compile</code> and CUDA graphs can trace it. The fake implementation tells the compiler the output shape without running the GPU code.</p>
+<pre><span class="c"># my_kernels/ops.py</span>
+@torch.library.custom_op("my_kernels::w4a16_matmul", mutates_args=())
+def w4a16_matmul(x: torch.Tensor, qw: torch.Tensor, s: torch.Tensor, group: int) -> torch.Tensor:
+    x2 = x.reshape(-1, x.shape[-1])
+    if x2.shape[0] &lt;= 4:                                   <span class="c"># decode: memory-bound → your GEMV</span>
+        y = w4a16_gemv(x2, qw, s, group)
+    else:                                                  <span class="c"># prefill: compute-bound → dequantize once, cuBLAS</span>
+        y = x2 @ dequant_w4(qw, s, group).to(x.dtype)
+    return y.view(*x.shape[:-1], qw.shape[1])
+
+@w4a16_matmul.register_fake
+def _(x, qw, s, group):
+    return x.new_empty(*x.shape[:-1], qw.shape[1])</pre>
+  <h3>b · Register a quantization method</h3>
+  <p class="note">The config class reads the checkpoint's quant config; the method class creates the packed parameters (so the loader can fill them) and calls your op in <code>apply</code>. A skeleton: compare it with <code>gptq.py</code> in your vLLM version, because weight-loader attributes change between releases.</p>
+<pre><span class="c"># my_quant/vllm_plugin.py</span>
+import torch
+from vllm.model_executor.layers.quantization import register_quantization_config
+from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
+from vllm.model_executor.layers.linear import LinearBase, LinearMethodBase
+from vllm.model_executor.utils import set_weight_attrs
+from my_kernels.ops import w4a16_matmul
+
+@register_quantization_config("my_w4")
+class MyW4Config(QuantizationConfig):
+    def __init__(self, group_size=128):
+        super().__init__(); self.group_size = group_size
+    def get_name(self): return "my_w4"
+    @classmethod
+    def get_supported_act_dtypes(cls): return [torch.float16, torch.bfloat16]
+    @classmethod
+    def get_min_capability(cls): return 80                  <span class="c"># Ampere and newer</span>
+    @staticmethod
+    def get_config_filenames(): return ["quantize_config.json"]
+    @classmethod
+    def from_config(cls, cfg): return cls(cfg.get("group_size", 128))
+    def get_quant_method(self, layer, prefix):
+        return MyW4LinearMethod(self) if isinstance(layer, LinearBase) else None
+
+class MyW4LinearMethod(LinearMethodBase):
+    def __init__(self, cfg): self.cfg = cfg
+    def create_weights(self, layer, input_size_per_partition, output_partition_sizes,
+                       input_size, output_size, params_dtype, **extra):
+        K, N, G = input_size_per_partition, sum(output_partition_sizes), self.cfg.group_size
+        qweight = torch.nn.Parameter(torch.empty(K // 8, N, dtype=torch.int32), requires_grad=False)
+        scales = torch.nn.Parameter(torch.empty(K // G, N, dtype=params_dtype), requires_grad=False)
+        set_weight_attrs(qweight, {"input_dim": 0, "output_dim": 1, "packed_dim": 0, "pack_factor": 8, **extra})
+        set_weight_attrs(scales, {"input_dim": 0, "output_dim": 1, **extra})
+        layer.register_parameter("qweight", qweight)
+        layer.register_parameter("scales", scales)
+    def apply(self, layer, x, bias=None):
+        y = w4a16_matmul(x, layer.qweight, layer.scales, self.cfg.group_size)
+        return y if bias is None else y + bias
+
+def register():          <span class="c"># entry point: importing this module ran the decorator above</span>
+    pass</pre>
+<pre><span class="c"># pyproject.toml — vLLM loads every "vllm.general_plugins" entry point in every process</span>
+[project.entry-points."vllm.general_plugins"]
+my_w4 = "my_quant.vllm_plugin:register"
+
+<span class="c"># then</span>
+pip install -e .
+vllm serve ./qwen3-8b-my-w4 --quantization my_w4</pre>
+  <h3>c · Add or modify a model</h3>
+  <p class="note">vLLM's model files load Hugging Face checkpoints but use fused, tensor-parallel layers. The key piece is the weight-name mapping that stacks separate checkpoint tensors into one fused parameter.</p>
+<pre><span class="c"># inside load_weights() of a vLLM model file (this mapping is the real one used for Qwen/Llama)</span>
+stacked_params_mapping = [        <span class="c"># (vLLM param, checkpoint name, shard id)</span>
+    ("qkv_proj", "q_proj", "q"), ("qkv_proj", "k_proj", "k"), ("qkv_proj", "v_proj", "v"),
+    ("gate_up_proj", "gate_proj", 0), ("gate_up_proj", "up_proj", 1),
+]
+
+<span class="c"># register your own class for an architecture name (in the plugin's register())</span>
+from vllm import ModelRegistry
+ModelRegistry.register_model("MyQwen3ForCausalLM", "my_pkg.qwen3_custom:MyQwen3ForCausalLM")</pre>
+  <div class="qs"><b class="t">Check before you trust it</b><ul>
+    <li><b>Model:</b> same prompts through HF Transformers and vLLM at temperature 0. The first 32 generated tokens should match, and logits should be within bf16 noise.</li>
+    <li><b>Quant method:</b> perplexity within your tolerance of the GPTQ/AWQ baseline, then <code>vllm bench serve</code> vs the Marlin path.</li>
+    <li><b>CUDA graphs:</b> run once with <code>--enforce-eager</code> and once without. Identical outputs prove your op is graph-safe: no host sync, no allocation that depends on data.</li></ul></div>
+</section>
+
+<section id="path">
+  <span class="eyebrow">11 · Your project</span>
+  <h2>Which path fits what you're trying to do?</h2>
+  <p class="verdict">Most goals don't need a new kernel. Pick a goal to see the shortest path, with the question and check for each step.</p>
+  <div class="chips" id="goals"></div>
+  <div class="paths" id="pathOut"></div>
+</section>
+
+<section id="ship">
+  <span class="eyebrow">12 · Test &amp; ship</span>
+  <h2>Testing and shipping checklist</h2>
+  <div class="grid2">
+    <div class="mini4">
+      <h3>Correctness tolerances</h3>
+      <div class="tablewrap"><table>
+        <tr><th>dtype</th><th>torch default rtol / atol</th><th>Kernel tests in practice</th></tr>
+        <tr><td>fp32</td><td class="num">1.3e-6 / 1e-5</td><td>default</td></tr>
+        <tr><td>fp16</td><td class="num">1e-3 / 1e-5</td><td class="num">≈1e-2 / 1e-2</td></tr>
+        <tr><td>bf16</td><td class="num">1.6e-2 / 1e-5</td><td class="num">≈2e-2 / 2e-2</td></tr>
+        <tr><td>int4 / fp8 weights</td><td colspan="2">compare with the <b>dequantized</b> reference in fp32, never with the original weights</td></tr>
+      </table></div>
+      <p class="note">Fast kernels add numbers in a different order than the reference, so exact equality is the wrong test. If a test only passes with a loose atol, check the error grows with K (an ordering effect) rather than being random (a bug).</p>
+    </div>
+    <div class="mini4">
+      <h3>The checklist</h3>
+      <ol class="steps">
+        <li>Shapes from the real model, plus edge cases: 1 token, an odd count (7), the largest batch, N not a power of 2.</li>
+        <li>Both dtypes you serve (fp16, bf16), and non-contiguous inputs if callers can pass them.</li>
+        <li>Fixed random seeds; values with outliers (×100 in a few channels), like real activations.</li>
+        <li>Microbenchmark in CI with a threshold such as "≥ 70% of peak bandwidth", so a regression fails the build.</li>
+        <li>Graph safety: eager vs CUDA graphs give identical outputs.</li>
+        <li>Whole-model checks: perplexity, lm-eval, and greedy outputs vs HF.</li>
+        <li>Serving benchmark: <code>vllm bench serve</code> rate sweep against the baseline, then report goodput at your SLO.</li>
+      </ol>
+    </div>
+  </div>
+<pre class="tree"><span class="c"># a kernel package the team can install</span>
+my_kernels/
+  my_kernels/
+    ref.py              <span class="c"># PyTorch reference implementations: the truth</span>
+    triton/             <span class="c"># rmsnorm.py, silu_mul.py, w4a16_gemv.py</span>
+    ops.py              <span class="c"># torch.library custom ops + fake (meta) implementations</span>
+  csrc/                 <span class="c"># optional CUDA versions + TORCH_LIBRARY bindings</span>
+  my_quant/vllm_plugin.py
+  tests/test_correctness.py   <span class="c"># pytest, parametrized over shapes × dtypes</span>
+  bench/bench_kernels.py      <span class="c"># do_bench → achieved GB/s, % of peak, JSON for CI</span>
+  pyproject.toml              <span class="c"># entry point for vLLM; torch / triton version pins</span></pre>
+</section>
+
+<section id="learn">
+  <span class="eyebrow">13 · Learning path</span>
+  <h2>A learning path for the team</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Stage</th><th>Do</th><th>Done when</th><th>Resources</th></tr>
+    <tr><td class="num">1</td><td>Profile Qwen3-8B in PyTorch and vLLM</td><td>You can name the top 5 kernels by time in an <code>nsys</code> trace</td><td>Nsight Systems; <code>torch.profiler</code></td></tr>
+    <tr><td class="num">2</td><td>Triton tutorials: vector add, softmax, matmul, layer norm</td><td>Your matmul is within 2× of cuBLAS</td><td>triton-lang.org tutorials</td></tr>
+    <tr><td class="num">3</td><td>The three kernels on this page</td><td>Tests pass; RMSNorm ≥ 80% of peak bandwidth; W4 GEMV beats FP16 cuBLAS at M = 1</td><td>Sections 4–7</td></tr>
+    <tr><td class="num">4</td><td>CUDA basics: memory hierarchy, coalescing, shuffles, shared memory</td><td>The CUDA RMSNorm matches the Triton one</td><td>PMPP book (Hwu, Kirk, El Hajj); Simon Boehm's CUDA matmul post; GPU MODE lectures</td></tr>
+    <tr><td class="num">5</td><td>Read nano-vllm end to end, then vLLM's scheduler and model runner</td><td>You can explain each box in section 8</td><td>nano-vllm; vLLM architecture docs</td></tr>
+    <tr><td class="num">6</td><td>Mini engine stages 1–6</td><td>Stage 6 passes its check</td><td>Section 9</td></tr>
+    <tr><td class="num">7</td><td>Ship the W4 plugin into vLLM and benchmark against Marlin</td><td>Results table: quality, TPOT, goodput</td><td>Sections 10–12; part 5, section 11</td></tr>
+    <tr><td class="num">8</td><td>Optional depth: CUTLASS/CuTe, ThunderKittens, Marlin's source</td><td>You can read Marlin's inner loop</td><td>NVIDIA CUTLASS; HazyResearch ThunderKittens</td></tr>
+  </table></div>
+</section>
+
+<section id="sources">
+  <span class="eyebrow">Sources</span>
+  <h2>References and code to read</h2>
+  <ol class="src" id="srcList"></ol>
+</section>
+</main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="build.js?v=5"></script>
+</body>
+</html>
