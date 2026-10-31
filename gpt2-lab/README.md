@@ -4,7 +4,7 @@ Train GPT-2 124M from scratch on Colab (A100 or L4), train same-size models with
 [LLM Inference Field Guide](https://th3samaritan.github.io/AI-Research/llm-inference/) (RoPE, RMSNorm, SwiGLU, QK-norm,
 GQA/MQA), and compare them all on one benchmark.
 
-**[Open the notebook in Colab](https://colab.research.google.com/github/th3samaritan/AI-Research/blob/master/gpt2-lab/gpt2_arch_lab.ipynb)**
+**[Open the notebook in Colab](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/gpt2_arch_lab.ipynb)**
 
 This is the real-scale step up from the [Nano Suite](../Nanogpt/) (character-level Shakespeare on a CPU): real GPT-2 size,
 real web text, a real GPU, and the benchmarks people actually report.
