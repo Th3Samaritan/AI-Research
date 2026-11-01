@@ -59,12 +59,14 @@ print(f'{GPU} · {DTYPE} · torch {torch.__version__}' + (f' · {torch.cuda.get_
 # Config: the only cell you normally edit.
 RUNS = ['gpt2', 'qwen3-style']   # any keys of VARIANTS below; the full ablation is listed there
 BUDGET = 'standard'              # 'smoke' | 'quick' | 'standard' | 'long' (see BUDGETS)
-LR = 1e-3                        # peak learning rate, the same for every variant (fair comparison)
+LR = 1e-3                        # peak LR, same for every variant; other values get their own results (LR sweeps)
 WEIGHT_DECAY = 0.1
 SEED = 1337                      # same init seed and same data order for every run
 COMPILE = True                   # torch.compile: ~1 min to compile, then ~1.5-2x faster
 SAVE_TO_DRIVE = True             # Colab: keep checkpoints + results on Google Drive
 HELLASWAG_N = None               # None = all 10,042 questions; a smaller number is faster but noisier
+SHOTS = (0, 1, 5)                # HellaSwag zero-, one- and few-shot: solved examples shown before each question
+FEWSHOT_N = 2000                 # questions used for the 1- and 5-shot runs (prompts are longer; ±1 point)
 MODEL_BASE = {}                  # {} = GPT-2 124M. e.g. dict(n_layer=24, n_head=16, n_embd=1024) ≈ 350M
 
 BUDGETS = {                      # tokens trained, tokens per optimizer step
@@ -86,6 +88,12 @@ else:
 DATA = '/content/fineweb10B' if IN_COLAB else os.path.abspath('fineweb10B')
 for d in (OUT + '/ckpt', OUT + '/results', DATA):
     os.makedirs(d, exist_ok=True)
+
+DEFAULT_LR = 1e-3
+def run_tag(name, budget=None):
+    """File name for a run: variant__budget, plus the LR when it isn't the default (so LR sweeps don't overwrite)."""
+    t = f'{name}__{budget or BUDGET}'
+    return t if LR == DEFAULT_LR else f'{t}__lr{LR:g}'
 
 def get_data(train_tokens):
     from huggingface_hub import hf_hub_download
@@ -320,13 +328,14 @@ def val_loss(logits_fn, tokens, B, T=1024):
         total += F.cross_entropy(logits.float().view(-1, logits.size(-1)), y.view(-1)).item()
     return total / n
 
-def load_hellaswag():
-    cache = os.path.join(DATA, 'hellaswag_val.jsonl')
+def load_hellaswag(split='validation'):
+    """validation = the 10,042 test questions; train = the pool few-shot examples are drawn from."""
+    cache = os.path.join(DATA, f'hellaswag_{"val" if split == "validation" else split}.jsonl')
     if not os.path.exists(cache):
         # The original GitHub repo is DMCA-blocked (2026); the Hugging Face copy is used instead.
         import pandas as pd
         from huggingface_hub import hf_hub_download
-        p = hf_hub_download('Rowan/hellaswag', 'data/validation-00000-of-00001.parquet', repo_type='dataset', local_dir=DATA)
+        p = hf_hub_download('Rowan/hellaswag', f'data/{split}-00000-of-00001.parquet', repo_type='dataset', local_dir=DATA)
         with open(cache, 'w') as f:
             for r in pd.read_parquet(p).itertuples():
                 f.write(json.dumps(dict(ctx=r.ctx, endings=list(r.endings), label=int(r.label))) + '\n')
@@ -334,16 +343,26 @@ def load_hellaswag():
         return [json.loads(l) for l in f]
 
 @torch.no_grad()
-def hellaswag(logits_fn, examples, per_batch=8):
+def hellaswag(logits_fn, examples, shots=0, demos=None, max_len=1024, per_batch=8):
     """Score each of the 4 endings by the model's loss on the ending tokens; pick the lowest.
-    acc uses the summed loss, acc_norm the per-token average (the number usually reported for GPT-2)."""
-    right = right_norm = 0
+    acc uses the summed loss, acc_norm the per-token average (the number usually reported for GPT-2).
+    shots > 0: before each question, show `shots` solved examples (context + correct ending) from the train split,
+    a different random draw per question, as lm-eval does. Only the answer tokens are ever scored."""
+    import random
+    right = right_norm = 0; correct_norm = []
     for i in range(0, len(examples), per_batch):
         chunk, rows, masks = examples[i:i + per_batch], [], []
-        for e in chunk:
-            ctx = enc.encode(e['ctx'])
-            for end in e['endings']:
-                et = enc.encode(' ' + end)
+        for j, e in enumerate(chunk):
+            ctx, ends = enc.encode(e['ctx']), [enc.encode(' ' + end) for end in e['endings']]
+            room = max_len - max(map(len, ends))
+            demo = []
+            if shots:
+                picks = random.Random(1234 + i + j).sample(range(len(demos)), min(shots, len(demos)))
+                demo = [enc.encode(demos[k]['ctx'] + ' ' + demos[k]['endings'][demos[k]['label']] + '\n\n') for k in picks]
+                while demo and sum(map(len, demo)) + len(ctx) > room:     # keep inside the context window
+                    demo.pop(0)
+            ctx = (sum(demo, []) + ctx)[-room:]
+            for et in ends:
                 rows.append(ctx + et); masks.append([0] * len(ctx) + [1] * len(et))
         L = max(map(len, rows))
         tok = torch.zeros(len(rows), L, dtype=torch.long); mask = torch.zeros(len(rows), L)
@@ -358,8 +377,9 @@ def hellaswag(logits_fn, examples, per_batch=8):
         avg = s / m.sum(1)
         labels = torch.tensor([e['label'] for e in chunk], device=dev)
         right += (s.view(-1, 4).argmin(1) == labels).sum().item()
-        right_norm += (avg.view(-1, 4).argmin(1) == labels).sum().item()
-    return right / len(examples), right_norm / len(examples)
+        ok = (avg.view(-1, 4).argmin(1) == labels).tolist()
+        right_norm += sum(ok); correct_norm += ok
+    return dict(acc=right / len(examples), acc_norm=right_norm / len(examples), correct_norm=correct_norm)
 
 @torch.no_grad()
 def bench_inference(model, batch_sizes=(1, 16), prompt=128, new=128):
@@ -389,7 +409,8 @@ def bench_inference(model, batch_sizes=(1, 16), prompt=128, new=128):
 @torch.no_grad()
 def generate(model, prompt, n=60, temperature=0.8, top_k=50):
     model.eval()
-    idx = torch.tensor([enc.encode(prompt)], device=dev)
+    idx = torch.tensor([enc.encode(prompt)[-(model.c.block_size - 1):]], device=dev)
+    n = min(n, model.c.block_size - idx.size(1))             # stay inside the context window
     caches = model.new_caches(1, idx.size(1) + n)
     with autocast():
         logits, _ = model(idx, caches=caches, pos=0, last_only=True)
@@ -412,8 +433,14 @@ def benchmark(logits_fn, val_tokens, B, model=None, T=1024):
     r = dict(val_loss=val_loss(logits_fn, val_tokens[:VAL_TOKENS + 1], B, T))
     r['perplexity'] = math.exp(r['val_loss'])
     ex = load_hellaswag()[:HELLASWAG_N]
-    r['hellaswag'], r['hellaswag_norm'] = hellaswag(logits_fn, ex)
-    r['hellaswag_n'] = len(ex)
+    h0 = hellaswag(logits_fn, ex, max_len=T)
+    r['hellaswag'], r['hellaswag_norm'], r['hellaswag_n'] = h0['acc'], h0['acc_norm'], len(ex)
+    # zero-, one-, few-shot on the same first FEWSHOT_N questions, so the columns compare like with like
+    n = min(len(ex), FEWSHOT_N); r['fewshot_n'] = n; r['hellaswag_shots'] = {}
+    demos = load_hellaswag('train') if any(k > 0 for k in SHOTS) else None
+    for k in SHOTS:
+        acc = sum(h0['correct_norm'][:n]) / n if k == 0 else hellaswag(logits_fn, ex[:n], k, demos, T)['acc_norm']
+        r['hellaswag_shots'][str(k)] = acc
     if model is not None:
         r['inference'] = bench_inference(model)
     r['bench_time_s'] = time.time() - t0
@@ -455,7 +482,7 @@ def lr_at(step, steps, warmup):
 def train(name, budget=None):
     budget = budget or BUDGET
     bud = BUDGETS[budget]
-    tag = f'{name}__{budget}'
+    tag = run_tag(name, budget)
     res_path, ck_path = f'{OUT}/results/{tag}.json', f'{OUT}/ckpt/{tag}.pt'
     if os.path.exists(res_path):
         print(f'{tag}: already done, results in {res_path}'); return json.load(open(res_path))
@@ -533,7 +560,9 @@ def train(name, budget=None):
         os.remove(ck_path)
     json.dump(log, open(res_path, 'w'), indent=1)
     f = log['final']
-    print(f'{tag}: val loss {f["val_loss"]:.4f} (ppl {f["perplexity"]:.1f}) · HellaSwag {f["hellaswag_norm"]*100:.1f}%')
+    shots = ' / '.join(f'{100*v:.1f}' for v in f['hellaswag_shots'].values())
+    print(f'{tag}: val loss {f["val_loss"]:.4f} (ppl {f["perplexity"]:.1f}) · HellaSwag {f["hellaswag_norm"]*100:.1f}% · '
+          f'{"/".join(f["hellaswag_shots"])}-shot {shots}% (on {f["fewshot_n"]} questions)')
     del cmodel, model, opt
     gc.collect()
     if dev == 'cuda': torch.cuda.empty_cache()
@@ -543,6 +572,109 @@ def train(name, budget=None):
 # Train and benchmark every run in RUNS. Re-running skips finished runs and resumes unfinished ones.
 for name in RUNS:
     train(name)
+
+# %%
+# Export: package each trained model to download and use offline.
+#   {OUT}/export/<run>/<run>_fp16.pt  ~250 MB, runs anywhere with torch + tiktoken (see use_offline.py)
+#   {OUT}/export/<run>/hf/            Hugging Face format (gpt2, llama-style, qwen3-style, qwen3-mqa):
+#                                     loads with transformers, serves with vLLM, converts to GGUF for llama.cpp
+#   {OUT}/export/<run>.zip            both, in one file to download
+import shutil
+
+def load_final(tag, device=None):
+    """tag = run_tag(name), e.g. 'gpt2__standard'."""
+    ck = torch.load(f'{OUT}/ckpt/{tag}_final.pt', map_location='cpu', weights_only=False)
+    m = GPT(Cfg(**ck['cfg'])); m.load_state_dict(ck['model'])
+    return m.to(device or dev)
+
+def hf_arch(c):
+    """Which Hugging Face architecture these exact weights correspond to, or None."""
+    if c.pos == 'learned' and c.norm == 'layernorm' and c.mlp == 'gelu' and c.bias and not c.qk_norm and c.n_kv_head in (0, c.n_head):
+        return 'gpt2'
+    if c.pos == 'rope' and c.norm == 'rmsnorm' and c.mlp == 'swiglu' and not c.bias:
+        return 'qwen3' if c.qk_norm else 'llama'
+    return None
+
+def to_hf(model):
+    """Copy the weights into the matching transformers model (vocab trimmed to GPT-2's 50,257 real tokens)."""
+    c = model.c; arch = hf_arch(c)
+    if arch is None:
+        return None
+    import transformers
+    sd = {k: v.detach().float().cpu() for k, v in model.state_dict().items()}
+    V, d, L, nh = enc.n_vocab, c.n_embd, c.n_layer, c.n_head
+    nkv, hd, h = c.n_kv_head or nh, d // nh, model.blocks[0].mlp.down.in_features
+    out = {}
+    if arch == 'gpt2':
+        cfg = transformers.GPT2Config(vocab_size=V, n_positions=c.block_size, n_embd=d, n_layer=L, n_head=nh,
+                                      activation_function='gelu_new', layer_norm_epsilon=1e-5,
+                                      resid_pdrop=0.0, embd_pdrop=0.0, attn_pdrop=0.0, tie_word_embeddings=True)
+        hf = transformers.GPT2LMHeadModel(cfg)
+        out.update({'transformer.wte.weight': sd['wte.weight'][:V], 'transformer.wpe.weight': sd['wpe.weight'],
+                    'transformer.ln_f.weight': sd['nf.weight'], 'transformer.ln_f.bias': sd['nf.bias']})
+        for i in range(L):
+            p, q = f'blocks.{i}.', f'transformer.h.{i}.'
+            for a, b in (('n1', 'ln_1'), ('n2', 'ln_2')):
+                out[q + b + '.weight'], out[q + b + '.bias'] = sd[p + a + '.weight'], sd[p + a + '.bias']
+            # HF GPT-2 uses Conv1D, which stores weights as [in, out]: transpose
+            out[q + 'attn.c_attn.weight'] = torch.cat([sd[p + 'attn.q.weight'], sd[p + 'attn.kv.weight']]).T
+            out[q + 'attn.c_attn.bias'] = torch.cat([sd[p + 'attn.q.bias'], sd[p + 'attn.kv.bias']])
+            out[q + 'attn.c_proj.weight'], out[q + 'attn.c_proj.bias'] = sd[p + 'attn.o.weight'].T, sd[p + 'attn.o.bias']
+            out[q + 'mlp.c_fc.weight'], out[q + 'mlp.c_fc.bias'] = sd[p + 'mlp.up.weight'].T, sd[p + 'mlp.up.bias']
+            out[q + 'mlp.c_proj.weight'], out[q + 'mlp.c_proj.bias'] = sd[p + 'mlp.down.weight'].T, sd[p + 'mlp.down.bias']
+    else:
+        common = dict(vocab_size=V, hidden_size=d, intermediate_size=h, num_hidden_layers=L, num_attention_heads=nh,
+                      num_key_value_heads=nkv, head_dim=hd, max_position_embeddings=c.block_size, rms_norm_eps=1e-6,
+                      rope_theta=c.rope_theta, tie_word_embeddings=True, hidden_act='silu', attention_bias=False)
+        if arch == 'llama':
+            hf = transformers.LlamaForCausalLM(transformers.LlamaConfig(**common, mlp_bias=False))
+        else:
+            hf = transformers.Qwen3ForCausalLM(transformers.Qwen3Config(**common, use_sliding_window=False))
+        out.update({'model.embed_tokens.weight': sd['wte.weight'][:V], 'model.norm.weight': sd['nf.weight']})
+        for i in range(L):
+            p, q = f'blocks.{i}.', f'model.layers.{i}.'
+            kv = sd[p + 'attn.kv.weight']                    # rows: all K heads, then all V heads
+            out.update({q + 'self_attn.q_proj.weight': sd[p + 'attn.q.weight'], q + 'self_attn.k_proj.weight': kv[:nkv * hd],
+                        q + 'self_attn.v_proj.weight': kv[nkv * hd:], q + 'self_attn.o_proj.weight': sd[p + 'attn.o.weight'],
+                        q + 'input_layernorm.weight': sd[p + 'n1.weight'], q + 'post_attention_layernorm.weight': sd[p + 'n2.weight'],
+                        q + 'mlp.gate_proj.weight': sd[p + 'mlp.up.weight'][:h], q + 'mlp.up_proj.weight': sd[p + 'mlp.up.weight'][h:],
+                        q + 'mlp.down_proj.weight': sd[p + 'mlp.down.weight']})
+            if arch == 'qwen3':
+                out[q + 'self_attn.q_norm.weight'], out[q + 'self_attn.k_norm.weight'] = sd[p + 'attn.qn.weight'], sd[p + 'attn.kn.weight']
+    missing, unexpected = hf.load_state_dict(out, strict=False)
+    assert not unexpected, unexpected
+    assert all(k == 'lm_head.weight' or k.endswith('attn.bias') or k.endswith('masked_bias') for k in missing), missing
+    hf.tie_weights()
+    hf.generation_config.eos_token_id = hf.config.eos_token_id = enc.eot_token
+    # Self-check: the HF model must give the same logits as ours
+    hf.eval(); model_cpu = model.float().cpu().eval()
+    x = torch.randint(0, V, (2, 48))
+    with torch.no_grad():
+        err = (hf(x).logits - model_cpu(x)[0][..., :V]).abs().max().item()
+    assert err < 1e-3, f'HF export mismatch: {err}'
+    print(f'  HF {arch} export matches the trained model (max logit difference {err:.1e})')
+    return hf
+
+def export(name, budget=None):
+    tag = run_tag(name, budget)
+    out = f'{OUT}/export/{tag}'
+    os.makedirs(out, exist_ok=True)
+    model = load_final(tag, 'cpu').float().eval()
+    weights = {k: v.half() for k, v in model.state_dict().items() if k != 'head.weight'}   # head is tied to wte
+    torch.save(dict(variant=name, cfg=asdict(model.c), model=weights), f'{out}/{tag}_fp16.pt')
+    hf = to_hf(model)
+    if hf is not None:
+        hf.save_pretrained(f'{out}/hf')
+        from transformers import GPT2TokenizerFast
+        GPT2TokenizerFast.from_pretrained('gpt2').save_pretrained(f'{out}/hf')
+    zip_path = shutil.make_archive(out, 'zip', out)
+    print(f'{tag}: exported to {out} ({"fp16 + HF" if hf is not None else "fp16 only: no matching HF architecture"}) · zip {os.path.getsize(zip_path)/1e6:.0f} MB')
+    return zip_path
+
+for name in RUNS:
+    export(name)
+# To download: open Google Drive → MyDrive/gpt2-lab/export/ → right-click the .zip → Download.
+# (Or, for small files, in Colab: from google.colab import files; files.download(path).)
 
 # %%
 # Reference row: OpenAI's released GPT-2 124M (trained on ~10B+ tokens of WebText), on the same benchmark.
@@ -565,9 +697,10 @@ R = [json.load(open(p)) for p in sorted(glob.glob(f'{OUT}/results/*.json'))]
 rows = []
 for r in R:
     f = r['final']; inf = f.get('inference', {})
-    rows.append({'run': r['name'], 'budget': r['budget'], 'params (M)': round(r['params'] / 1e6, 1),
+    rows.append({'run': r['name'], 'budget': r['budget'], 'LR': r.get('lr'), 'params (M)': round(r['params'] / 1e6, 1),
                  'val loss': round(f['val_loss'], 4), 'ppl': round(f['perplexity'], 1),
                  'HellaSwag %': round(100 * f['hellaswag_norm'], 1),
+                 **{f'HS {k}-shot %': round(100 * v, 1) for k, v in f.get('hellaswag_shots', {}).items()},
                  'train tok/s (k)': round(r['tok_per_s'] / 1e3) if r.get('tok_per_s') else None,
                  'MFU %': round(100 * r['mfu']) if r.get('mfu') else None,
                  'train min': round(r['train_time_s'] / 60, 1) if r.get('train_time_s') else None,
@@ -583,7 +716,8 @@ for r in R:
     if not r['curve']:
         ax[0].axhline(r['final']['val_loss'], ls='--', c='gray', label=r['name']); continue
     t = [p['tokens'] / 1e6 for p in r['curve']]; v = [p['val_loss'] for p in r['curve']]; s = [p['time_s'] / 60 for p in r['curve']]
-    ax[0].plot(t, v, label=f"{r['name']} ({r['budget']})"); ax[1].plot(s, v, label=r['name'])
+    lbl = f"{r['name']} ({r['budget']}" + (f", lr {r['lr']:g})" if r.get('lr', DEFAULT_LR) != DEFAULT_LR else ')')
+    ax[0].plot(t, v, label=lbl); ax[1].plot(s, v, label=lbl)
 ax[0].set(xlabel='training tokens (M)', ylabel='val loss', title='Sample efficiency: loss vs tokens')
 ax[1].set(xlabel='training minutes on ' + GPU, ylabel='val loss', title='Cost efficiency: loss vs wall-clock')
 names = [r['name'] for r in R]; hs = [100 * r['final']['hellaswag_norm'] for r in R]
@@ -604,14 +738,14 @@ ax[2].legend(); plt.tight_layout(); plt.savefig(f'{OUT}/results/comparison.png',
 #   are not meaningful, and short runs sit close to 25–28% for every variant.
 # - **Learning rate:** modern variants (RMSNorm, QK-norm) usually tolerate higher learning rates. For a fair verdict, run a
 #   small sweep on the `quick` budget (e.g. `LR` in 6e-4, 1e-3, 2e-3) and compare each variant at its best LR.
+# - **Zero / one / few-shot:** the `HS k-shot` columns show HellaSwag with k solved examples placed before each question
+#   (same questions in every column). In the GPT-3 paper the 125M model barely improved with examples; using examples
+#   in the prompt ("in-context learning") emerges with scale. A flat row is a real finding, not a bug.
 # - **GQA/MQA** are about inference: look at *KV KiB/token* (3× and 12× smaller) and batch-16 decode, then check how much
 #   val loss they cost.
 # - **OpenAI GPT-2** saw far more tokens (WebText, not FineWeb), so it's a reference point, not a same-budget competitor.
 
 # %%
 # Generate text from any finished run.
-def load_final(name, budget=None):
-    ck = torch.load(f'{OUT}/ckpt/{name}__{budget or BUDGET}_final.pt', map_location=dev, weights_only=False)
-    m = GPT(Cfg(**ck['cfg'])).to(dev); m.load_state_dict(ck['model']); return m
 for name in RUNS:
-    print(f'--- {name}\n' + generate(load_final(name), 'The history of the printing press') + '\n')
+    print(f'--- {name}\n' + generate(load_final(run_tag(name)), 'The history of the printing press') + '\n')
