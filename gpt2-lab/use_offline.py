@@ -60,7 +60,7 @@ DATA = os.path.abspath('.')
 OUT = DATA
 
 # %%
-# The model: GPT-2, with every modern change behind a switch.
+# The model: GPT-2, with every modern change behind a switch, including the attention mechanism itself.
 @dataclass
 class Cfg:
     vocab_size: int = 50304      # 50,257 padded to a multiple of 64 (faster matmuls)
@@ -76,6 +76,18 @@ class Cfg:
     qk_norm: bool = False        # RMSNorm on each head's q and k before RoPE (Qwen3)
     bias: bool = True            # GPT-2 has biases; modern models drop them
     rope_theta: float = 10000.0  # Qwen3 uses 1e6 for long contexts; 1e4 suits 1,024 tokens
+    attn: str = 'mha'            # 'mha' (+ n_kv_head → GQA/MQA) | 'swa' | 'mla' | 'dsa' | 'gdn'
+    hybrid_every: int = 0        # >0: every Nth layer is full attention, the others use `attn` (Gemma 3, Qwen3-Next)
+    window: int = 256            # swa: each query sees only the last `window` tokens
+    mla_rank: int = 256          # mla: size of the K/V latent cached per token
+    mla_rope: int = 32           # mla: decoupled RoPE dims (a small key shared by all heads)
+    dsa_topk: int = 256          # dsa: keys each query attends to
+    dsa_heads: int = 4           # dsa: lightning-indexer heads
+    dsa_dim: int = 32            # dsa: lightning-indexer dims
+    gdn_heads: int = 6           # gdn: heads; each keeps a (n_embd/gdn_heads)² state matrix
+
+def layer_kind(c, i):
+    return 'mha' if c.hybrid_every and (i + 1) % c.hybrid_every == 0 else c.attn
 
 class RMSNorm(nn.Module):
     def __init__(self, d, eps=1e-6):
@@ -96,19 +108,65 @@ def apply_rope(x, cos, sin):                                  # x: [B, H, T, hd]
     x1, x2 = x.chunk(2, dim=-1)                               # "rotate half" layout, as in HF Llama/Qwen
     return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
 
+class Rope(nn.Module):
+    def __init__(self, T, dim, theta):
+        super().__init__()
+        cos, sin = rope_tables(T, dim, theta)
+        self.register_buffer('cos', cos, persistent=False); self.register_buffer('sin', sin, persistent=False)
+    def forward(self, x, pos):                                # x: [B, H, T, dim], first token at position pos
+        T = x.size(2)
+        return apply_rope(x, self.cos[pos:pos + T], self.sin[pos:pos + T])
+
+def causal_mask(Tq, Tk, pos, window, device):
+    """True where a query (absolute position pos+i) may see a key (position j): j ≤ i, and within `window` if set."""
+    qi = torch.arange(Tq, device=device)[:, None] + pos
+    kj = torch.arange(Tk, device=device)[None, :]
+    m = kj <= qi
+    return m & (qi - kj < window) if window else m
+
+def attend(q, k, v, pos, window=0):
+    """Causal softmax attention for T queries (positions pos..pos+T-1) over all S keys so far."""
+    T, S = q.size(2), k.size(2)
+    if T == 1:                                                # decoding one token: it may see every cached key
+        if window and S > window:
+            k, v = k[:, :, -window:], v[:, :, -window:]
+        return F.scaled_dot_product_attention(q, k, v)
+    if window and S > window:                                 # a band mask (dense kernel; real SWA kernels skip the zeros)
+        return F.scaled_dot_product_attention(q, k, v, attn_mask=causal_mask(T, S, pos, window, q.device))
+    return F.scaled_dot_product_attention(q, k, v, is_causal=True)    # FlashAttention on GPU
+
 class KVCache:
-    def __init__(self, B, n_kv, T, hd, dtype, device):
+    def __init__(self, B, n_kv, T, hd, dtype, device, extra_dim=0):
         self.k = torch.zeros(B, n_kv, T, hd, dtype=dtype, device=device)
         self.v = torch.zeros_like(self.k)
+        self.extra = torch.zeros(B, T, extra_dim, dtype=dtype, device=device) if extra_dim else None
     def update(self, k, v, pos):
         T = k.size(2)
         self.k[:, :, pos:pos + T] = k; self.v[:, :, pos:pos + T] = v
         return self.k[:, :, :pos + T], self.v[:, :, :pos + T]
+    def update_extra(self, e, pos):                           # DSA: the indexer's key for every token
+        self.extra[:, pos:pos + e.size(1)] = e
+        return self.extra[:, :pos + e.size(1)]
+
+class LatentCache:                                            # MLA: one latent + one small RoPE key per token
+    def __init__(self, B, T, rank, rope, dtype, device):
+        self.c = torch.zeros(B, T, rank, dtype=dtype, device=device)
+        self.kr = torch.zeros(B, 1, T, rope, dtype=dtype, device=device)
+    def update(self, c, kr, pos):
+        T = c.size(1)
+        self.c[:, pos:pos + T] = c; self.kr[:, :, pos:pos + T] = kr
+        return self.c[:, :pos + T], self.kr[:, :, :pos + T]
+
+class StateCache:                                             # Gated DeltaNet: a fixed-size state, whatever the context
+    def __init__(self):
+        self.state, self.conv = None, None
 
 class Attention(nn.Module):
-    def __init__(self, c):
+    """Softmax attention. MHA: every head has its own K and V. GQA/MQA: groups of query heads share K/V heads
+    (n_kv_head < n_head), shrinking the KV cache. Sliding window (window > 0): each query sees only recent tokens."""
+    def __init__(self, c, window=0):
         super().__init__()
-        self.nh, self.nkv, self.hd = c.n_head, c.n_kv_head or c.n_head, c.n_embd // c.n_head
+        self.nh, self.nkv, self.hd, self.window = c.n_head, c.n_kv_head or c.n_head, c.n_embd // c.n_head, window
         assert c.n_embd % self.nh == 0 and self.nh % self.nkv == 0
         self.q = nn.Linear(c.n_embd, self.nh * self.hd, bias=c.bias)
         self.kv = nn.Linear(c.n_embd, 2 * self.nkv * self.hd, bias=c.bias)   # GQA shrinks this
@@ -116,24 +174,190 @@ class Attention(nn.Module):
         self.o.residual = True
         self.qn = RMSNorm(self.hd) if c.qk_norm else None
         self.kn = RMSNorm(self.hd) if c.qk_norm else None
-    def forward(self, x, rope, cache=None, pos=0):
+        self.rope = Rope(c.block_size, self.hd, c.rope_theta) if c.pos == 'rope' else None
+    def qkv(self, x, pos):
         B, T, _ = x.shape
         q = self.q(x).view(B, T, self.nh, self.hd)
         k, v = self.kv(x).view(B, T, 2, self.nkv, self.hd).unbind(2)
         if self.qn is not None:
             q, k = self.qn(q), self.kn(k)
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
-        if rope is not None:
-            cos, sin = rope[0][pos:pos + T], rope[1][pos:pos + T]
-            q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
+        if self.rope is not None:
+            q, k = self.rope(q, pos), self.rope(k, pos)
+        return q, k, v
+    def expand_kv(self, k, v):                                # share each K/V head across a group of query heads
+        if self.nkv != self.nh:
+            k = k.repeat_interleave(self.nh // self.nkv, dim=1)
+            v = v.repeat_interleave(self.nh // self.nkv, dim=1)
+        return k, v
+    def forward(self, x, cache=None, pos=0):
+        B, T, _ = x.shape
+        q, k, v = self.qkv(x, pos)
         if cache is not None:
             assert pos == 0 or T == 1, 'cache supports a prefill at pos 0, then one token at a time'
             k, v = cache.update(k, v, pos)
-        if self.nkv != self.nh:                               # share each K/V head across a group of Q heads
-            k = k.repeat_interleave(self.nh // self.nkv, dim=1)
-            v = v.repeat_interleave(self.nh // self.nkv, dim=1)
-        y = F.scaled_dot_product_attention(q, k, v, is_causal=T > 1)   # FlashAttention on GPU
-        return self.o(y.transpose(1, 2).reshape(B, T, -1))
+        k, v = self.expand_kv(k, v)
+        y = attend(q, k, v, pos, self.window)
+        return self.o(y.transpose(1, 2).reshape(B, T, -1)), None
+
+class DSAttention(Attention):
+    """DeepSeek Sparse Attention (V3.2). A small 'lightning indexer' scores every earlier token for each query,
+    I(t,s) = Σ_j w_j(t) · ReLU(q_j(t) · k(s)), and the query attends only to its top-k keys. The indexer is trained
+    to imitate the full attention pattern (a KL loss on its own detached input), after a short dense warm-up."""
+    def __init__(self, c):
+        super().__init__(c)
+        self.topk, self.hi, self.di = c.dsa_topk, c.dsa_heads, c.dsa_dim
+        self.iq = nn.Linear(c.n_embd, self.hi * self.di, bias=False)
+        self.ik = nn.Linear(c.n_embd, self.di, bias=False)
+        self.iw = nn.Linear(c.n_embd, self.hi, bias=False)
+        self.dense = False                                    # True during the dense warm-up at the start of training
+    def forward(self, x, cache=None, pos=0):
+        B, T, _ = x.shape
+        q, k, v = self.qkv(x, pos)
+        xi = x.detach()                                       # the indexer is trained only by its own KL loss
+        ik = self.ik(xi)                                      # [B, T, di]: one small indexer key per token
+        if cache is not None:
+            k, v = cache.update(k, v, pos); ik = cache.update_extra(ik, pos)
+        S = k.size(2)
+        iq = self.iq(xi).view(B, T, self.hi, self.di)
+        score = torch.einsum('bthd,bsd->bths', iq, ik).relu() * self.di ** -0.5
+        score = torch.einsum('bths,bth->bts', score, self.iw(xi) * self.hi ** -0.5)   # [B, T, S]
+        allowed = causal_mask(T, S, pos, 0, x.device)
+        if self.dense or S <= self.topk:
+            mask = allowed.expand(B, T, S)
+        else:
+            recency = torch.arange(S, device=x.device) * 1e-6     # ReLU makes many scores exactly 0: break ties
+            top = (score.float() + recency).masked_fill(~allowed, float('-inf')).topk(self.topk, dim=-1).indices   # by recency
+            mask = torch.zeros(B, T, S, dtype=torch.bool, device=x.device).scatter_(-1, top, True) & allowed
+        k2, v2 = self.expand_kv(k, v)
+        y = F.scaled_dot_product_attention(q, k2, v2, attn_mask=mask[:, None])   # dense kernel + mask (no sparse kernel)
+        aux = None
+        if self.training:
+            with torch.no_grad():                             # target: the full attention pattern, averaged over heads
+                p = (q @ k2.transpose(-1, -2)).float().mul(self.hd ** -0.5).masked_fill(~allowed, float('-inf'))
+                p = p.softmax(-1).mean(1)                     # [B, T, S]
+            logp = score.float().masked_fill(~allowed, float('-inf')).log_softmax(-1).masked_fill(~allowed, 0.0)
+            aux = F.kl_div(logp.reshape(-1, S), p.reshape(-1, S), reduction='batchmean')
+        return self.o(y.transpose(1, 2).reshape(B, T, -1)), aux
+
+class MLAttention(nn.Module):
+    """Multi-head latent attention (DeepSeek-V2/V3). Each token is compressed into one small latent vector c
+    (mla_rank numbers); every head's key and value are rebuilt from it by up-projections. The cache stores c plus a
+    small RoPE key shared by all heads: mla_rank + mla_rope numbers per token per layer instead of 2 × heads × head_dim.
+    RoPE sits in separate 'decoupled' dims because a position-dependent rotation can't be folded into the up-projection.
+    (Inference engines go further and absorb the up-projections into q and o, so attention runs on the latent directly.)"""
+    def __init__(self, c):
+        super().__init__()
+        d = c.n_embd
+        self.nh, self.dn, self.dr, self.dv, self.r = c.n_head, d // c.n_head, c.mla_rope, d // c.n_head, c.mla_rank
+        self.q = nn.Linear(d, self.nh * (self.dn + self.dr), bias=False)
+        self.dkv = nn.Linear(d, self.r + self.dr, bias=False)    # down-projection: latent + shared RoPE key
+        self.kv_norm = RMSNorm(self.r)
+        self.uk = nn.Linear(self.r, self.nh * self.dn, bias=False)   # up-projections, per head
+        self.uv = nn.Linear(self.r, self.nh * self.dv, bias=False)
+        self.o = nn.Linear(self.nh * self.dv, d, bias=c.bias)
+        self.o.residual = True
+        self.rope = Rope(c.block_size, self.dr, c.rope_theta)
+    def forward(self, x, cache=None, pos=0):
+        B, T, _ = x.shape
+        q = self.q(x).view(B, T, self.nh, self.dn + self.dr).transpose(1, 2)
+        qn, qr = q.split([self.dn, self.dr], dim=-1)
+        c, kr = self.dkv(x).split([self.r, self.dr], dim=-1)
+        c = self.kv_norm(c)                                   # [B, T, r]: this is what gets cached
+        kr = self.rope(kr.view(B, T, 1, self.dr).transpose(1, 2), pos)   # [B, 1, T, dr]
+        if cache is not None:
+            assert pos == 0 or T == 1
+            c, kr = cache.update(c, kr, pos)
+        S = c.size(1)
+        kn = self.uk(c).view(B, S, self.nh, self.dn).transpose(1, 2)
+        v = self.uv(c).view(B, S, self.nh, self.dv).transpose(1, 2)
+        k = torch.cat([kn, kr.expand(B, self.nh, S, self.dr)], dim=-1)
+        q = torch.cat([qn, self.rope(qr, pos)], dim=-1)
+        y = attend(q, k, v, pos)
+        return self.o(y.transpose(1, 2).reshape(B, T, -1)), None
+
+def delta_rule_recurrent(q, k, v, g, beta, state=None):
+    """The gated delta rule, one token at a time (same maths as fla-core's naive_recurrent_gated_delta_rule).
+    q, k: [B, T, H, K] (unit length), v: [B, T, H, V], g: log-decay [B, T, H] (≤ 0), beta: [B, T, H] in (0, 1)."""
+    B, T, H, K = q.shape
+    q, k, v, g, beta = (t.float() for t in (q, k, v, g, beta))
+    q = q * K ** -0.5
+    S = q.new_zeros(B, H, K, v.size(-1)) if state is None else state.float()
+    out = []
+    for t in range(T):
+        S = S * g[:, t].exp()[..., None, None]                     # forget: S ← α·S
+        err = v[:, t] - torch.einsum('bhk,bhkv->bhv', k[:, t], S)  # what S currently returns for k, vs the new v
+        S = S + k[:, t, :, :, None] * (beta[:, t, :, None] * err)[:, :, None, :]   # delta rule: S ← S + β·k·errᵀ
+        out.append(torch.einsum('bhk,bhkv->bhv', q[:, t], S))      # read: o = Sᵀq
+    return torch.stack(out, 1), S
+
+FLA = None                                                    # fla-core's chunked Triton kernel, loaded on GPU
+def load_fla():
+    global FLA
+    if FLA is not None or dev != 'cuda':
+        return
+    try:
+        from fla.ops.gated_delta_rule import chunk_gated_delta_rule
+    except ImportError:
+        pip('fla-core'); from fla.ops.gated_delta_rule import chunk_gated_delta_rule
+    FLA = chunk_gated_delta_rule
+    # self-check: the fast parallel kernel must match the token-by-token recurrence
+    torch.manual_seed(0)
+    B, T, H, K = 2, 100, 3, 32
+    q, k = (F.normalize(torch.randn(B, T, H, K, device=dev), dim=-1) for _ in range(2))
+    v = torch.randn(B, T, H, K, device=dev); g = -F.softplus(torch.randn(B, T, H, device=dev)); beta = torch.rand(B, T, H, device=dev)
+    o1, s1 = FLA(q, k, v, g, beta, scale=K ** -0.5, output_final_state=True)
+    o2, s2 = delta_rule_recurrent(q, k, v, g, beta)
+    err = max((o1.float() - o2).abs().max().item(), (s1.float() - s2).abs().max().item())
+    assert err < 2e-2, f'fla-core chunk kernel disagrees with the reference recurrence: {err}'
+    print(f'fla-core Gated DeltaNet kernel loaded and checked against the recurrence (max diff {err:.1e})')
+
+def delta_rule(q, k, v, g, beta, state=None):
+    if FLA is not None and q.is_cuda and q.size(1) > 1:       # training / prefill: chunked parallel kernel
+        o, S = FLA(q.contiguous(), k.contiguous(), v.to(q.dtype).contiguous(), g.float().contiguous(),
+                   beta.to(q.dtype).contiguous(), scale=q.size(-1) ** -0.5,
+                   initial_state=state, output_final_state=True)
+        return o, S
+    o, S = delta_rule_recurrent(q, k, v, g, beta, state)      # decode (one token) or CPU
+    return o.to(v.dtype), S
+
+class GatedDeltaNet(nn.Module):
+    """Gated DeltaNet (Yang et al., 2024), the linear-attention layer of Qwen3-Next. No KV cache: each head keeps a
+    fixed K×V state matrix S. Per token: S ← α·S (forget, α from the input), S ← S + β·k·(v − Sᵀk)ᵀ (write v at
+    address k, correcting what S already returned there: the delta rule), o = Sᵀq (read). Memory and per-token cost
+    stay constant however long the context. Training uses a chunked parallel form that computes the same thing."""
+    def __init__(self, c):
+        super().__init__()
+        d = c.n_embd
+        self.H, self.K = c.gdn_heads, d // c.gdn_heads
+        self.q = nn.Linear(d, d, bias=False); self.k = nn.Linear(d, d, bias=False); self.v = nn.Linear(d, d, bias=False)
+        self.conv = nn.Conv1d(3 * d, 3 * d, kernel_size=4, groups=3 * d, bias=False)   # short causal conv over time
+        self.a = nn.Linear(d, self.H, bias=False)                 # forget gate α (per head, per token)
+        self.b = nn.Linear(d, self.H, bias=False)                 # write strength β
+        self.A_log = nn.Parameter(torch.log(torch.empty(self.H).uniform_(1, 16)))
+        dt = torch.exp(torch.rand(self.H) * (math.log(0.1) - math.log(0.001)) + math.log(0.001)).clamp(min=1e-4)
+        self.dt_bias = nn.Parameter(dt + torch.log(-torch.expm1(-dt)))   # inverse softplus (Mamba-2 init)
+        self.z = nn.Linear(d, d, bias=False)                      # output gate
+        self.onorm = RMSNorm(self.K)
+        self.o = nn.Linear(d, d, bias=c.bias)
+        self.o.residual = True
+    def forward(self, x, cache=None, pos=0):
+        B, T, d = x.shape
+        qkv = torch.cat([self.q(x), self.k(x), self.v(x)], dim=-1)          # [B, T, 3d]
+        prev = cache.conv if cache is not None and cache.conv is not None else qkv.new_zeros(B, 3, 3 * d)
+        xc = torch.cat([prev.to(qkv.dtype), qkv], dim=1)                     # 3 earlier tokens + this chunk
+        if cache is not None:
+            cache.conv = xc[:, -3:]
+        qkv = F.silu(F.conv1d(xc.transpose(1, 2), self.conv.weight, groups=3 * d)).transpose(1, 2)
+        q, k, v = qkv.reshape(B, T, 3, self.H, self.K).unbind(2)
+        q, k = F.normalize(q, dim=-1), F.normalize(k, dim=-1)
+        beta = self.b(x).sigmoid()
+        g = -self.A_log.exp() * F.softplus(self.a(x).float() + self.dt_bias)  # log α ≤ 0
+        o, state = delta_rule(q, k, v, g, beta, cache.state if cache is not None else None)
+        if cache is not None:
+            cache.state = state
+        o = self.onorm(o) * F.silu(self.z(x).view(B, T, self.H, self.K))      # gated output norm (Qwen3-Next)
+        return self.o(o.reshape(B, T, d)), None
 
 class MLP(nn.Module):
     def __init__(self, c):
@@ -150,13 +374,18 @@ class MLP(nn.Module):
         h = self.up(x)
         return self.down(F.gelu(h, approximate='tanh') if self.kind == 'gelu' else F.relu(h).square())
 
+ATTENTION = {'mha': lambda c: Attention(c), 'swa': lambda c: Attention(c, c.window), 'mla': MLAttention,
+             'dsa': DSAttention, 'gdn': GatedDeltaNet}
+
 class Block(nn.Module):
-    def __init__(self, c):
+    def __init__(self, c, i):
         super().__init__()
-        self.n1, self.attn, self.n2, self.mlp = Norm(c, c.n_embd), Attention(c), Norm(c, c.n_embd), MLP(c)
-    def forward(self, x, rope, cache=None, pos=0):
-        x = x + self.attn(self.n1(x), rope, cache, pos)       # pre-norm residual blocks
-        return x + self.mlp(self.n2(x))
+        self.kind = layer_kind(c, i)
+        self.n1, self.attn, self.n2, self.mlp = Norm(c, c.n_embd), ATTENTION[self.kind](c), Norm(c, c.n_embd), MLP(c)
+    def forward(self, x, cache=None, pos=0):
+        a, aux = self.attn(self.n1(x), cache, pos)            # pre-norm residual blocks
+        x = x + a
+        return x + self.mlp(self.n2(x)), aux
 
 class GPT(nn.Module):
     def __init__(self, c):
@@ -164,14 +393,10 @@ class GPT(nn.Module):
         self.c = c
         self.wte = nn.Embedding(c.vocab_size, c.n_embd)
         self.wpe = nn.Embedding(c.block_size, c.n_embd) if c.pos == 'learned' else None
-        self.blocks = nn.ModuleList(Block(c) for _ in range(c.n_layer))
+        self.blocks = nn.ModuleList(Block(c, i) for i in range(c.n_layer))
         self.nf = Norm(c, c.n_embd)
         self.head = nn.Linear(c.n_embd, c.vocab_size, bias=False)
         self.head.weight = self.wte.weight                    # tied input/output embeddings
-        if c.pos == 'rope':
-            cos, sin = rope_tables(c.block_size, c.n_embd // c.n_head, c.rope_theta)
-            self.register_buffer('cos', cos, persistent=False)
-            self.register_buffer('sin', sin, persistent=False)
         self.apply(self._init)
     def _init(self, m):
         if isinstance(m, nn.Linear):
@@ -185,42 +410,90 @@ class GPT(nn.Module):
         x = self.wte(idx)
         if self.wpe is not None:
             x = x + self.wpe(torch.arange(pos, pos + T, device=idx.device))
-        rope = (self.cos, self.sin) if self.c.pos == 'rope' else None
+        aux = 0.0
         for i, blk in enumerate(self.blocks):
-            x = blk(x, rope, caches[i] if caches else None, pos)
+            x, a = blk(x, caches[i] if caches else None, pos)
+            if a is not None:
+                aux = aux + a                                 # DSA's indexer loss (0 for every other attention)
         x = self.nf(x)
         if last_only:
             x = x[:, -1:]
         logits = self.head(x)
-        loss = None if targets is None else F.cross_entropy(logits.float().view(-1, logits.size(-1)), targets.view(-1))
+        loss = None if targets is None else F.cross_entropy(logits.float().view(-1, logits.size(-1)), targets.view(-1)) + aux
         return logits, loss
+    def set_dense_warmup(self, on):                           # DSA: attend densely while the indexer learns
+        for m in self.modules():
+            if isinstance(m, DSAttention):
+                m.dense = on
     def new_caches(self, B, T):
-        c, hd = self.c, self.c.n_embd // self.c.n_head
-        return [KVCache(B, c.n_kv_head or c.n_head, T, hd, DTYPE, self.wte.weight.device) for _ in range(c.n_layer)]
+        d = self.wte.weight.device; out = []
+        for blk in self.blocks:
+            a = blk.attn
+            if isinstance(a, GatedDeltaNet):
+                out.append(StateCache())
+            elif isinstance(a, MLAttention):
+                out.append(LatentCache(B, T, a.r, a.dr, DTYPE, d))
+            else:
+                out.append(KVCache(B, a.nkv, T, a.hd, DTYPE, d, a.di if isinstance(a, DSAttention) else 0))
+        return out
     def n_params(self, non_embedding=False):
         n = sum(p.numel() for p in self.parameters())         # tied weights counted once
         if non_embedding:
             n -= self.wte.weight.numel() + (self.wpe.weight.numel() if self.wpe is not None else 0)
         return n
-    def kv_bytes_per_token(self, bytes_per_value=2):
-        return 2 * self.c.n_layer * (self.c.n_kv_head or self.c.n_head) * (self.c.n_embd // self.c.n_head) * bytes_per_value
-    def flops_per_token(self):                                # forward + backward, PaLM appendix B
-        c = self.c
-        return 6 * self.n_params() + 12 * c.n_layer * c.n_embd * c.block_size
-    def step_cost(self, B, S, T=1, bytes_per_value=2):
+    def cache_bytes(self, S, bytes_per_value=2):
+        """Inference cache for ONE sequence at context length S, summed over layers (16-bit values)."""
+        total = 0
+        for blk in self.blocks:
+            a = blk.attn
+            if isinstance(a, GatedDeltaNet):
+                total += a.H * a.K * a.K                      # fixed state, independent of S
+            elif isinstance(a, MLAttention):
+                total += S * (a.r + a.dr)
+            else:
+                total += (min(S, a.window) if a.window else S) * 2 * a.nkv * a.hd
+                if isinstance(a, DSAttention):
+                    total += S * a.di                         # the indexer's keys
+        return total * bytes_per_value
+    def kv_bytes_per_token(self, bytes_per_value=2):          # average per token over a 1,024-token context
+        return self.cache_bytes(1024, bytes_per_value) / 1024
+    def step_cost(self, B, S, T=1, bytes_per_value=2, absorbed=True):
         """FLOPs and HBM bytes of one forward step: B sequences each add T new tokens after S cached ones.
-        FLOPs: 2 per weight per token (all matmuls, incl. the tied lm_head) + QKᵀ and AV over every key, for every
-        query head. Bytes: every weight read once + the KV cache read + the new K/V written (16-bit values)."""
-        c = self.c
+        FLOPs: 2 per weight per token (all matmuls, incl. the tied lm_head) + the attention itself, per mechanism.
+        Bytes: every weight read once + whatever cache this mechanism reads (16-bit values).
+        absorbed: MLA as inference engines run it (attention directly on the cached latent)."""
         mm = sum(m.weight.numel() for m in self.modules() if isinstance(m, nn.Linear))
+        flops, bytes_ = 2 * mm * B * T, self.n_params() * bytes_per_value
         keys = S + (T + 1) / 2                                # average keys each query attends to (causal)
-        flops = 2 * mm * B * T + 4 * c.n_layer * c.n_embd * B * T * keys
-        bytes_ = self.n_params() * bytes_per_value + self.kv_bytes_per_token(bytes_per_value) * B * (S + T)
+        for blk in self.blocks:
+            a = blk.attn
+            if isinstance(a, GatedDeltaNet):                  # decay, read, correct, write, query: ~7 ops per state entry
+                flops += 7 * B * T * a.H * a.K * a.K
+                bytes_ += B * a.H * a.K * a.K * bytes_per_value
+            elif isinstance(a, MLAttention):
+                qk, vd = (a.r + a.dr, a.r) if absorbed else (a.dn + a.dr, a.dv)
+                flops += 2 * B * T * keys * a.nh * (qk + vd)
+                bytes_ += B * (S + T) * (a.r + a.dr) * bytes_per_value
+            else:
+                kv_tok = 2 * a.nkv * a.hd * bytes_per_value
+                read = S + T                                  # keys read from memory (prefill reads them all once)
+                seen = keys
+                if a.window:
+                    seen = min(keys, a.window); read = min(S + T, a.window) if T == 1 else S + T
+                if isinstance(a, DSAttention):
+                    seen = min(keys, a.topk); read = min(S + T, a.topk) if T == 1 else S + T
+                    flops += 2 * B * T * keys * a.hi * a.di   # the indexer scores every key
+                    bytes_ += B * (S + T) * a.di * bytes_per_value
+                flops += 2 * B * T * seen * a.nh * 2 * a.hd
+                bytes_ += B * read * kv_tok
         return flops, bytes_
     def intensity(self, B, S, T=1):
         """Arithmetic intensity, FLOPs per byte moved. Below the GPU's ridge point the step is memory-bound."""
         f, b = self.step_cost(B, S, T)
         return f / b
+    def flops_per_token(self):                                # training: forward + backward ≈ 3 × forward
+        f, _ = self.step_cost(1, 0, self.c.block_size, absorbed=False)
+        return 3 * f / self.c.block_size
 
 # Inference scenarios for arithmetic intensity: (batch, cached tokens, new tokens per sequence)
 AI_POINTS = {'decode b1': (1, 1024, 1), 'decode b16': (16, 1024, 1), 'decode b128': (128, 1024, 1), 'prefill 1K': (1, 0, 1024)}
@@ -369,6 +642,8 @@ def benchmark(logits_fn, val_tokens, B, model=None, T=1024):
 # Load a downloaded model; score any text.
 def load_export(path):
     ck = torch.load(path, map_location='cpu', weights_only=False)
+    if ck['cfg'].get('attn') == 'gdn':
+        load_fla()                                            # GPU: fast Gated DeltaNet kernel (CPU uses the recurrence)
     m = GPT(Cfg(**ck['cfg']))
     missing, unexpected = m.load_state_dict(ck['model'], strict=False)
     assert not unexpected and set(missing) <= {'head.weight'}, (missing, unexpected)   # head is tied to wte

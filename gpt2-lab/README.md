@@ -1,15 +1,17 @@
 # GPT-2 (124M) architecture lab
 
-Train GPT-2 124M from scratch on Colab (A100 or L4), train same-size models with the modern changes from the
-[LLM Inference Field Guide](https://th3samaritan.github.io/AI-Research/llm-inference/) (RoPE, RMSNorm, SwiGLU, QK-norm,
-GQA/MQA), compare them all on one benchmark, then download the models and use them offline.
+Train GPT-2 124M from scratch on Colab (A100 or L4), train same-size models with the modern changes and the attention mechanisms from the
+[LLM Inference Field Guide](https://th3samaritan.github.io/AI-Research/llm-inference/) (RoPE, RMSNorm, SwiGLU, QK-norm; MHA,
+GQA, MQA, MLA, sliding window, DSA, Gated DeltaNet), compare them all on one benchmark, then download and use them offline.
 
 This is the real-scale step up from the [Nano Suite](../Nanogpt/) (character-level Shakespeare on a CPU): real GPT-2 size,
 real web text, a real GPU, and the benchmarks people actually report.
 
 ## The notebooks
 
-One notebook per architecture, plus a compare notebook, an all-in-one notebook and an offline one. They all share
+Two families of notebooks: one notebook per **architecture** (GPT-2 and the modern changes to it) and one per
+**attention mechanism** (MHA, GQA, MQA, MLA, sliding window, DSA, Gated DeltaNet and hybrids), plus a compare
+notebook, an all-in-one notebook and an offline one. They all share
 `MyDrive/gpt2-lab/` on Google Drive, so runs from different notebooks and sessions land in one comparison.
 
 | Notebook | What it does |
@@ -27,6 +29,32 @@ One notebook per architecture, plus a compare notebook, an all-in-one notebook a
 | [use_offline](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/use_offline.ipynb) | run a downloaded model on your own machine |
 
 Each variant notebook opens with what its change does, why, and what to look for in the results.
+
+### The attention family
+
+Same base for all of them (the llama-style model: RoPE, RMSNorm, SwiGLU, no biases, ~124M parameters), and only the
+attention mechanism changes. Each notebook explains how its mechanism works, what it saves and what it costs.
+
+| Notebook | Mechanism | Used in | Cache @1K ctx | Decode intensity b1 / b16 / b128 |
+|---|---|---|---|---|
+| [1 · MHA](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/1_mha.ipynb) | every head has its own K and V (the reference) | GPT-2, Llama 1 | 36 MiB | 1.0 / 5.4 / 7.2 |
+| [2 · GQA](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/2_gqa.ipynb) | 12 query heads share 4 K/V heads | Llama 3, Qwen, Mistral | 12 MiB | 1.1 / 10.1 / 19.5 |
+| [3 · MQA](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/3_mqa.ipynb) | all query heads share 1 K/V head | PaLM, Falcon | 3 MiB | 1.1 / 15.3 / 56.0 |
+| [4 · MLA](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/4_mla.ipynb) | K/V rebuilt from a 256-dim cached latent + decoupled RoPE | DeepSeek V2/V3 | 6.75 MiB | 1.6 / 18.1 / 45.3 |
+| [5 · SWA](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/5_swa.ipynb) | each query sees the last 256 tokens | Mistral 7B | 9 MiB (capped) | 1.0 / 10.3 / 22.6 |
+| [6 · SWA + global](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/6_swa_global.ipynb) | 5 sliding-window layers : 1 full | Gemma 3 | 13.5 MiB | 1.0 / 8.8 / 16.2 |
+| [7 · DSA](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/7_dsa.ipynb) | lightning indexer picks the top 256 keys per query | DeepSeek V3.2 | 36.75 MiB (reads 256 keys) | 1.0 / 10.1 / 21.3 |
+| [8 · Gated DeltaNet](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/8_gdn.ipynb) | linear attention: fixed 128×128 state per head, delta rule | Qwen3-Next, Kimi Linear (linear layers) | 2.25 MiB (constant) | 1.0 / 14.3 / 59.5 |
+| [9 · GDN hybrid](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/attention/9_gdn_hybrid.ipynb) | 3 Gated DeltaNet layers : 1 full attention | Qwen3-Next | 10.7 MiB | 1.0 / 9.9 / 20.0 |
+
+All of them pass the same check: decoding token by token with their own cache (K/V, latent, window, top-k selection or
+fixed state) gives exactly the same outputs as running the whole sequence at once.
+
+Speed caveats: sliding window and DSA apply their pattern as a mask on a dense attention kernel, so their training
+tokens/s show no saving (DSA is slower, since it also computes the full attention pattern to train its indexer). The
+cache and intensity columns show what optimized kernels gain. Gated DeltaNet uses the fla-core Triton kernels on GPU
+(installed automatically), checked against a plain PyTorch recurrence before training starts. MLA trains with K/V
+rebuilt explicitly; its intensity numbers assume the absorbed form inference engines use.
 
 `gpt2_arch_lab.py` is the source of all of them (`python build_notebooks.py` regenerates the notebooks), and it also
 runs as a plain script on any cloud GPU machine.

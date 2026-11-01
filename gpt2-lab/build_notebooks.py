@@ -163,6 +163,118 @@ def variant_notebook(i, name, title, body):
             C['data'], C['model'], C['variants'], C['bench'], C['train'], C['run'], C['export'],
             C['compare'], C['reading'], C['generate']]
 
+# ---------------------------------------------------------------- the attention family
+ATTN_COMMON = """All attention notebooks share one base, the llama-style model (RoPE, RMSNorm, SwiGLU MLP, no biases, 124M
+parameters), and change **only the attention mechanism**. Mechanisms that add or remove attention weights get a
+slightly wider or narrower MLP so every model has the same parameter count, so a loss difference is caused by the
+attention, not by size. Numbers below are per sequence at 1,024 tokens of context, 16-bit values."""
+
+ATTN_VARIANTS = [
+ ('mha', 'llama-style', 'Multi-head attention (MHA), the reference',
+  """**How it works:** each of the 12 heads computes its own query, key and value for every token. A query compares
+itself with every earlier key (a dot product), softmax turns the scores into weights, and the output is the weighted
+sum of the values. During generation every head's K and V for every past token is kept: the **KV cache**.
+
+**Costs:** KV cache 36 MiB per sequence (2 × 12 layers × 12 heads × 64 dims × 2 bytes × 1,024 tokens). Decode
+arithmetic intensity levels off near 7 FLOPs per byte however large the batch, because the KV cache grows with it.
+
+**Role here:** the baseline every other attention notebook is compared against. (Same run as the llama-style
+architecture notebook: results are shared.)"""),
+ ('gqa', 'attn-gqa', 'Grouped-query attention (GQA): 12 query heads, 4 K/V heads',
+  """**How it works:** queries keep 12 heads, but keys and values have only 4; each K/V head is shared by a group of
+3 query heads. Each query head still gets its own attention pattern; only what it can look *up* is shared.
+
+**Cause → effect:** a third of the K/V vectors → KV cache 12 MiB instead of 36 → 3× more users per GPU, and decode
+reads fewer bytes per token (intensity at batch 128: 19.5 FLOPs/byte instead of 7.2). Used by Llama 2 70B / Llama 3,
+Qwen, Mistral. Ainslie et al. (2023) found quality close to MHA.
+
+**What to look at:** the val-loss gap to MHA (expected: small) against the 3× cache saving."""),
+ ('mqa', 'attn-mqa', 'Multi-query attention (MQA): 12 query heads, 1 K/V head',
+  """**How it works:** the extreme of GQA: a single key/value head shared by all 12 query heads (Shazeer, 2019).
+
+**Cause → effect:** KV cache 3 MiB (12× smaller than MHA), decode intensity 56 FLOPs/byte at batch 128, but every
+query head has to find its information in the same K/V space, which usually costs quality. That trade-off is why
+most recent models chose GQA over MQA (PaLM and Falcon used MQA).
+
+**What to look at:** the val-loss gap to MHA and to GQA, against the cache saving."""),
+ ('mla', 'attn-mla', 'Multi-head latent attention (MLA), DeepSeek V2/V3',
+  """**How it works:** each token is compressed to one 256-number latent vector; every head's key and value are
+rebuilt from it by learned up-projections. Position (RoPE) can't go through that compression, so 32 extra "decoupled"
+dims carry a small RoPE key shared by all heads. The cache stores only latent + RoPE key: 288 numbers per token per
+layer instead of 1,536.
+
+**Cause → effect:** KV cache 6.75 MiB (5.3× smaller than MHA, smaller than GQA), yet every head still has its own
+keys and values, so quality can match or beat MHA (the DeepSeek-V2 paper reports MLA above MHA). At inference,
+engines absorb the up-projections into the query and output, so attention runs directly on the 288-dim latent: many
+more FLOPs per byte (intensity 45 at batch 128), which moves decode toward compute-bound.
+
+**Note:** training here rebuilds K and V explicitly (simple and exact); the intensity numbers assume the absorbed
+inference form.
+
+**What to look at:** val loss vs MHA and GQA, and cache size vs GQA."""),
+ ('swa', 'attn-swa', 'Sliding-window attention (SWA): every layer sees the last 256 tokens',
+  """**How it works:** each query attends only to the 256 most recent tokens (Mistral 7B, Longformer). Information
+from further back can still arrive indirectly: layer 2 sees layer 1's outputs, which already saw 256 tokens back, so
+12 layers reach about 3,000 tokens in principle.
+
+**Cause → effect:** the KV cache is capped at 256 tokens per layer: 9 MiB at 1K context, and constant beyond it, so
+memory stops growing with context. The cost: no layer can directly look up something 300 tokens ago, which shows in
+tasks that need exact long-range recall.
+
+**Note:** this lab applies the window with a mask on a dense kernel, so training tokens/s won't show the saving;
+FlashAttention's window option or FlexAttention skip the masked blocks for real.
+
+**What to look at:** val loss vs MHA (at 1K context the window covers a quarter of it), cache size."""),
+ ('swa_global', 'attn-swa-global', 'Sliding window + global layers, 5 : 1 (Gemma 3)',
+  """**How it works:** 5 layers out of every 6 use a 256-token sliding window; every 6th layer uses full attention
+over the whole context (layers 6 and 12 here). This is Gemma 3's design (window 1,024 at 128K context).
+
+**Cause → effect:** most layers keep a small, capped cache (13.5 MiB total at 1K context, growing only in the 2 global
+layers), while the global layers keep exact long-range lookup. Usually close to full attention in quality.
+
+**What to look at:** val loss vs MHA and vs pure SWA: how much do two global layers win back?"""),
+ ('dsa', 'attn-dsa', 'DeepSeek Sparse Attention (DSA), DeepSeek V3.2',
+  """**How it works:** a tiny "lightning indexer" (4 heads × 32 dims, run in FP8 in DeepSeek) scores every earlier token
+for each query: I(t,s) = Σ_j w_j · ReLU(q_j · k_s). Each query then does full attention over only its **top 256** keys.
+The indexer learns by imitating the full attention pattern (a KL-divergence loss), after a short dense warm-up (the
+first 5% of training here, as in V3.2).
+
+**Cause → effect:** attention cost per token becomes constant (256 keys) instead of growing with context: O(L·k)
+instead of O(L²). The cache keeps all keys plus the indexer's small keys (36.75 MiB), but a decode step reads only the
+selected 256: intensity 10 at batch 16. The benefit grows with context length; at 1K, 256 keys is a quarter.
+
+**Note:** selection is applied as a mask on a dense kernel here, so training is slower than MHA (it also computes the
+full attention pattern for the indexer's loss); DeepSeek uses sparse FlashMLA kernels.
+
+**What to look at:** val loss vs MHA (does keeping a quarter of the keys cost anything?)."""),
+ ('gdn', 'attn-gdn', 'Gated DeltaNet, linear attention with a fixed-size state',
+  """**How it works:** no softmax and no KV cache. Each of 6 heads keeps a 128 × 128 state matrix S. Per token:
+S ← α·S (forget a little; α comes from the input), S ← S + β·k·(v − Sᵀk)ᵀ (store v under address k, correcting
+whatever S already returned for k: the *delta rule*), output = Sᵀq (look up with the query). Training uses a parallel
+chunked form (the fla-core Triton kernels, checked against the token-by-token recurrence before training starts).
+
+**Cause → effect:** memory is 2.25 MiB per sequence whatever the context length (6 heads × 128² × 12 layers), and each
+new token costs the same however long the text gets: linear time instead of quadratic. The price: a fixed-size state
+can't store everything exactly, so precise recall (copying a name from far back) is weaker than softmax attention.
+
+**What to look at:** val loss vs MHA, and the cache column (constant). This is the layer type of Qwen3-Next and
+Kimi Linear's linear layers."""),
+ ('gdn_hybrid', 'attn-gdn-hybrid', 'Hybrid: 3 Gated DeltaNet layers : 1 full attention (Qwen3-Next)',
+  """**How it works:** layers 4, 8 and 12 use full softmax attention; the other 9 use Gated DeltaNet. This 3:1 ratio is
+Qwen3-Next's design (Kimi Linear uses a similar mix).
+
+**Cause → effect:** most layers are cheap with constant memory; the few full-attention layers restore exact recall.
+Cache 10.7 MiB at 1K context (growing only in the 3 attention layers). Usually matches full attention in quality.
+
+**What to look at:** val loss vs MHA and vs pure GDN: how much do three attention layers win back?"""),
+]
+
+def attention_notebook(i, short, name, title, body):
+    intro = md(f"# Attention {i} · {title}\n\n{body.strip()}\n\n{ATTN_COMMON}\n{COMMON_TAIL.format(repo=REPO)}")
+    return [intro, C['setup'], config_with_runs(f"RUNS = ['{name}']            # this notebook's attention mechanism"),
+            C['data'], C['model'], C['variants'], C['bench'], C['train'], C['run'], C['export'],
+            C['compare'], C['reading'], C['generate']]
+
 # ---------------------------------------------------------------- compare notebook
 COMPARE_INTRO = md(f"""# Compare all finished runs
 
@@ -202,6 +314,8 @@ OUT = DATA""")
 OFF_FUNCS = code("""# Load a downloaded model; score any text.
 def load_export(path):
     ck = torch.load(path, map_location='cpu', weights_only=False)
+    if ck['cfg'].get('attn') == 'gdn':
+        load_fla()                                            # GPU: fast Gated DeltaNet kernel (CPU uses the recurrence)
     m = GPT(Cfg(**ck['cfg']))
     missing, unexpected = m.load_state_dict(ck['model'], strict=False)
     assert not unexpected and set(missing) <= {'head.weight'}, (missing, unexpected)   # head is tied to wte
@@ -290,7 +404,9 @@ if __name__ == '__main__':
     write_notebook(os.path.join(HERE, 'gpt2_arch_lab.ipynb'), CELLS)
     for i, (name, title, body) in enumerate(VARIANTS, 1):
         write_notebook(os.path.join(HERE, 'variants', nb_name(i, name)), variant_notebook(i, name, title, body))
+    for i, (short, name, title, body) in enumerate(ATTN_VARIANTS, 1):
+        write_notebook(os.path.join(HERE, 'attention', f'{i}_{short}.ipynb'), attention_notebook(i, short, name, title, body))
     write_notebook(os.path.join(HERE, 'compare_results.ipynb'), compare_cells)
     write_notebook(os.path.join(HERE, 'use_offline.ipynb'), offline_cells)
     write_script(os.path.join(HERE, 'use_offline.py'), offline_cells)
-    print(f'built {3 + len(VARIANTS)} notebooks + use_offline.py')
+    print(f'built {3 + len(VARIANTS) + len(ATTN_VARIANTS)} notebooks + use_offline.py')
