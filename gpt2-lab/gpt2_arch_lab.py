@@ -1,15 +1,38 @@
 # %% [markdown]
-# # GPT-2 (124M) architecture lab: train it, then benchmark it
+# # GPT-2 (124M) lab, all in one: every architecture and every attention mechanism
 #
-# Train a 124M-parameter GPT-2 from scratch on FineWeb, then train the same-size model with the
-# modern changes from the LLM Inference Field Guide (RoPE, RMSNorm, SwiGLU, QK-norm, GQA), and compare
-# them on one benchmark. Same data, same token budget, same schedule: only the architecture changes.
+# Train a 124M-parameter GPT-2 from scratch on FineWeb, then same-size models with the changes from the LLM Inference
+# Field Guide, and compare them all on one benchmark. Same data, same token budget, same schedule: only the
+# architecture changes. Two families:
+#
+# **Architectures** (`ARCHITECTURES`): what changed from GPT-2 to modern models, one change at a time.
+# | Run | Change |
+# |---|---|
+# | `gpt2` | the 2019 baseline: LayerNorm, learned positions, GELU MLP, biases, multi-head attention |
+# | `gpt2+rope` · `gpt2+rmsnorm` · `gpt2+swiglu` · `gpt2+relu2` | one change each |
+# | `llama-style` | RoPE + RMSNorm + SwiGLU, no biases |
+# | `qwen3-style` · `qwen3-mqa` | + QK-norm + GQA (4 K/V heads) or MQA (1) |
+#
+# **Attention mechanisms** (`ATTENTIONS`): the llama-style base, only the attention changes.
+# | Run | Mechanism | KV cache @1K ctx |
+# |---|---|---|
+# | `llama-style` | MHA: every head has its own K and V (reference) | 36 MiB |
+# | `attn-gqa` · `attn-mqa` | 12 query heads share 4 / 1 K/V heads | 12 / 3 MiB |
+# | `attn-mla` | K/V rebuilt from a small cached latent (DeepSeek V2/V3) | 6.75 MiB |
+# | `attn-swa` · `attn-swa-global` | 256-token sliding window; 5 window : 1 full layer (Gemma 3) | 9 / 13.5 MiB |
+# | `attn-dsa` | lightning indexer picks the top 256 keys per query (DeepSeek V3.2) | 36.75 MiB, reads 256 keys |
+# | `attn-gdn` · `attn-gdn-hybrid` | Gated DeltaNet linear attention; 3 GDN : 1 full (Qwen3-Next) | 2.25 / 10.7 MiB |
 #
 # **How to use it on Colab**
 # 1. Runtime → Change runtime type → **A100** or **L4** GPU.
-# 2. Edit the **Config** cell: which variants (`RUNS`) and how long (`BUDGET`).
-# 3. Runtime → Run all. Checkpoints and results go to Google Drive, so a disconnected session resumes
-#    where it stopped when you run all again, and runs from different sessions end up in one comparison.
+# 2. Config cell: `RUNS` (default: every architecture and every attention mechanism) and `BUDGET`.
+# 3. Runtime → Run all. Everything is saved to Google Drive, and **finished runs are skipped**: when a session ends,
+#    Run all again and it continues with the next unfinished run (an interrupted run resumes from its checkpoint).
+#    Already-exported models aren't exported again. Runs made in the separate notebooks count too.
+#
+# **Time:** about 1 hour per run on an A100 with `BUDGET = 'standard'` (≈3 h on an L4), so all 16 runs take
+# roughly 20–25 A100 hours over several sessions. `BUDGET = 'smoke'` runs all 16 in about 2.5 hours to check
+# everything first. DSA and the sliding-window runs are slower here (masked dense kernels; see their notebooks).
 #
 # **The benchmark** (computed for every run, and for OpenAI's released GPT-2 124M as a reference)
 # | Metric | What it tells you |
@@ -18,7 +41,9 @@
 # | Val loss vs tokens and vs wall-clock time | Sample efficiency, and whether a change pays for its own cost |
 # | HellaSwag accuracy (10,042 questions, zero-shot) | Common-sense completion. Random = 25%; OpenAI GPT-2 124M ≈ 29.5% |
 # | Training tokens/s, MFU, peak memory | Training cost on your GPU |
-# | KV-cache bytes per token, prefill and decode tokens/s (batch 1 and 16) | Inference cost: where GQA/MQA pay off |
+# | HellaSwag 0 / 1 / 5-shot on the same 2,000 questions | Whether solved examples in the prompt help (in-context learning) |
+# | KV-cache size, prefill and decode tokens/s (batch 1 and 16) | Inference cost: where GQA, MQA, MLA, SWA, DSA and GDN pay off |
+# | Arithmetic intensity (FLOPs per byte) and a roofline chart for your GPU | Memory- vs compute-bound, per mechanism |
 #
 # Time per run is roughly *tokens ÷ throughput*: about 120–170k tokens/s on an A100 and 35–55k on an L4
 # (see the README for a table).
@@ -62,10 +87,10 @@ print(f'{GPU} · {DTYPE} · torch {torch.__version__}' + (f' · {torch.cuda.get_
 
 # %%
 # Config: the only cell you normally edit.
-RUNS = ['gpt2', 'qwen3-style']   # any keys of VARIANTS below. Architecture family: gpt2, gpt2+rope, gpt2+rmsnorm,
-                                 # gpt2+swiglu, gpt2+relu2, llama-style, qwen3-style, qwen3-mqa. Attention family
-                                 # (llama-style base): llama-style (MHA), attn-gqa, attn-mqa, attn-mla, attn-swa,
-                                 # attn-swa-global, attn-dsa, attn-gdn, attn-gdn-hybrid
+ARCHITECTURES = ['gpt2', 'gpt2+rope', 'gpt2+rmsnorm', 'gpt2+swiglu', 'gpt2+relu2', 'llama-style', 'qwen3-style', 'qwen3-mqa']
+ATTENTIONS = ['llama-style', 'attn-gqa', 'attn-mqa', 'attn-mla', 'attn-swa', 'attn-swa-global', 'attn-dsa', 'attn-gdn',
+              'attn-gdn-hybrid']                 # llama-style is the MHA reference (trained once, used by both families)
+RUNS = ARCHITECTURES + ATTENTIONS  # what to train: e.g. ATTENTIONS, or ['gpt2', 'attn-mla']. Finished runs are skipped.
 BUDGET = 'standard'              # 'smoke' | 'quick' | 'standard' | 'long' (see BUDGETS)
 LR = 1e-3                        # peak LR, same for every variant; other values get their own results (LR sweeps)
 WEIGHT_DECAY = 0.1
@@ -620,6 +645,8 @@ def make_cfg(name):
     return c
 
 for name in VARIANTS:
+    if name in ('gpt2', 'attn-gqa'):
+        print('\nArchitecture family' if name == 'gpt2' else '\nAttention family (llama-style is the MHA reference)')
     c = make_cfg(name)
     with torch.device('meta'):
         m = GPT(c)
@@ -895,7 +922,7 @@ def train(name, budget=None):
 
 # %%
 # Train and benchmark every run in RUNS. Re-running skips finished runs and resumes unfinished ones.
-for name in RUNS:
+for name in dict.fromkeys(RUNS):                              # each run once, in order
     train(name)
 
 # %%
@@ -988,6 +1015,10 @@ def to_hf(model):
 def export(name, budget=None):
     tag = run_tag(name, budget)
     out = f'{OUT}/export/{tag}'
+    if os.path.exists(out + '.zip'):
+        print(f'{tag}: already exported ({out}.zip)'); return out + '.zip'
+    if not os.path.exists(f'{OUT}/ckpt/{tag}_final.pt'):
+        print(f'{tag}: not trained yet, nothing to export'); return None
     os.makedirs(out, exist_ok=True)
     model = load_final(tag, 'cpu').float().eval()
     weights = {k: v.half() for k, v in model.state_dict().items() if k != 'head.weight'}   # head is tied to wte
@@ -1001,7 +1032,7 @@ def export(name, budget=None):
     print(f'{tag}: exported to {out} ({"fp16 + HF" if hf is not None else "fp16 only: no matching HF architecture"}) · zip {os.path.getsize(zip_path)/1e6:.0f} MB')
     return zip_path
 
-for name in RUNS:
+for name in dict.fromkeys(RUNS):
     export(name)
 # To download: open Google Drive → MyDrive/gpt2-lab/export/ → right-click the .zip → Download.
 # (Or, for small files, in Colab: from google.colab import files; files.download(path).)
@@ -1030,7 +1061,8 @@ def cfg_model(r):                                             # rebuild the arch
 rows = []
 for r in R:
     f = r['final']; inf = f.get('inference', {})
-    rows.append({'run': r['name'], 'budget': r['budget'], 'LR': r.get('lr'), 'params (M)': round(r['params'] / 1e6, 1),
+    fam = 'reference' if r['budget'] == 'reference' else 'attention' if r['name'].startswith('attn-') else 'architecture'
+    rows.append({'family': fam, 'run': r['name'], 'budget': r['budget'], 'LR': r.get('lr'), 'params (M)': round(r['params'] / 1e6, 1),
                  'val loss': round(f['val_loss'], 4), 'ppl': round(f['perplexity'], 1),
                  'HellaSwag %': round(100 * f['hellaswag_norm'], 1),
                  **{f'HS {k}-shot %': round(100 * v, 1) for k, v in f.get('hellaswag_shots', {}).items()},
@@ -1042,7 +1074,7 @@ for r in R:
                  'decode tok/s b16': round(inf['batch16']['decode_tok_s']) if inf else None,
                  **{f'AI {k}': round(v, 1) for k, v in intensity_table(cfg_model(r)).items()},
                  '% peak BW b16': round(100 * inf['batch16']['bw_util']) if inf and inf['batch16'].get('bw_util') else None})
-table = pd.DataFrame(rows).sort_values('val loss')
+table = pd.DataFrame(rows).sort_values(['family', 'val loss'])   # llama-style (MHA) is listed with the architectures
 display(table) if 'display' in globals() else print(table.to_string(index=False))
 table.to_csv(f'{OUT}/results/summary.csv', index=False)
 
@@ -1118,5 +1150,5 @@ plt.tight_layout(); plt.savefig(f'{OUT}/results/intensity.png', dpi=120); plt.sh
 
 # %%
 # Generate text from any finished run.
-for name in RUNS:
+for name in [n for n in dict.fromkeys(RUNS) if os.path.exists(f'{OUT}/ckpt/{run_tag(n)}_final.pt')]:
     print(f'--- {name}\n' + generate(load_final(run_tag(name)), 'The history of the printing press') + '\n')

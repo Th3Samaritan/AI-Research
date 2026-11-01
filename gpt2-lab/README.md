@@ -25,7 +25,7 @@ notebook, an all-in-one notebook and an offline one. They all share
 | [7 · qwen3-style](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/variants/7_qwen3-style.ipynb) | + QK-norm + GQA (3× smaller KV cache) |
 | [8 · qwen3-mqa](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/variants/8_qwen3-mqa.ipynb) | + a single KV head (12× smaller KV cache) |
 | [compare_results](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/compare_results.ipynb) | table, curves, OpenAI GPT-2 reference row, text from every model |
-| [gpt2_arch_lab](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/gpt2_arch_lab.ipynb) | all-in-one: train any list of variants, compare, export |
+| [gpt2_arch_lab](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/gpt2_arch_lab.ipynb) | all-in-one: every architecture and every attention mechanism (16 runs) by default; finished runs are skipped, so Run all again continues where it stopped |
 | [use_offline](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/use_offline.ipynb) | run a downloaded model on your own machine |
 
 Each variant notebook opens with what its change does, why, and what to look for in the results.
@@ -160,6 +160,15 @@ python use_offline.py gpt2__standard/gpt2__standard_fp16.pt --bench         # sp
 A 124M model runs comfortably on a laptop CPU. It's a base model: it continues text rather than following instructions.
 [use_offline.ipynb](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/use_offline.ipynb)
 shows the same in a notebook, plus the Transformers, vLLM and llama.cpp routes.
+
+## Running everything, across several sessions
+
+The [all-in-one notebook](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/gpt2_arch_lab.ipynb)
+trains `RUNS = ARCHITECTURES + ATTENTIONS` by default: all 16 models, in order. A run with results already on Drive
+is skipped without retraining or re-benchmarking, an interrupted run resumes from its last checkpoint, and an
+exported model isn't exported again. So when Colab disconnects, open the notebook and Run all again; it picks up at the
+next unfinished run. Runs made in the separate notebooks count too (same Drive folder). To train only some, set e.g.
+`RUNS = ATTENTIONS` or `RUNS = ['attn-mla', 'attn-dsa']`.
 
 ## Suggested plan
 
