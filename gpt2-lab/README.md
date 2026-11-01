@@ -47,6 +47,18 @@ the same optimizer and learning-rate schedule. Only the architecture changes.
 | `qwen3-style` | llama-style + QK-norm + GQA (12 query / 4 KV heads), MLP widened to keep ~124M | 124.8M | 12 KiB |
 | `qwen3-mqa` | as above with 1 KV head | 124.8M | 3 KiB |
 
+Arithmetic intensity (FLOPs per byte from GPU memory) of one inference step at 1,024 tokens of context. The A100's ridge
+point is about 150-200 and the L4's about 400: below it a step is memory-bound.
+
+| Variant | decode batch 1 | batch 16 | batch 128 | prefill 1K |
+|---|---|---|---|---|
+| `gpt2` (and the single-change variants, llama-style) | 1.0 | 5.3 | 7.2 | 950 |
+| `qwen3-style` (GQA, 4 KV heads) | 1.1 | 10.2 | 19.8 | 1,048 |
+| `qwen3-mqa` (1 KV head) | 1.1 | 15.3 | 56.3 | 1,088 |
+
+Batching raises intensity because the weights are read once for every sequence in the batch, but the KV cache grows
+with the batch, so multi-head attention levels off near 7. Fewer KV heads lift that ceiling.
+
 Each `gpt2+…` row changes one thing, so a difference in loss is caused by that change.
 
 ## The benchmark
@@ -60,6 +72,7 @@ Each `gpt2+…` row changes one thing, so a difference in loss is caused by that
 | **HellaSwag 0 / 1 / 5-shot** on the same 2,000 questions (`SHOTS`, `FEWSHOT_N`) | Whether solved examples in the prompt help (in-context learning). At 124M expect little or no gain; the GPT-3 paper saw the same for its 125M model |
 | Training **tokens/s**, **MFU**, peak memory | Training cost on your GPU |
 | **KV-cache bytes/token**, prefill and decode tokens/s at batch 1 and 16 | Inference cost, which is where GQA and MQA pay off |
+| **Arithmetic intensity** (FLOPs per byte) of decode at batch 1/16/128 and of prefill, plus achieved GB/s and a roofline chart for your GPU | Whether each step is memory- or compute-bound, and how far GQA/MQA lift the batched-decode ceiling |
 
 OpenAI's released GPT-2 124M is scored on the same benchmark as a reference row (in the compare notebook).
 

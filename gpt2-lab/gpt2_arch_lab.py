@@ -47,6 +47,11 @@ DTYPE = torch.bfloat16 if NATIVE_BF16 else torch.float16 if dev == 'cuda' else t
 # Dense 16-bit tensor-core peak, for MFU (model FLOPs utilization).
 PEAKS = {'A100': 312e12, 'H100': 989e12, 'L4': 121e12, 'A10': 125e12, 'T4': 65e12, 'V100': 125e12}
 PEAK = next((v for k, v in PEAKS.items() if k in GPU), None)
+# Memory bandwidth, for arithmetic intensity and the roofline (A100: 40 GB card 1.56 TB/s, 80 GB card 2.04 TB/s).
+BWS = {'A100': 2039e9 if dev == 'cuda' and torch.cuda.get_device_properties(0).total_memory > 60e9 else 1555e9,
+       'H100': 3350e9, 'L4': 300e9, 'A10': 600e9, 'T4': 320e9, 'V100': 900e9}
+BW = next((v for k, v in BWS.items() if k in GPU), None)
+RIDGE = PEAK / BW if PEAK and BW else None   # FLOPs per byte where a kernel stops being memory-bound
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 def autocast():                                   # mixed precision on GPU; plain fp32 on CPU (bf16 is emulated there)
@@ -277,6 +282,25 @@ class GPT(nn.Module):
     def flops_per_token(self):                                # forward + backward, PaLM appendix B
         c = self.c
         return 6 * self.n_params() + 12 * c.n_layer * c.n_embd * c.block_size
+    def step_cost(self, B, S, T=1, bytes_per_value=2):
+        """FLOPs and HBM bytes of one forward step: B sequences each add T new tokens after S cached ones.
+        FLOPs: 2 per weight per token (all matmuls, incl. the tied lm_head) + QKᵀ and AV over every key, for every
+        query head. Bytes: every weight read once + the KV cache read + the new K/V written (16-bit values)."""
+        c = self.c
+        mm = sum(m.weight.numel() for m in self.modules() if isinstance(m, nn.Linear))
+        keys = S + (T + 1) / 2                                # average keys each query attends to (causal)
+        flops = 2 * mm * B * T + 4 * c.n_layer * c.n_embd * B * T * keys
+        bytes_ = self.n_params() * bytes_per_value + self.kv_bytes_per_token(bytes_per_value) * B * (S + T)
+        return flops, bytes_
+    def intensity(self, B, S, T=1):
+        """Arithmetic intensity, FLOPs per byte moved. Below the GPU's ridge point the step is memory-bound."""
+        f, b = self.step_cost(B, S, T)
+        return f / b
+
+# Inference scenarios for arithmetic intensity: (batch, cached tokens, new tokens per sequence)
+AI_POINTS = {'decode b1': (1, 1024, 1), 'decode b16': (16, 1024, 1), 'decode b128': (128, 1024, 1), 'prefill 1K': (1, 0, 1024)}
+def intensity_table(model):
+    return {k: model.intensity(*v) for k, v in AI_POINTS.items()}
 
 # %%
 # The variants. Each ablation changes one thing from GPT-2, so you can see cause → effect.
@@ -310,7 +334,12 @@ for name in VARIANTS:
     c = make_cfg(name)
     with torch.device('meta'):
         m = GPT(c)
-    print(f'{name:14s} {m.n_params()/1e6:6.1f}M params · KV cache {m.kv_bytes_per_token()/1024:5.1f} KiB/token · mlp_hidden {c.mlp_hidden or "auto"}')
+    ai = intensity_table(m)
+    print(f'{name:14s} {m.n_params()/1e6:6.1f}M params · KV cache {m.kv_bytes_per_token()/1024:5.1f} KiB/token · '
+          f'intensity (FLOP/byte) decode b1/b16/b128 @1K ctx {ai["decode b1"]:4.1f} / {ai["decode b16"]:4.1f} / {ai["decode b128"]:5.1f}'
+          f' · prefill {ai["prefill 1K"]:5.0f} · mlp_hidden {c.mlp_hidden or "auto"}')
+if RIDGE:
+    print(f'\n{GPU} ridge point: {RIDGE:.0f} FLOP/byte. Steps below it are memory-bound (decode), above it compute-bound (prefill).')
 
 # %%
 # The benchmark: validation loss, HellaSwag, training speed, inference speed.
@@ -402,7 +431,11 @@ def bench_inference(model, batch_sizes=(1, 16), prompt=128, new=128):
                     logits, _ = model(nxt, caches=caches, pos=prompt + i, last_only=True)
                 nxt = logits.argmax(-1)
             sync(); t_dec = time.perf_counter() - t0
-        out[f'batch{B}'] = dict(prefill_tok_s=B * prompt / t_pre, decode_tok_s=B * new / t_dec, ms_per_step=t_dec / new * 1e3)
+        f, b = model.step_cost(B, prompt + new / 2)          # an average decode step (context grows prompt → prompt+new)
+        steps = new / t_dec
+        out[f'batch{B}'] = dict(prefill_tok_s=B * prompt / t_pre, decode_tok_s=B * new / t_dec, ms_per_step=t_dec / new * 1e3,
+                                intensity=f / b, achieved_GBps=b * steps / 1e9, achieved_TFLOPs=f * steps / 1e12,
+                                bw_util=b * steps / BW if BW else None)
     model.train()
     return out
 
@@ -694,6 +727,9 @@ print(json.load(open(ref_path))['final'])
 import pandas as pd
 import matplotlib.pyplot as plt
 R = [json.load(open(p)) for p in sorted(glob.glob(f'{OUT}/results/*.json'))]
+def cfg_model(r):                                             # rebuild the architecture (no weights) from a result
+    with torch.device('meta'):
+        return GPT(Cfg(**r['cfg']) if 'cfg' in r else Cfg())   # the OpenAI reference is plain GPT-2
 rows = []
 for r in R:
     f = r['final']; inf = f.get('inference', {})
@@ -706,7 +742,9 @@ for r in R:
                  'train min': round(r['train_time_s'] / 60, 1) if r.get('train_time_s') else None,
                  'KV KiB/token': round(r['kv_bytes_per_token'] / 1024, 1) if r.get('kv_bytes_per_token') else None,
                  'decode tok/s b1': round(inf['batch1']['decode_tok_s']) if inf else None,
-                 'decode tok/s b16': round(inf['batch16']['decode_tok_s']) if inf else None})
+                 'decode tok/s b16': round(inf['batch16']['decode_tok_s']) if inf else None,
+                 **{f'AI {k}': round(v, 1) for k, v in intensity_table(cfg_model(r)).items()},
+                 '% peak BW b16': round(100 * inf['batch16']['bw_util']) if inf and inf['batch16'].get('bw_util') else None})
 table = pd.DataFrame(rows).sort_values('val loss')
 display(table) if 'display' in globals() else print(table.to_string(index=False))
 table.to_csv(f'{OUT}/results/summary.csv', index=False)
@@ -729,6 +767,36 @@ for a in ax[:2]:
     a.set_ylim(min(ys) - 0.05, max(ys) + 0.1); a.legend(); a.grid(alpha=.3)
 ax[2].legend(); plt.tight_layout(); plt.savefig(f'{OUT}/results/comparison.png', dpi=120); plt.show()
 
+# Arithmetic intensity: each architecture's decode steps on this GPU's roofline (part 5 of the guide).
+fig, ax = plt.subplots(1, 2, figsize=(15, 5))
+batches = [1, 2, 4, 8, 16, 32, 64, 128, 256]
+seen = set()
+for r in R:
+    key = json.dumps(r.get('cfg', {}), sort_keys=True)
+    if key in seen:
+        continue
+    seen.add(key); m = cfg_model(r)
+    xs = [m.intensity(b, 1024) for b in batches]
+    line, = ax[0].plot(batches, xs, marker='o', ms=3, label=r['name'])
+    if PEAK and BW:
+        ax[1].loglog(xs, [min(PEAK, BW * x) / 1e12 for x in xs], marker='o', ms=3, c=line.get_color(), label=r['name'])
+        for b in (1, 16):                                       # measured decode points (eager PyTorch), hollow markers
+            inf = r['final'].get('inference', {}).get(f'batch{b}')
+            if inf and inf.get('achieved_TFLOPs'):
+                ax[1].scatter(inf['intensity'], inf['achieved_TFLOPs'], facecolors='none', edgecolors=line.get_color(), s=60)
+ax[0].set(xscale='log', yscale='log', xlabel='decode batch size (1,024 tokens of context each)', ylabel='FLOPs per byte',
+          title='Arithmetic intensity of a decode step')
+if RIDGE:
+    ax[0].axhline(RIDGE, c='gray', ls='--', label=f'{GPU} ridge point ({RIDGE:.0f})')
+    x = np.logspace(-0.5, 3.5, 100)
+    ax[1].loglog(x, np.minimum(PEAK, BW * x) / 1e12, c='gray', lw=2, label=f'{GPU} roofline')
+    ax[1].set(xlabel='FLOPs per byte', ylabel='TFLOP/s (attainable; hollow = measured)', title=f'Roofline on {GPU}')
+    ax[1].legend(fontsize=8); ax[1].grid(alpha=.3, which='both')
+else:
+    ax[1].set_axis_off()
+ax[0].legend(fontsize=8); ax[0].grid(alpha=.3, which='both')
+plt.tight_layout(); plt.savefig(f'{OUT}/results/intensity.png', dpi=120); plt.show()
+
 # %% [markdown]
 # ## Reading the results
 # - **Compare at equal tokens first** (left plot). Then check **equal time** (middle): a change that lowers loss per
@@ -741,6 +809,12 @@ ax[2].legend(); plt.tight_layout(); plt.savefig(f'{OUT}/results/comparison.png',
 # - **Zero / one / few-shot:** the `HS k-shot` columns show HellaSwag with k solved examples placed before each question
 #   (same questions in every column). In the GPT-3 paper the 125M model barely improved with examples; using examples
 #   in the prompt ("in-context learning") emerges with scale. A flat row is a real finding, not a bug.
+# - **Arithmetic intensity** = FLOPs done per byte read from GPU memory. A batch-1 decode step does about 1 FLOP per
+#   byte; the A100's ridge point is ~150-200 and the L4's ~400, so decode is memory-bound and its speed is set by bytes
+#   (weights + KV cache). Batching raises intensity because the weights are read once for all sequences, until the KV
+#   cache (which grows with batch) dominates the bytes. That ceiling is where GQA (3× fewer KV bytes) and MQA (12×) lift
+#   intensity: compare the `AI decode b128` column and the curves in the intensity chart. Prefill is in the hundreds,
+#   which is why it runs near peak FLOPs.
 # - **GQA/MQA** are about inference: look at *KV KiB/token* (3× and 12× smaller) and batch-16 decode, then check how much
 #   val loss they cost.
 # - **OpenAI GPT-2** saw far more tokens (WebText, not FineWeb), so it's a reference point, not a same-budget competitor.

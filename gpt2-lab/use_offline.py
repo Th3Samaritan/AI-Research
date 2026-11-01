@@ -41,6 +41,11 @@ DTYPE = torch.bfloat16 if NATIVE_BF16 else torch.float16 if dev == 'cuda' else t
 # Dense 16-bit tensor-core peak, for MFU (model FLOPs utilization).
 PEAKS = {'A100': 312e12, 'H100': 989e12, 'L4': 121e12, 'A10': 125e12, 'T4': 65e12, 'V100': 125e12}
 PEAK = next((v for k, v in PEAKS.items() if k in GPU), None)
+# Memory bandwidth, for arithmetic intensity and the roofline (A100: 40 GB card 1.56 TB/s, 80 GB card 2.04 TB/s).
+BWS = {'A100': 2039e9 if dev == 'cuda' and torch.cuda.get_device_properties(0).total_memory > 60e9 else 1555e9,
+       'H100': 3350e9, 'L4': 300e9, 'A10': 600e9, 'T4': 320e9, 'V100': 900e9}
+BW = next((v for k, v in BWS.items() if k in GPU), None)
+RIDGE = PEAK / BW if PEAK and BW else None   # FLOPs per byte where a kernel stops being memory-bound
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 def autocast():                                   # mixed precision on GPU; plain fp32 on CPU (bf16 is emulated there)
@@ -202,6 +207,25 @@ class GPT(nn.Module):
     def flops_per_token(self):                                # forward + backward, PaLM appendix B
         c = self.c
         return 6 * self.n_params() + 12 * c.n_layer * c.n_embd * c.block_size
+    def step_cost(self, B, S, T=1, bytes_per_value=2):
+        """FLOPs and HBM bytes of one forward step: B sequences each add T new tokens after S cached ones.
+        FLOPs: 2 per weight per token (all matmuls, incl. the tied lm_head) + QKᵀ and AV over every key, for every
+        query head. Bytes: every weight read once + the KV cache read + the new K/V written (16-bit values)."""
+        c = self.c
+        mm = sum(m.weight.numel() for m in self.modules() if isinstance(m, nn.Linear))
+        keys = S + (T + 1) / 2                                # average keys each query attends to (causal)
+        flops = 2 * mm * B * T + 4 * c.n_layer * c.n_embd * B * T * keys
+        bytes_ = self.n_params() * bytes_per_value + self.kv_bytes_per_token(bytes_per_value) * B * (S + T)
+        return flops, bytes_
+    def intensity(self, B, S, T=1):
+        """Arithmetic intensity, FLOPs per byte moved. Below the GPU's ridge point the step is memory-bound."""
+        f, b = self.step_cost(B, S, T)
+        return f / b
+
+# Inference scenarios for arithmetic intensity: (batch, cached tokens, new tokens per sequence)
+AI_POINTS = {'decode b1': (1, 1024, 1), 'decode b16': (16, 1024, 1), 'decode b128': (128, 1024, 1), 'prefill 1K': (1, 0, 1024)}
+def intensity_table(model):
+    return {k: model.intensity(*v) for k, v in AI_POINTS.items()}
 
 # %%
 # The benchmark: validation loss, HellaSwag, training speed, inference speed.
@@ -293,7 +317,11 @@ def bench_inference(model, batch_sizes=(1, 16), prompt=128, new=128):
                     logits, _ = model(nxt, caches=caches, pos=prompt + i, last_only=True)
                 nxt = logits.argmax(-1)
             sync(); t_dec = time.perf_counter() - t0
-        out[f'batch{B}'] = dict(prefill_tok_s=B * prompt / t_pre, decode_tok_s=B * new / t_dec, ms_per_step=t_dec / new * 1e3)
+        f, b = model.step_cost(B, prompt + new / 2)          # an average decode step (context grows prompt → prompt+new)
+        steps = new / t_dec
+        out[f'batch{B}'] = dict(prefill_tok_s=B * prompt / t_pre, decode_tok_s=B * new / t_dec, ms_per_step=t_dec / new * 1e3,
+                                intensity=f / b, achieved_GBps=b * steps / 1e9, achieved_TFLOPs=f * steps / 1e12,
+                                bw_util=b * steps / BW if BW else None)
     model.train()
     return out
 

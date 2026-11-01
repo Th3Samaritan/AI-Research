@@ -77,7 +77,8 @@ VARIANTS = [
 **Why it matters:** every other notebook changes something relative to this one, so run it first (or alongside).
 
 **What to look at:** its val loss is the zero line for every comparison; its KV cache is 36 KiB per token
-(2 × 12 layers × 12 heads × 64 dims × 2 bytes)."""),
+(2 × 12 layers × 12 heads × 64 dims × 2 bytes), and its decode arithmetic intensity levels off near 7 FLOPs per byte
+however large the batch, because the KV cache grows with it."""),
  ('gpt2+rope', 'GPT-2 + RoPE (rotary positions)',
   """**One change:** the learned position table is removed. Instead, each query and key vector is *rotated* by an angle
 that grows with its position, so the attention score between two tokens depends on how far apart they are.
@@ -130,7 +131,8 @@ rates. GQA stores 3× fewer K/V vectors → a 3× smaller KV cache (12 KiB/token
 fit more users and decode faster (parts 2 and 5 of the guide).
 
 **What to look at:** val loss vs `llama-style` (does GQA cost quality, does QK-norm win it back?), then KV KiB/token and
-batch-16 decode speed."""),
+batch-16 decode speed, and the arithmetic-intensity columns: batched decode reaches about 20 FLOPs per byte instead
+of GPT-2's 7, so the same GPU memory bandwidth produces more tokens."""),
  ('qwen3-mqa', 'Qwen3-style with multi-query attention (1 KV head)',
   """**One change from qwen3-style:** all 12 query heads share a single key/value head (MQA). The MLP is widened to 2,560
 to keep 124M parameters.
@@ -139,7 +141,8 @@ to keep 124M parameters.
 but one K/V head has to serve every query head, which usually costs some quality. That trade-off is why most recent
 models settled on GQA instead.
 
-**What to look at:** the val-loss gap to `qwen3-style` against the KV-cache saving."""),
+**What to look at:** the val-loss gap to `qwen3-style` against the KV-cache saving, and the arithmetic intensity:
+about 56 FLOPs per byte at batch 128, eight times GPT-2's."""),
 ]
 
 COMMON_TAIL = """
