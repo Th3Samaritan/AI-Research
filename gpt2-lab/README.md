@@ -26,6 +26,7 @@ notebook, an all-in-one notebook and an offline one. They all share
 | [8 · qwen3-mqa](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/variants/8_qwen3-mqa.ipynb) | + a single KV head (12× smaller KV cache) |
 | [compare_results](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/compare_results.ipynb) | table, curves, OpenAI GPT-2 reference row, text from every model |
 | [gpt2_arch_lab](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/gpt2_arch_lab.ipynb) | all-in-one: every architecture and every attention mechanism (16 runs) by default; finished runs are skipped, so Run all again continues where it stopped |
+| [recall_test](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/recall_test.ipynb) | long-range memory test on every trained model: no retraining, 1-2 minutes per model on an A100 |
 | [use_offline](https://colab.research.google.com/github/Th3Samaritan/AI-Research/blob/master/gpt2-lab/use_offline.ipynb) | run a downloaded model on your own machine |
 
 Each variant notebook opens with what its change does, why, and what to look for in the results.
@@ -108,6 +109,13 @@ How to read the numbers:
 - Two seeds of the same model differ by about 0.01–0.02 in val loss at this scale, so smaller gaps are ties.
 - HellaSwag's standard error is about ±0.45 points, so gaps under ~1.5 points don't mean much.
 - Short runs score 25–28% on HellaSwag for every variant. Val loss separates them much earlier.
+
+## The recall test
+
+Validation loss barely measures long-range memory, so `recall_test.ipynb` tests it directly on the saved models:
+**copying** a random 32-token sequence across gaps of up to 896 tokens (with a control that swaps the first copy), and
+**key lookup**, finding one of 1 to 16 facts after up to 768 tokens of filler (8 choices, chance 12.5%, with a no-fact
+control). All models get identical test cases. Results go to `MyDrive/gpt2-lab/recall/`.
 
 ## Budgets and time
 

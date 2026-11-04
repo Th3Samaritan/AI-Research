@@ -5,6 +5,7 @@
 writes  gpt2_arch_lab.ipynb          all-in-one: train any set of variants, compare, export
         variants/<n>_<variant>.ipynb one notebook per architecture
         compare_results.ipynb        reads every finished run: table, curves, reference GPT-2, samples
+        recall_test.ipynb            long-range recall test on every trained model
         use_offline.py / .ipynb      use a downloaded model on your own machine
 """
 import json, os, re
@@ -399,6 +400,33 @@ if 'ipykernel' in sys.modules and os.path.exists(HF_DIR):
     print(tok.decode(out[0]))""")
 offline_cells = [OFF_INTRO, C['setup'], OFF_PATHS, C['model'], C['bench'], OFF_FUNCS, OFF_CLI, OFF_NB, OFF_HF_MD, OFF_HF]
 
+# ---------------------------------------------------------------- recall test
+RECALL_INTRO = md(f"""# Recall test: can each model find something it read earlier?
+
+Validation loss barely tests long-range memory, because most next-token prediction only needs recent text. This notebook
+tests it directly, on the models you already trained. Nothing is retrained: it loads every finished model from
+`MyDrive/gpt2-lab/ckpt/`, plus OpenAI's GPT-2 for reference.
+
+**Test 1, copying.** A random 32-token sequence appears, then filler text, then the same sequence again. How much of the
+second copy can the model predict from the first, as the gap grows from 0 to 896 tokens? The control column swaps the first
+copy for a different sequence, so any score there is guessing.
+
+**Test 2, key lookup.** Facts such as "The code for Maria is 482." are followed by filler, then "The code for Maria is". The
+model must rank the right number above 7 others, which include the other numbers in that prompt, so it has to use the
+name. Chance is 12.5%. Going from 1 to 16 facts adds memory load. The "no fact" column removes the fact and must stay at chance.
+
+**What to look for.** Sliding-window models should drop once the first copy leaves the 256-token window (some information
+can still pass through the layers). Gated DeltaNet has no cache to look back in, so it may fade with distance or with more
+facts. Full-attention layers should hold up, which is why hybrids include them.
+
+**How to run:** Runtime → Change runtime type → A100 or L4 → Run all. Keep `BUDGET` the same as your training runs. About
+1-2 minutes per model on an A100. Results go to `MyDrive/gpt2-lab/recall/`, and finished models are skipped on a re-run.
+
+These are small base models, so the absolute scores may be low. The useful result is how they compare and where they
+drop. Lookup scores carry about ±3 points of noise.""")
+recall_cells = [RECALL_INTRO, C['setup'], config_with_runs("RUNS = []                        # nothing is trained here"),
+                C['data'], C['model'], C['bench'], C['export']] + parse(open(os.path.join(HERE, 'recall_cells.py'), encoding='utf-8').read())
+
 # ---------------------------------------------------------------- write everything
 if __name__ == '__main__':
     write_notebook(os.path.join(HERE, 'gpt2_arch_lab.ipynb'), CELLS)
@@ -408,5 +436,6 @@ if __name__ == '__main__':
         write_notebook(os.path.join(HERE, 'attention', f'{i}_{short}.ipynb'), attention_notebook(i, short, name, title, body))
     write_notebook(os.path.join(HERE, 'compare_results.ipynb'), compare_cells)
     write_notebook(os.path.join(HERE, 'use_offline.ipynb'), offline_cells)
+    write_notebook(os.path.join(HERE, 'recall_test.ipynb'), recall_cells)
     write_script(os.path.join(HERE, 'use_offline.py'), offline_cells)
-    print(f'built {3 + len(VARIANTS) + len(ATTN_VARIANTS)} notebooks + use_offline.py')
+    print(f'built {4 + len(VARIANTS) + len(ATTN_VARIANTS)} notebooks + use_offline.py')
