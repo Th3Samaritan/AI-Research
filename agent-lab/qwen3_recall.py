@@ -161,8 +161,12 @@ def score(model, cases):
         r[key] = right / len(items)
     return r
 
+import logging
+logging.getLogger('bitsandbytes').setLevel(logging.ERROR)   # its cast warning fires on every matmul and floods the output
+
 def load(precision):
-    kw = dict(dtype=torch.bfloat16, device_map=dev if dev == 'cuda' else None)
+    # 8-bit matmuls run in fp16, so load 8-bit in fp16: no bf16 -> fp16 cast on every layer
+    kw = dict(dtype=torch.float16 if precision == '8bit' else torch.bfloat16, device_map=dev if dev == 'cuda' else None)
     if precision != 'bf16':
         from transformers import BitsAndBytesConfig
         kw['quantization_config'] = (BitsAndBytesConfig(load_in_8bit=True) if precision == '8bit' else
