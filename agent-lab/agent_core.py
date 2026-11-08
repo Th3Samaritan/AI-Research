@@ -156,6 +156,9 @@ SYSTEM = ('You are a research assistant for a lab that trains small language mod
 REPEAT = ('Error: you already made this exact call and it failed. Repeating it will fail again: try a different '
           'file, folder or column. The table you need may be in another folder.')
 
+FINAL = ('You have no tool calls left. Answer the question now from the tool results above, in one or two sentences, '
+         'without calling a tool.')
+
 def run_agent(task, generate, max_steps=8, verbose=True):
     messages = [dict(role='system', content=SYSTEM), dict(role='user', content=task)]
     n_calls = bad_calls = 0
@@ -166,7 +169,8 @@ def run_agent(task, generate, max_steps=8, verbose=True):
         if verbose:
             print(f'\n── step {step} · context {ctx:,} tokens ──\n{reply.strip()}')
         if not calls:                                         # no tool requested: this is the final answer
-            return dict(answer=reply.strip(), steps=step, calls=n_calls, bad_calls=bad_calls, context=ctx, messages=messages)
+            return dict(answer=reply.strip(), steps=step, calls=n_calls, bad_calls=bad_calls, context=ctx,
+                        messages=messages, forced=False)
         messages.append(assistant_turn(reply, calls))
         for c in calls:
             key = json.dumps([c['name'], c['arguments']], sort_keys=True, default=str)
@@ -183,4 +187,12 @@ def run_agent(task, generate, max_steps=8, verbose=True):
             if verbose:
                 print(f'  → {c["name"]}({json.dumps(c["arguments"])}) returned {len(result):,} characters')
             messages.append(dict(role='tool', name=c['name'], content=result))
-    return dict(answer=None, steps=max_steps, calls=n_calls, bad_calls=bad_calls, context=ctx, messages=messages)
+    # Out of steps. v4 lost six answers here with every number it needed already in its context. One more reply, with
+    # tool calls refused, turns the work into an answer instead of nothing.
+    messages.append(dict(role='user', content=FINAL))
+    reply, ctx = generate(messages)
+    answer = re.sub(r'<tool_call>.*', '', reply, flags=re.S).strip() or None
+    if verbose:
+        print(f'\n── out of steps: final answer · context {ctx:,} tokens ──\n{reply.strip()}')
+    return dict(answer=answer, steps=max_steps + 1, calls=n_calls, bad_calls=bad_calls, context=ctx,
+                messages=messages, forced=True)

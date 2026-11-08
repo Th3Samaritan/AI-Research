@@ -26,8 +26,8 @@ MODEL = os.environ.get('MODEL', 'Qwen/Qwen3-1.7B')
 LAB = os.environ.get('AGENT_ROOT', '/content/drive/MyDrive/gpt2-lab' if IN_COLAB else '.')   # the only folder tools can see
 OUT = os.environ.get('AGENT_OUT', '/content/drive/MyDrive/agent-lab' if IN_COLAB else 'out')
 USE_ADAPTER = False      # True: load the LoRA adapter trained by agent_finetune
-ADAPTER_VERSION = 'v4'   # which run's adapter: 'v4' loads OUT/finetune_v4/adapter, 'v1' OUT/finetune/adapter
-MAX_STEPS = 8            # model replies before the loop gives up: an agent that never stops is the classic failure
+ADAPTER_VERSION = 'v5'   # which run's adapter: 'v5' loads OUT/finetune_v5/adapter, 'v1' OUT/finetune/adapter
+MAX_STEPS = 8            # model replies before the loop stops and asks for an answer: an agent that never stops is the classic failure
 MAX_NEW_TOKENS = 768     # per model reply
 THINKING = False         # Qwen3 can reason in a <think> block before replying: better plans, many more tokens
 

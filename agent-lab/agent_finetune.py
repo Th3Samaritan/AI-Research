@@ -54,8 +54,23 @@
 # - **More real questions.** The original 12 stay as they are (`real`), and 28 new ones (`real_new`) make one question
 #   worth about 2.5 points instead of 8.
 #
-# **On Colab:** Runtime → Change runtime type → **L4** → Run all, about 75 minutes in total. A T4 also works, in fp16,
-# more slowly. Results go to `MyDrive/agent-lab/finetune_v4/`; finished steps are skipped when you run it again.
+# **Version 5.** v4 scored 11/12 on the original real questions and 23/28 on the new ones (the untuned model with the
+# same tools: 6/12 and 10/28), and found the right table for all 40. Every "training results" question that opened
+# `recall/` first came back to `results/`. Two failures were left:
+# - **Out of steps.** Six of the seven misses had made only useful calls and ran out of replies before answering: a
+#   comparison that starts in the wrong folder needs 7, and the eval allowed 6. v5 allows 8, as `mini_agent` does, and
+#   when they run out, `run_agent` asks once more for an answer with tool calls refused. That is a harness fix and it
+#   helps the base model too.
+# - **The wrong fix for a wrong column.** For recall questions it guessed columns like `attn` for `4 facts @32`. The
+#   error listed the real columns, but twice it went to `results/` instead, applying v4's lesson where it did not fit.
+#   25% of v5 traces now try a wrong column in the right table first (context only), and the trained step takes the
+#   right column from the error's list. The model has to read that list to tell a wrong column from a wrong table.
+# - **Two-part questions.** 15% of training questions ask for a highest or lowest value and a comparison at once, and
+#   `real_two` adds 8 such questions about the real files. v3 answered only the second half of the demo question.
+# The `real`, `real_new` and synthetic eval questions are the same as v4's.
+#
+# **On Colab:** Runtime → Change runtime type → **L4** → Run all, about 85 minutes in total. A T4 also works, in fp16,
+# more slowly. Results go to `MyDrive/agent-lab/finetune_v5/`; finished steps are skipped when you run it again.
 
 # %%
 # Config.
@@ -65,13 +80,13 @@ MODEL = os.environ.get('MODEL', 'Qwen/Qwen3-1.7B')
 LAB = os.environ.get('AGENT_ROOT', '/content/drive/MyDrive/gpt2-lab' if IN_COLAB else '.')     # real files, for the final eval
 OUT = os.environ.get('AGENT_OUT', '/content/drive/MyDrive/agent-lab' if IN_COLAB else 'out')
 WORK = '/content/synth' if IN_COLAB else os.path.abspath('synth')                            # synthetic labs, rebuilt each run
-VERSION = 'v4'           # results go to OUT/finetune_<VERSION>
+VERSION = 'v5'           # results go to OUT/finetune_<VERSION>
 N_TRAIN = 400            # training tasks; each gives one example per model turn (about 3.5)
 N_EVAL = 20              # held-out synthetic tasks; the real-file tasks come on top
 LORA_R, LORA_ALPHA = 16, 32
 LR, EPOCHS, ACCUM = 2e-4, 1, 16  # ACCUM examples per optimizer step
 MAX_LEN = 3072           # longer examples are skipped
-MAX_STEPS = 6            # agent replies allowed per eval task
+MAX_STEPS = 8            # agent replies allowed per eval task, as in mini_agent (v1-v4: 6), then one forced answer
 MAX_NEW_TOKENS = 384     # per reply in the eval: a right answer is one or two sentences
 SEED = 2026
 
@@ -241,6 +256,16 @@ def tool_call(name, train=True, **args):
 
 HIGH, LOW = ['highest', 'largest', 'maximum'], ['lowest', 'smallest', 'minimum']
 
+def wrong_column(trng, table, col, run=None):
+    """A column name a model might guess instead of the real one: a fragment ('acc' for 'acc @1K %'), the name without
+    its unit, underscores for spaces, or the run name in the column slot. v4 guessed 'attn' and 'fact' for
+    '4 facts @32'. None if every guess happens to be a real column."""
+    header = set(table['rows'][0])
+    words = col.split()
+    guesses = {words[0], ' '.join(words[:-1]), col.replace(' ', '_'), col.lower().replace(' %', ''), run}
+    guesses = sorted(g for g in guesses if g and g.strip() and g not in header)
+    return trng.choice(guesses) if guesses else None
+
 def make_task(rng, table, kinds, vary=True, others=()):
     """One question about `table`, with gold strings and the ideal trace. Returns None if the table can't support it.
     vary=False keeps the v1/v2 wording (used for the real-file tasks, so they stay the same questions across versions).
@@ -287,6 +312,24 @@ def make_task(rng, table, kinds, vary=True, others=()):
         gold = [a[col], b[col]]
         answer = f'{a["run"]} has a {col} of {a[col]} and {b["run"]} has {b[col]}, so {hi["run"]} is higher by {diff} ({path}).'
         calls = [('get_value', dict(path=path, run=a['run'], column=col)), ('get_value', dict(path=path, run=b['run'], column=col))]
+    elif kind == 'two':   # two questions at once (from v5): v3 answered only the second half of the demo question
+        col2 = rng.choice(cols)
+        have2 = [r for r in rows if r[col2]]
+        word = rng.choice(['highest', 'lowest'])
+        ranked = sorted(have, key=lambda r: num(r[col]), reverse=word == 'highest')
+        a, b = rng.sample(have2, 2)
+        if num(ranked[0][col]) == num(ranked[1][col]) or num(a[col2]) == num(b[col2]):
+            return None
+        best, said = ranked[0], srng.choice(HIGH if word == 'highest' else LOW)
+        hi = a if num(a[col2]) > num(b[col2]) else b
+        diff = fmt(abs(num(a[col2]) - num(b[col2])), decimals(table, col2))
+        q = rng.choice([f'In {where}, which run has the {said} {col}, and how does {a["run"]} compare with {b["run"]} on {col2}?',
+                        f'Which run has the {said} {col} in {where}, and is {a["run"]} or {b["run"]} higher on {col2}?'])
+        gold = [best['run'], best[col], a[col2], b[col2]]
+        answer = (f'{best["run"]} has the {said} {col}: {best[col]}. On {col2}, {a["run"]} has {a[col2]} and {b["run"]} '
+                  f'has {b[col2]}, so {hi["run"]} is higher by {diff} ({path}).')
+        calls = [('sort_table', dict(path=path, column=col, descending=word == 'highest')),
+                 ('get_value', dict(path=path, run=a['run'], column=col2)), ('get_value', dict(path=path, run=b['run'], column=col2))]
     else:   # 'missing': the run is not in the table; get_value says so and lists the runs, and the answer passes that on
         fake = next(n for n in run_names(rng, 40) if n not in {r['run'] for r in rows})
         q = f"What is {fake}'s {col} in {where}?"
@@ -312,8 +355,16 @@ def make_task(rng, table, kinds, vary=True, others=()):
             trace += [tool_call('list_files', train=False, folder=o['folder']),
                       tool_call(name, train=False, **dict(args, path=f"{o['folder']}/{o['file']}"))]
         trace.append(tool_call('list_files', folder=table['folder']))
-        if table.get('decoys') and trng.random() < 0.3:   # opens a run log first: context only, never a target
+        fits = len(trace) + len(calls) + 2 <= MAX_STEPS    # every trace must fit the eval's step budget
+        if table.get('decoys') and fits and trng.random() < 0.3:   # opens a run log first: context only, never a target
             trace.append(tool_call('read_file', train=False, path=f"{table['folder']}/{trng.choice(table['decoys'])}"))
+    # A wrong column in the right table (v4's last real-file failure): the error lists the columns, and the trained step
+    # copies the right one from that list. v4's wrong-folder traces also end in "no column", but there the list lacks the
+    # column; here it has it. Telling the two apart means reading the list, which is the point.
+    name, args = calls[0]
+    bad = wrong_column(trng, table, args['column'], args.get('run')) if kind != 'missing' else None
+    if bad and len(trace) + len(calls) + 2 <= MAX_STEPS and trng.random() < 0.25:
+        trace.append(tool_call(name, train=False, **dict(args, column=bad)))
     # The table itself is never read: every number comes from a tool, so none can come from the wrong row or column.
     trace += [tool_call(name, **args) for name, args in calls]
     trace.append((answer, None, True))
@@ -329,8 +380,8 @@ def synthetic_tasks(n, seed, kinds, name):
             tasks.append(dict(t, set='synthetic'))
     return tasks
 
-TRAIN_KINDS = {'max': 0.35, 'lookup': 0.25, 'compare': 0.3, 'missing': 0.1}
-EVAL_KINDS = {'max': 0.4, 'lookup': 0.3, 'compare': 0.3}
+TRAIN_KINDS = {'max': 0.3, 'lookup': 0.22, 'compare': 0.25, 'missing': 0.08, 'two': 0.15}
+EVAL_KINDS = {'max': 0.4, 'lookup': 0.3, 'compare': 0.3}   # unchanged since v1, so the eval questions stay the same
 train_tasks = synthetic_tasks(N_TRAIN, SEED, TRAIN_KINDS, 'train')
 eval_tasks = synthetic_tasks(N_EVAL, SEED + 1, EVAL_KINDS, 'eval')
 t = train_tasks[0]
@@ -351,13 +402,13 @@ for folder, file, topic, cols in REAL_TABLES:
     rows = list(csv.DictReader(open(p, encoding='utf-8')))
     real_tables.append(dict(root=LAB, folder=folder, file=file, topic=topic, rows=rows, numeric=[c for c in cols if c in rows[0]]))
 
-def real_set(seed, per_file, label, vary):
+def real_set(seed, per_file, label, vary, kinds=EVAL_KINDS):
     rng, out = random.Random(seed), []
     for table in real_tables:
         for _ in range(400):
             if sum(t['path'] == f"{table['folder']}/{table['file']}" for t in out) == per_file:
                 break
-            t = make_task(rng, table, EVAL_KINDS, vary=vary)
+            t = make_task(rng, table, kinds, vary=vary)
             if t and t['question'] not in {x['question'] for x in out + real_tasks}:
                 out.append(dict(t, set=label))
     return out
@@ -367,8 +418,10 @@ def real_set(seed, per_file, label, vary):
 real_tasks = []
 real_tasks = real_set(SEED + 2, 6, 'real', vary=False)
 real_tasks += real_set(SEED + 3, 14, 'real_new', vary=True)
-print(f"{sum(t['set'] == 'real' for t in real_tasks)} real-file tasks + {sum(t['set'] == 'real_new' for t in real_tasks)} new ones")
-for t in real_tasks[:3]:
+# 'real_two' (from v5): 8 two-part questions, each needing a sort and two lookups. Earlier versions have no rows here.
+real_tasks += real_set(SEED + 4, 4, 'real_two', vary=True, kinds={'two': 1})
+print(', '.join(f"{sum(t['set'] == s for t in real_tasks)} {s}" for s in ('real', 'real_new', 'real_two')) + ' tasks')
+for t in real_tasks[:3] + [t for t in real_tasks if t['set'] == 'real_two'][:2]:
     print(' ', t['question'], '→', t['gold'])
 
 # %% [markdown]
@@ -433,6 +486,7 @@ def evaluate(tasks, label):
         ans = r['answer'] or ''
         rows.append(dict(set=t['set'], kind=t['kind'], question=t['question'], gold=t['gold'], answer=ans,
                          correct=all(mentions(ans, g) for g in t['gold']), finished=r['answer'] is not None,
+                         forced=r['forced'],
                          found=t['path'] in files_read(r['messages']), steps=r['steps'], calls=r['calls'],
                          bad_calls=r['bad_calls'], chars=len(ans), trace=trace_of(r['messages'])))
         print(f'{label} {i + 1}/{len(tasks)} · {"✓" if rows[-1]["correct"] else "✗"} · {r["steps"]} steps · '
@@ -441,15 +495,17 @@ def evaluate(tasks, label):
     return rows
 
 def summary(results):
+    # 'forced': answers written only after the step budget ran out (from v5; earlier versions left those blank).
     print(f'{"model":<8}{"set":<11}{"tasks":>6}{"correct %":>11}{"read the file %":>17}{"finished %":>12}'
-          f'{"avg steps":>11}{"avg answer chars":>18}{"bad calls":>11}')
+          f'{"forced":>8}{"avg steps":>11}{"avg answer chars":>18}{"bad calls":>11}')
     for label, rows in results.items():
-        for s in ('synthetic', 'real', 'real_new'):
+        for s in ('synthetic', 'real', 'real_new', 'real_two'):
             rs = [r for r in rows if r['set'] == s]
             if rs:
                 avg = lambda k: sum(r[k] for r in rs) / len(rs)
                 print(f'{label:<8}{s:<11}{len(rs):>6}{100 * avg("correct"):>11.0f}{100 * avg("found"):>17.0f}'
-                      f'{100 * avg("finished"):>12.0f}{avg("steps"):>11.1f}{avg("chars"):>18.0f}{sum(r["bad_calls"] for r in rs):>11}')
+                      f'{100 * avg("finished"):>12.0f}{sum(r.get("forced", False) for r in rs):>8}{avg("steps"):>11.1f}'
+                      f'{avg("chars"):>18.0f}{sum(r["bad_calls"] for r in rs):>11}')
 
 # %%
 # Baseline: the untuned model on the eval tasks.
@@ -572,15 +628,16 @@ except ImportError:
 # The tuned model on the same tasks, then side by side with the base model and the earlier runs found on Drive. Each
 # version had different tools and synthetic labs, so compare them on the real-file rows: those questions are the same.
 tuned = evaluate(eval_tasks + real_tasks, 'tuned')
-earlier = {v: f'{OUT}/{d}/eval_tuned.json' for v, d in [('v1', 'finetune'), ('v2', 'finetune_v2'), ('v3', 'finetune_v3')]
-           if v != VERSION}
+earlier = {v: f'{OUT}/{d}/eval_tuned.json' for v, d in [('v1', 'finetune'), ('v2', 'finetune_v2'), ('v3', 'finetune_v3'),
+                                                       ('v4', 'finetune_v4')] if v != VERSION}
 results = {'base': results['base'], **{v: json.load(open(p)) for v, p in earlier.items() if os.path.exists(p) and not SMOKE},
            VERSION: tuned}
 summary(results)
 
 # %%
-# The question the untuned agent failed in its first run (baseline_trace_qwen3-1.7b.txt). It asks two things at once,
-# which no training task did, so this shows whether the habit stretches beyond the templates.
+# The question the untuned agent failed in its first run (baseline_trace_qwen3-1.7b.txt). It asks two things at once.
+# v5 trains two-part questions, but this one also names its column loosely ("copies best when the first copy is far
+# back" for `copy far %`), which no training question does.
 set_root(LAB)
 demo = run_agent('In the recall test results, which model copies best when the first copy is far back, '
                  'and how does attn-gqa compare with llama-style?', generate, max_steps=MAX_STEPS)
@@ -603,6 +660,11 @@ for r in tuned:
 #   70% synthetic and 0% real. The real-file rows are the number to watch.
 # - **Read the file %** (read or sorted the right table) separates two failures: never finding the table (a search
 #   problem) and finding it but answering wrongly (a reading problem).
+# - **v4 → v5.** v5 allows 8 steps and a forced answer, where v1-v4 allowed 6 and left the answer blank, so on the
+#   `real` rows part of any gain is the harness. The base model gets the same harness: v5 has to beat it on `real`,
+#   `real_new` and `real_two`. The *forced* column counts answers written after the budget ran out. In the calls lines,
+#   look for a failed get_value on a recall column followed by the same call with the right column, not a move to
+#   `results/`.
 # - **v3 → v4.** Compare on the `real` rows (the same 12 questions for every version) and on `real_new` against the
 #   base model, which has the same tools and the same repeat guard. The guard helps the base model too, so v4 has to
 #   beat both to show the recovery traces worked. Look for calls into `recall/` followed by a call into `results/`.
@@ -612,8 +674,8 @@ for r in tuned:
 #   answer means it ignored the tool's result; `read_file` on a table means it skipped the tools.
 # - **v1 → v2.** v2's decoys and recovery traces fixed v1's search problem on synthetic labs, and sort_table fixed most
 #   maxima, but neither transferred fully to the real folders.
-# - **The demo question** asks two things at once. Training had only one-part questions, so a tuned model may answer
-#   the first part only. That is the next thing to add to the training data.
+# - **The demo question** asks two things at once. Up to v4, training had only one-part questions, and v3 answered only
+#   the second part. v5 trains two-part questions; `real_two` scores them on the real files.
 # - **What this costs.** A model trained on one narrow task can get worse at others; it may now look for a file even
 #   when none is needed. Keep the untuned model for general chat, and use the adapter for lab questions.
 # - To use the adapter in `mini_agent`, set `USE_ADAPTER = True` and `ADAPTER_VERSION` there.

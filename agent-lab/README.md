@@ -40,8 +40,16 @@ question and repeated the failing call instead of trying `results/`.
 
 **v4** teaches the way back: some traces open the wrong table first (context only) and the trained step goes to the
 right folder. The agent loop now refuses a repeat of a call that just failed. Labs get root folders with no tables
-(like `ckpt/`), and the eval adds 28 real-file questions (`real_new`) to the original 12. Results go to
-`finetune_v4/`.
+(like `ckpt/`), and the eval adds 28 real-file questions (`real_new`) to the original 12. It scored 11/12 and 23/28
+(untuned with the same tools and loop: 6/12 and 10/28) and found the right table for all 40 questions. Every
+"training results" question that started in `recall/` came back to `results/`. Six of its seven misses ran out of
+steps with the numbers already in hand. Twice it moved folders after guessing a wrong column, when the error had
+listed the right one.
+
+**v5** fixes both. The eval allows 8 steps instead of 6, and when they run out the loop asks for an answer with tool
+calls refused. A quarter of the training traces try a wrong column in the right table first, so the model learns to
+take the column from the error's list. 15% of training questions ask two things at once, scored on 8 new real-file
+questions (`real_two`). Results go to `finetune_v5/`.
 
 ## Baseline
 
