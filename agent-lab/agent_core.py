@@ -47,6 +47,40 @@ def read_file(path: str) -> str:
     text = open(safe_path(path), encoding='utf-8', errors='replace').read()
     return text if len(text) <= READ_LIMIT else text[:READ_LIMIT] + f'\n... [cut: {len(text):,} characters in total]'
 
+def load_table(path, column):
+    """A CSV's rows, the column that names each row (run, name or model), and an error message for the model if the
+    file or the column is not usable. Not a tool: the tools below share it."""
+    import csv
+    if not path.lower().endswith('.csv'):
+        return None, None, f'Error: {path} is not a .csv table'
+    with open(safe_path(path), encoding='utf-8', errors='replace', newline='') as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return None, None, f'Error: {path} has no rows'
+    header = list(rows[0])
+    if column not in header:
+        return None, None, f'Error: there is no column {column!r} in {path}. Columns: {", ".join(header)}'
+    return rows, next((h for h in ('run', 'name', 'model') if h in header), header[0]), None
+
+def get_value(path: str, run: str, column: str) -> str:
+    """
+    Look up one value in a CSV table: the cell in a run's row and a column. Use it instead of reading the table, so
+    the number cannot come from the wrong row or column.
+
+    Args:
+        path: Path to a .csv file relative to the lab folder, for example "results/summary.csv".
+        run: The run's name, written exactly as in the table's first column.
+        column: The column, written exactly as in the table's header.
+    """
+    rows, key, err = load_table(path, column)
+    if err:
+        return err
+    hit = [r for r in rows if r[key] == run] or [r for r in rows if r[key].lower() == run.strip().lower()]
+    if not hit:
+        return f'Error: there is no run named {run!r} in {path}. Runs: {", ".join(r[key] for r in rows)}'
+    v = hit[0][column]
+    return f'{path}: {hit[0][key]} has {column} = {v}' if v.strip() else f'{path}: {hit[0][key]} has no {column} value (blank)'
+
 def sort_table(path: str, column: str, descending: bool = True) -> str:
     """
     Sort a CSV table by one numeric column and list every run with its value, in order. Use it to find the highest or
@@ -57,17 +91,11 @@ def sort_table(path: str, column: str, descending: bool = True) -> str:
         column: The column to sort by, written exactly as in the table's header.
         descending: true lists the highest value first, false the lowest first.
     """
-    import csv
     if isinstance(descending, str):
         descending = descending.strip().lower() not in ('false', '0', 'no')
-    with open(safe_path(path), encoding='utf-8', errors='replace', newline='') as f:
-        rows = list(csv.DictReader(f))
-    if not rows:
-        return f'Error: {path} has no rows'
-    header = list(rows[0])
-    if column not in header:
-        return f'Error: there is no column {column!r} in {path}. Columns: {", ".join(header)}'
-    key = next((h for h in ('run', 'name', 'model') if h in header), header[0])
+    rows, key, err = load_table(path, column)
+    if err:
+        return err
     def value(r):
         try:
             return float(r[column])
@@ -79,7 +107,7 @@ def sort_table(path: str, column: str, descending: bool = True) -> str:
             f'({len(have)} rows{f", {blank} blank" if blank else ""}):\n{key},{column}\n'
             + '\n'.join(f'{r[key]},{r[column]}' for r in have))
 
-TOOLS = {f.__name__: f for f in (list_files, read_file, sort_table)}
+TOOLS = {f.__name__: f for f in (list_files, read_file, get_value, sort_table)}
 
 def run_tool(name, args):
     """Run one tool call. Errors go back to the model as text, so it can correct itself instead of crashing the loop."""
@@ -87,6 +115,9 @@ def run_tool(name, args):
         return f'Error: there is no tool named {name}. Available: {", ".join(TOOLS)}'
     try:
         return TOOLS[name](**args)
+    except (FileNotFoundError, NotADirectoryError):
+        where = args.get('path', args.get('folder', ''))
+        return f'Error: there is no file or folder {where!r}. List the folder above it to see what is there.'
     except Exception as e:
         return f'Error: {type(e).__name__}: {e}'
 
@@ -118,7 +149,8 @@ def assistant_turn(reply, calls):
 # The loop. This is the whole agent. `generate(messages)` returns (reply, prompt length in tokens).
 SYSTEM = ('You are a research assistant for a lab that trains small language models and benchmarks them. '
           'Answer from the files, not from memory: list folders to find files, read them, then answer. '
-          'For the highest or lowest value in a table, use sort_table. '
+          'For one value in a table, use get_value; for the highest or lowest (best, worst, fastest, largest), use '
+          'sort_table. Do not read numbers off a table yourself. '
           'Quote the numbers you use and name the file they came from.')
 
 def run_agent(task, generate, max_steps=8, verbose=True):

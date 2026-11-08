@@ -25,11 +25,24 @@
 # - **A sort tool.** `sort_table(path, column)` returns the column in order, so a highest/lowest question becomes
 #   copying the first row. Agents hand arithmetic to tools; the model only has to choose the call.
 # - **Shorter training.** v1's loss flattened by step 40 of 220; v2 trains about 100 larger steps.
-# The real-file questions are the same as v1's, so those results compare directly. The synthetic eval tasks are new
-# (v1 drew them in an order that changed between runs, now fixed) and their labs contain decoys.
+#
+# **Version 3.** v2 rose to 80% synthetic and back to 25% real, but only matched the untuned model, which scored 25%
+# with sort_table in its prompt: the tool helped more than the training. v2's real-file failures had three causes:
+# - **The wrong folder.** All five "training results" questions without a path went to `recall/`. In v2's labs every
+#   topic had its own word matching its folder; in the real lab both topics end in "results". v3 makes 40% of labs like
+#   that: topics share a word ("ablation metrics", "probe metrics"), one table sits in a folder named after the shared
+#   word, and sometimes every table is called `summary.csv`.
+# - **Misread cells.** In the right file it still quoted the wrong number, often from a neighbouring column: the recall
+#   table has 14 columns named like "1 fact @32" and "4 facts @32". v3 adds `get_value(path, run, column)`, and lookups,
+#   comparisons and missing runs use it; no trace reads a table any more. Some synthetic tables get look-alike columns.
+# - **Questions that name the file.** All four synthetic failures named the path, took one step, and quoted numbers
+#   from the table's raw rows, not the sorted list: most likely it read the file instead of sorting. v2 never saved the
+#   calls, so this is an inference. v3 saves every call with each eval answer, and max questions use more wordings
+#   ("largest", "minimum").
+# The real-file questions are the same as in v1 and v2, so those rows compare directly across all versions.
 #
 # **On Colab:** Runtime → Change runtime type → **L4** → Run all, about 1 hour in total. A T4 also works, in fp16, more
-# slowly. Results go to `MyDrive/agent-lab/finetune_v2/`; finished steps are skipped when you run it again.
+# slowly. Results go to `MyDrive/agent-lab/finetune_v3/`; finished steps are skipped when you run it again.
 
 # %%
 # Config.
@@ -39,7 +52,7 @@ MODEL = os.environ.get('MODEL', 'Qwen/Qwen3-1.7B')
 LAB = os.environ.get('AGENT_ROOT', '/content/drive/MyDrive/gpt2-lab' if IN_COLAB else '.')     # real files, for the final eval
 OUT = os.environ.get('AGENT_OUT', '/content/drive/MyDrive/agent-lab' if IN_COLAB else 'out')
 WORK = '/content/synth' if IN_COLAB else os.path.abspath('synth')                            # synthetic labs, rebuilt each run
-VERSION = 'v2'           # results go to OUT/finetune_<VERSION>
+VERSION = 'v3'           # results go to OUT/finetune_<VERSION>
 N_TRAIN = 400            # training tasks; each gives one example per model turn (about 3.5)
 N_EVAL = 20              # held-out synthetic tasks; the real-file tasks come on top
 LORA_R, LORA_ALPHA = 16, 32
@@ -89,10 +102,16 @@ METRICS = [('val loss', 2.5, 4.5, 4), ('train loss', 2.0, 4.0, 4), ('perplexity'
            ('score', 0, 1, 3), ('win rate %', 0, 100, 1), ('steps', 500, 20000, 0), ('grad norm', 0.1, 5, 3)]
 CATEGORIES = [('family', ['dense', 'sparse', 'hybrid', 'baseline']), ('budget', ['quick', 'standard', 'long']),
               ('optimizer', ['adamw', 'lion', 'sgd'])]
-TABLES = [('eval', 'scores.csv', 'evaluation scores'), ('benchmarks', 'speed.csv', 'speed benchmarks'),
-          ('ablations', 'table.csv', 'ablation runs'), ('sweeps', 'lr_sweep.csv', 'learning-rate sweep'),
-          ('baselines', 'baselines.csv', 'baseline runs'), ('probes', 'probe_results.csv', 'probing results'),
-          ('finetune', 'metrics.csv', 'fine-tuning metrics'), ('long_context', 'summary.csv', 'long-context tests')]
+FAMILIES = [[('acc @1K %', 0, 100, 1), ('acc @4K %', 0, 100, 1), ('acc @16K %', 0, 100, 1)],     # columns whose names
+            [('pass@1 %', 0, 100, 1), ('pass@10 %', 0, 100, 1), ('pass@100 %', 0, 100, 1)],  # differ by one token, as in
+            [('1-shot %', 0, 100, 1), ('5-shot %', 0, 100, 1), ('25-shot %', 0, 100, 1)],    # the real recall table
+            [('top-1 %', 0, 100, 1), ('top-5 %', 0, 100, 1)]]
+# (folder, file, topic, qualifier). The qualifier names the table in a lab whose topics share a word (see make_lab).
+TABLES = [('eval', 'scores.csv', 'evaluation scores', 'evaluation'), ('benchmarks', 'speed.csv', 'speed benchmarks', 'benchmark'),
+          ('ablations', 'table.csv', 'ablation runs', 'ablation'), ('sweeps', 'lr_sweep.csv', 'learning-rate sweep', 'sweep'),
+          ('baselines', 'baselines.csv', 'baseline runs', 'baseline'), ('probes', 'probe_results.csv', 'probing results', 'probe'),
+          ('finetune', 'metrics.csv', 'fine-tuning metrics', 'fine-tuning'), ('long_context', 'summary.csv', 'long-context tests', 'long-context')]
+SHARED = ['metrics', 'scores', 'tables', 'evals', 'stats', 'reports']
 
 def run_names(rng, n):
     names = set()
@@ -129,10 +148,22 @@ def make_lab(rng, root):
     os.makedirs(root, exist_ok=True)
     runs = run_names(rng, 18)
     tables = []
-    for folder, file, topic in rng.sample(TABLES, rng.randint(2, 3)):
+    chosen = rng.sample(TABLES, rng.randint(2, 3))
+    if rng.random() < 0.4:
+        # Topics that share a word, as in the real lab ("training results" in results/, "recall test results" in
+        # recall/). The first table's folder is the shared word itself, so its qualifier matches no folder name: the
+        # model has to rule out the folders that do match the other topics.
+        word, same_file = rng.choice(SHARED), rng.random() < 0.5
+        chosen = [(word if i == 0 else folder, 'summary.csv' if same_file else file, f'{qual} {word}')
+                  for i, (folder, file, _, qual) in enumerate(chosen)]
+    else:
+        chosen = [(folder, file, topic) for folder, file, topic, _ in chosen]
+    for folder, file, topic in chosen:
         while True:
             rows_runs = rng.sample(runs, rng.randint(5, 16))
             metrics = rng.sample(METRICS, rng.randint(3, 10))
+            if rng.random() < 0.3:
+                metrics += rng.choice(FAMILIES)
             cats = rng.sample(CATEGORIES, rng.randint(0, 1))
             header = ['run'] + [c for c, _ in cats] + [m[0] for m in metrics]
             rows = []
@@ -183,8 +214,11 @@ def tool_call(name, train=True, **args):
     return ('<tool_call>\n' + json.dumps({'name': name, 'arguments': args}, ensure_ascii=False) + '\n</tool_call>',
             [dict(name=name, arguments=args)], train)
 
-def make_task(rng, table, kinds):
-    """One question about `table`, with gold strings and the ideal trace. Returns None if the table can't support it."""
+HIGH, LOW = ['highest', 'largest', 'maximum'], ['lowest', 'smallest', 'minimum']
+
+def make_task(rng, table, kinds, vary=True):
+    """One question about `table`, with gold strings and the ideal trace. Returns None if the table can't support it.
+    vary=False keeps the v1/v2 wording (used for the real-file tasks, so they stay the same questions across versions)."""
     rows = table['rows']
     path = f"{table['folder']}/{table['file']}"
     cols = [c for c in table['numeric'] if c in rows[0] and sum(bool(r[c]) for r in rows) >= 4]
@@ -196,22 +230,26 @@ def make_task(rng, table, kinds):
     explicit = rng.random() < 0.3
     where = path if explicit else f'the {table["topic"]}'
     d = decimals(table, col)
+    srng = random.Random(f"{table['root']}/{path}/{col}")    # wording only, so `rng` draws stay as in v2
     if kind == 'max':
         word = rng.choice(['highest', 'lowest'])
         ranked = sorted(have, key=lambda r: num(r[col]), reverse=word == 'highest')
         if num(ranked[0][col]) == num(ranked[1][col]):
             return None
         best = ranked[0]
-        q = rng.choice([f'Which run has the {word} {col} in {where}?', f'In {where}, which run has the {word} {col}?',
-                        f'Find the run with the {word} {col} in {where}.'])
+        said = srng.choice(HIGH if word == 'highest' else LOW) if vary else word
+        q = rng.choice([f'Which run has the {said} {col} in {where}?', f'In {where}, which run has the {said} {col}?',
+                        f'Find the run with the {said} {col} in {where}.'])
         gold = [best['run'], best[col]]
-        answer = rng.choice([f'{best["run"]} has the {word} {col}: {best[col]} ({path}).',
-                             f'The {word} {col} is {best[col]}, from {best["run"]} ({path}).'])
+        answer = rng.choice([f'{best["run"]} has the {said} {col}: {best[col]} ({path}).',
+                             f'The {said} {col} is {best[col]}, from {best["run"]} ({path}).'])
+        calls = [('sort_table', dict(path=path, column=col, descending=word == 'highest'))]
     elif kind == 'lookup':
         r = rng.choice(have)
         q = rng.choice([f"What is {r['run']}'s {col} in {where}?", f'In {where}, what {col} did {r["run"]} get?'])
         gold = [r[col]]
         answer = f"{r['run']} has a {col} of {r[col]} ({path})."
+        calls = [('get_value', dict(path=path, run=r['run'], column=col))]
     elif kind == 'compare':
         a, b = rng.sample(have, 2)
         if num(a[col]) == num(b[col]):
@@ -222,26 +260,27 @@ def make_task(rng, table, kinds):
                         f'In {where}, is {a["run"]} or {b["run"]} higher on {col}?'])
         gold = [a[col], b[col]]
         answer = f'{a["run"]} has a {col} of {a[col]} and {b["run"]} has {b[col]}, so {hi["run"]} is higher by {diff} ({path}).'
-    else:   # 'missing': the run is not in the table; the right answer says so instead of inventing a number
+        calls = [('get_value', dict(path=path, run=a['run'], column=col)), ('get_value', dict(path=path, run=b['run'], column=col))]
+    else:   # 'missing': the run is not in the table; get_value says so and lists the runs, and the answer passes that on
         fake = next(n for n in run_names(rng, 40) if n not in {r['run'] for r in rows})
         q = f"What is {fake}'s {col} in {where}?"
         gold = ['no run']
         answer = f'There is no run named {fake} in {path}. It lists: {", ".join(r["run"] for r in rows)}.'
+        calls = [('get_value', dict(path=path, run=fake, column=col))]
     trace = []
     trng = random.Random(q)      # trace choices get their own generator, so they don't change later questions
     if explicit and rng.random() < 0.25 and kind != 'missing':   # a wrong path in the question: recover by listing
         stem, ext = os.path.splitext(table['file'])
         wrong = f"{table['folder']}/{stem.rstrip('s') if stem.endswith('s') else stem + 's'}{ext}"
         q = q.replace(path, wrong)
-        trace += [tool_call('read_file', path=wrong), tool_call('list_files', folder=table['folder'])]
+        name, args = calls[0]
+        trace += [tool_call(name, **dict(args, path=wrong)), tool_call('list_files', folder=table['folder'])]
     elif not explicit:
         trace += [tool_call('list_files', folder='.'), tool_call('list_files', folder=table['folder'])]
         if table.get('decoys') and trng.random() < 0.3:   # opens a run log first: context only, never a target
             trace.append(tool_call('read_file', train=False, path=f"{table['folder']}/{trng.choice(table['decoys'])}"))
-    if kind == 'max':
-        trace.append(tool_call('sort_table', path=path, column=col, descending=word == 'highest'))
-    else:
-        trace.append(tool_call('read_file', path=path))
+    # The table itself is never read: every number comes from a tool, so none can come from the wrong row or column.
+    trace += [tool_call(name, **args) for name, args in calls]
     trace.append((answer, None, True))
     return dict(root=table['root'], path=path, kind=kind, question=q, gold=gold, trace=trace)
 
@@ -279,7 +318,7 @@ for folder, file, topic, cols in REAL_TABLES:
     for _ in range(200):
         if sum(t['path'] == f'{folder}/{file}' for t in real_tasks) == 6:
             break
-        t = make_task(rng, table, EVAL_KINDS)
+        t = make_task(rng, table, EVAL_KINDS, vary=False)
         if t and t['question'] not in {x['question'] for x in real_tasks}:
             real_tasks.append(dict(t, set='real'))
 print(f'{len(real_tasks)} real-file tasks')
@@ -326,7 +365,15 @@ def mentions(text, s):
 
 def files_read(messages):
     return [c['function']['arguments'].get('path', '').lstrip('./') for m in messages if m['role'] == 'assistant'
-            for c in m.get('tool_calls', []) if c['function']['name'] in ('read_file', 'sort_table')]
+            for c in m.get('tool_calls', []) if c['function']['name'] in ('read_file', 'get_value', 'sort_table')]
+
+def trace_of(messages):
+    """Every tool call with the start of its result, saved with each eval answer so a wrong answer can be traced to the
+    call that caused it (v2 saved only the answers, which left its failures to guesswork)."""
+    calls = [dict(name=c['function']['name'], arguments=c['function']['arguments'])
+             for m in messages if m['role'] == 'assistant' for c in m.get('tool_calls', [])]
+    results = [m['content'][:300] for m in messages if m['role'] == 'tool']
+    return [dict(c, result=r) for c, r in zip(calls, results)]
 
 def evaluate(tasks, label):
     path = f'{FT}/eval_{label}.json'
@@ -341,7 +388,7 @@ def evaluate(tasks, label):
         rows.append(dict(set=t['set'], kind=t['kind'], question=t['question'], gold=t['gold'], answer=ans,
                          correct=all(mentions(ans, g) for g in t['gold']), finished=r['answer'] is not None,
                          found=t['path'] in files_read(r['messages']), steps=r['steps'], calls=r['calls'],
-                         bad_calls=r['bad_calls'], chars=len(ans)))
+                         bad_calls=r['bad_calls'], chars=len(ans), trace=trace_of(r['messages'])))
         print(f'{label} {i + 1}/{len(tasks)} · {"✓" if rows[-1]["correct"] else "✗"} · {r["steps"]} steps · '
               f'{len(ans)} chars · {time.time() - t0:.0f} s')
     json.dump(rows, open(path, 'w'), indent=1)
@@ -476,11 +523,11 @@ except ImportError:
     print('loss by step:', [round(l, 3) for l in losses])
 
 # %%
-# The tuned model on the same tasks, then side by side with the base model and, if it is on Drive, the v1 run. v1 had
-# no sort_table and its synthetic labs had no decoys, so compare it with v2 on the real-file rows.
+# The tuned model on the same tasks, then side by side with the base model and the earlier runs found on Drive. Each
+# version had different tools and synthetic labs, so compare them on the real-file rows: those questions are the same.
 tuned = evaluate(eval_tasks + real_tasks, 'tuned')
-v1 = f'{OUT}/finetune/eval_tuned.json'
-results = {'base': results['base'], **({'v1': json.load(open(v1))} if os.path.exists(v1) and not SMOKE else {}),
+earlier = {v: f'{OUT}/{d}/eval_tuned.json' for v, d in [('v1', 'finetune'), ('v2', 'finetune_v2')] if v != VERSION}
+results = {'base': results['base'], **{v: json.load(open(p)) for v, p in earlier.items() if os.path.exists(p) and not SMOKE},
            VERSION: tuned}
 summary(results)
 
@@ -496,7 +543,9 @@ print('\n══ answer ══\n' + str(demo['answer']))
 # Where the tuned model still fails: its wrong answers next to the gold strings.
 for r in tuned:
     if not r['correct']:
-        print(f"[{r['set']}/{r['kind']}] {r['question']}\n  gold: {r['gold']}\n  got:  {r['answer'][:300]}\n")
+        calls = ' → '.join(f"{c['name']}({', '.join(str(v) for v in c['arguments'].values())})" for c in r['trace'])
+        print(f"[{r['set']}/{r['kind']}] {r['question']}\n  gold:  {r['gold']}\n  calls: {calls or 'none'}\n"
+              f"  got:   {r['answer'][:300]}\n")
 
 # %% [markdown]
 # ## Reading the results
@@ -507,10 +556,14 @@ for r in tuned:
 #   70% synthetic and 0% real. The real-file rows are the number to watch.
 # - **Read the file %** (read or sorted the right table) separates two failures: never finding the table (a search
 #   problem) and finding it but answering wrongly (a reading problem).
-# - **v1 → v2.** If the real-file score rises, the decoys and the recovery traces fixed the search problem; if max/min
-#   tasks rise, the sort tool fixed the reading problem. The list of wrong answers above shows which.
+# - **v2 → v3.** Compare on the real-file rows, and against the base model too: the base model also gets the new tool,
+#   so v3 has to beat the tool alone to show the training helped. In the list of wrong answers, the calls line separates
+#   the failures: a call into `recall/` for a training question is the folder problem; the right call with a wrong
+#   answer means it ignored the tool's result; `read_file` on a table means it skipped the tools.
+# - **v1 → v2.** v2's decoys and recovery traces fixed v1's search problem on synthetic labs, and sort_table fixed most
+#   maxima, but neither transferred fully to the real folders.
 # - **The demo question** asks two things at once. Training had only one-part questions, so a tuned model may answer
 #   the first part only. That is the next thing to add to the training data.
 # - **What this costs.** A model trained on one narrow task can get worse at others; it may now look for a file even
 #   when none is needed. Keep the untuned model for general chat, and use the adapter for lab questions.
-# - To use the adapter in `mini_agent`, set `USE_ADAPTER = True` there.
+# - To use the adapter in `mini_agent`, set `USE_ADAPTER = True` and `ADAPTER_VERSION` there.

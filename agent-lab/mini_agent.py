@@ -1,5 +1,5 @@
 # %% [markdown]
-# # A minimal agent: a model, two tools and a loop
+# # A minimal agent: a model, a few tools and a loop
 #
 # An agent is a language model that can act, not only answer. This notebook builds the smallest one that does
 # something real: it reads your GPT-2 lab results on Drive and answers questions about them. Every piece is here in
@@ -8,7 +8,7 @@
 # | Piece | What it is | Why it's needed |
 # |---|---|---|
 # | Model | Qwen3-1.7B, instruction-tuned | Decides the next step: answer, or call a tool. Its architecture is the lab's `qwen3-style`, scaled up |
-# | Tools | plain Python functions: `list_files`, `read_file` | The model can only produce text. Tools let that text cause actions and bring back facts it doesn't know |
+# | Tools | plain Python functions: `list_files`, `read_file`, `get_value`, `sort_table` | The model can only produce text. Tools let that text cause actions and bring back facts it doesn't know. The last two do the table work a 1.7B model gets wrong by eye |
 # | Tool schema | each tool's name, description and arguments, put in the prompt | The model can only call what it has been told exists, with the arguments it has been told it takes |
 # | Loop | generate → if it asked for a tool, run it, append the result, generate again | One generation can't both ask for a file and read it. The loop turns single replies into multi-step work |
 # | Memory | the message list, which becomes the context window | Everything the agent knows lives here. This is what the recall test measured |
@@ -25,7 +25,8 @@ IN_COLAB = 'google.colab' in sys.modules
 MODEL = os.environ.get('MODEL', 'Qwen/Qwen3-1.7B')
 LAB = os.environ.get('AGENT_ROOT', '/content/drive/MyDrive/gpt2-lab' if IN_COLAB else '.')   # the only folder tools can see
 OUT = os.environ.get('AGENT_OUT', '/content/drive/MyDrive/agent-lab' if IN_COLAB else 'out')
-USE_ADAPTER = False      # True: load the LoRA adapter trained by agent_finetune from OUT/finetune/adapter
+USE_ADAPTER = False      # True: load the LoRA adapter trained by agent_finetune
+ADAPTER_VERSION = 'v3'   # which run's adapter: 'v3' loads OUT/finetune_v3/adapter, 'v1' OUT/finetune/adapter
 MAX_STEPS = 8            # model replies before the loop gives up: an agent that never stops is the classic failure
 MAX_NEW_TOKENS = 768     # per model reply
 THINKING = False         # Qwen3 can reason in a <think> block before replying: better plans, many more tokens
@@ -46,7 +47,7 @@ if USE_ADAPTER:
         import subprocess
         subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'peft'], check=True)
     from peft import PeftModel
-    model = PeftModel.from_pretrained(model, f'{OUT}/finetune/adapter').eval()
+    model = PeftModel.from_pretrained(model, f'{OUT}/finetune{"" if ADAPTER_VERSION == "v1" else "_" + ADAPTER_VERSION}/adapter').eval()
 print(f'{MODEL}{" + LoRA adapter" if USE_ADAPTER else ""} on {dev} · '
       f'{sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters')
 
