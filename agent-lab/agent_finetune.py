@@ -41,8 +41,21 @@
 #   ("largest", "minimum").
 # The real-file questions are the same as in v1 and v2, so those rows compare directly across all versions.
 #
-# **On Colab:** Runtime → Change runtime type → **L4** → Run all, about 1 hour in total. A T4 also works, in fp16, more
-# slowly. Results go to `MyDrive/agent-lab/finetune_v3/`; finished steps are skipped when you run it again.
+# **Version 4.** v3 reached 100% synthetic and 58% real (the untuned model with the same tools: 50%). Every time it
+# found the right table it answered right. All five misses were "training results" questions: it opened `recall/`,
+# got "no column", and repeated the same call until it ran out of steps. Nothing in training had shown it a way back.
+# - **Folder recovery.** 35% of traces that search for the table first open another table in the lab, one without the
+#   column. The wrong listing and the failed call are context only; the trained step is going to the right folder.
+# - **A repeat guard in the loop.** `run_agent` refuses a call identical to one that just failed, and tells the model
+#   to try another file or folder. Some fixes belong in the harness, not the weights: no training makes a loop
+#   impossible, a ten-line check does.
+# - **Messier labs.** Half the labs now have topics that share a word, and half have root folders with no tables,
+#   like the real lab's `ckpt/` and `export/`.
+# - **More real questions.** The original 12 stay as they are (`real`), and 28 new ones (`real_new`) make one question
+#   worth about 2.5 points instead of 8.
+#
+# **On Colab:** Runtime → Change runtime type → **L4** → Run all, about 75 minutes in total. A T4 also works, in fp16,
+# more slowly. Results go to `MyDrive/agent-lab/finetune_v4/`; finished steps are skipped when you run it again.
 
 # %%
 # Config.
@@ -52,7 +65,7 @@ MODEL = os.environ.get('MODEL', 'Qwen/Qwen3-1.7B')
 LAB = os.environ.get('AGENT_ROOT', '/content/drive/MyDrive/gpt2-lab' if IN_COLAB else '.')     # real files, for the final eval
 OUT = os.environ.get('AGENT_OUT', '/content/drive/MyDrive/agent-lab' if IN_COLAB else 'out')
 WORK = '/content/synth' if IN_COLAB else os.path.abspath('synth')                            # synthetic labs, rebuilt each run
-VERSION = 'v3'           # results go to OUT/finetune_<VERSION>
+VERSION = 'v4'           # results go to OUT/finetune_<VERSION>
 N_TRAIN = 400            # training tasks; each gives one example per model turn (about 3.5)
 N_EVAL = 20              # held-out synthetic tasks; the real-file tasks come on top
 LORA_R, LORA_ALPHA = 16, 32
@@ -112,6 +125,7 @@ TABLES = [('eval', 'scores.csv', 'evaluation scores', 'evaluation'), ('benchmark
           ('baselines', 'baselines.csv', 'baseline runs', 'baseline'), ('probes', 'probe_results.csv', 'probing results', 'probe'),
           ('finetune', 'metrics.csv', 'fine-tuning metrics', 'fine-tuning'), ('long_context', 'summary.csv', 'long-context tests', 'long-context')]
 SHARED = ['metrics', 'scores', 'tables', 'evals', 'stats', 'reports']
+JUNK = ['ckpt', 'checkpoints', 'export', 'logs', 'cache', 'wandb', 'scripts', 'tmp']   # root folders with no tables
 
 def run_names(rng, n):
     names = set()
@@ -149,7 +163,7 @@ def make_lab(rng, root):
     runs = run_names(rng, 18)
     tables = []
     chosen = rng.sample(TABLES, rng.randint(2, 3))
-    if rng.random() < 0.4:
+    if rng.random() < 0.5:
         # Topics that share a word, as in the real lab ("training results" in results/, "recall test results" in
         # recall/). The first table's folder is the shared word itself, so its qualifier matches no folder name: the
         # model has to rule out the folders that do match the other topics.
@@ -191,6 +205,17 @@ def make_lab(rng, root):
     for r in rng.sample(runs, 3):
         with open(os.path.join(root, 'runs', f'{r}.json'), 'w') as f:
             json.dump(dict(name=r, seed=rng.randint(0, 9999), lr=rng.choice([3e-4, 6e-4, 1e-3])), f)
+    # Folders that hold no tables, as the real lab's ckpt/ and export/ do. Own generator: they don't change the questions.
+    jrng = random.Random(f'{root}/junk')
+    if jrng.random() < 0.5:
+        for name in jrng.sample(JUNK, jrng.randint(1, 2)):
+            os.makedirs(os.path.join(root, name), exist_ok=True)   # a rejected task reuses its lab's folder
+            for _ in range(jrng.randint(1, 3)):
+                kind = jrng.choice(['pt', 'json', 'txt'])
+                stem = f'{jrng.choice(runs)}_step{jrng.randint(1, 40) * 500}'
+                with open(os.path.join(root, name, f'{stem}.{kind}'), 'wb') as f:
+                    f.write(jrng.randbytes(jrng.randint(2000, 8000)) if kind == 'pt' else
+                            json.dumps(dict(run=stem, step=jrng.randint(500, 20000))).encode())
     return tables
 
 # %% [markdown]
@@ -216,9 +241,10 @@ def tool_call(name, train=True, **args):
 
 HIGH, LOW = ['highest', 'largest', 'maximum'], ['lowest', 'smallest', 'minimum']
 
-def make_task(rng, table, kinds, vary=True):
+def make_task(rng, table, kinds, vary=True, others=()):
     """One question about `table`, with gold strings and the ideal trace. Returns None if the table can't support it.
-    vary=False keeps the v1/v2 wording (used for the real-file tasks, so they stay the same questions across versions)."""
+    vary=False keeps the v1/v2 wording (used for the real-file tasks, so they stay the same questions across versions).
+    `others` are the lab's other tables, for traces that open the wrong one first."""
     rows = table['rows']
     path = f"{table['folder']}/{table['file']}"
     cols = [c for c in table['numeric'] if c in rows[0] and sum(bool(r[c]) for r in rows) >= 4]
@@ -276,7 +302,16 @@ def make_task(rng, table, kinds, vary=True):
         name, args = calls[0]
         trace += [tool_call(name, **dict(args, path=wrong)), tool_call('list_files', folder=table['folder'])]
     elif not explicit:
-        trace += [tool_call('list_files', folder='.'), tool_call('list_files', folder=table['folder'])]
+        trace.append(tool_call('list_files', folder='.'))
+        # The wrong folder first (v3's real-file failure): it opens another table, which lacks the column, reads the
+        # error, and goes to the right folder. The wrong steps are context only; the trained steps are the recovery.
+        wrong = [o for o in others if col not in o['rows'][0]]
+        if wrong and trng.random() < 0.35:
+            o = trng.choice(wrong)
+            name, args = calls[0]
+            trace += [tool_call('list_files', train=False, folder=o['folder']),
+                      tool_call(name, train=False, **dict(args, path=f"{o['folder']}/{o['file']}"))]
+        trace.append(tool_call('list_files', folder=table['folder']))
         if table.get('decoys') and trng.random() < 0.3:   # opens a run log first: context only, never a target
             trace.append(tool_call('read_file', train=False, path=f"{table['folder']}/{trng.choice(table['decoys'])}"))
     # The table itself is never read: every number comes from a tool, so none can come from the wrong row or column.
@@ -288,7 +323,8 @@ def synthetic_tasks(n, seed, kinds, name):
     rng, tasks = random.Random(seed), []
     while len(tasks) < n:
         lab = make_lab(rng, f'{WORK}/{name}/lab{len(tasks):04d}')
-        t = make_task(rng, rng.choice(lab), kinds)
+        table = rng.choice(lab)
+        t = make_task(rng, table, kinds, others=[o for o in lab if o is not table])
         if t:
             tasks.append(dict(t, set='synthetic'))
     return tasks
@@ -306,22 +342,32 @@ for reply, _, train in t['trace']:
 # Real-file tasks: the same question types about your lab's own tables, with gold answers read from the files.
 REAL_TABLES = [('results', 'summary.csv', 'training results', ['val loss', 'HellaSwag %', 'train tok/s (k)', 'KV KiB/token', 'train min']),
                ('recall', 'summary.csv', 'recall test results', ['copy near %', 'copy far %', '1 fact @32', '4 facts @32', '16 facts @32'])]
-rng = random.Random(SEED + 2)
-real_tasks = []
+real_tables = []
 for folder, file, topic, cols in REAL_TABLES:
     p = os.path.join(LAB, folder, file)
     if not os.path.exists(p):
         print(f'skipped {folder}/{file}: not found in {LAB}')
         continue
     rows = list(csv.DictReader(open(p, encoding='utf-8')))
-    table = dict(root=LAB, folder=folder, file=file, topic=topic, rows=rows, numeric=[c for c in cols if c in rows[0]])
-    for _ in range(200):
-        if sum(t['path'] == f'{folder}/{file}' for t in real_tasks) == 6:
-            break
-        t = make_task(rng, table, EVAL_KINDS, vary=False)
-        if t and t['question'] not in {x['question'] for x in real_tasks}:
-            real_tasks.append(dict(t, set='real'))
-print(f'{len(real_tasks)} real-file tasks')
+    real_tables.append(dict(root=LAB, folder=folder, file=file, topic=topic, rows=rows, numeric=[c for c in cols if c in rows[0]]))
+
+def real_set(seed, per_file, label, vary):
+    rng, out = random.Random(seed), []
+    for table in real_tables:
+        for _ in range(400):
+            if sum(t['path'] == f"{table['folder']}/{table['file']}" for t in out) == per_file:
+                break
+            t = make_task(rng, table, EVAL_KINDS, vary=vary)
+            if t and t['question'] not in {x['question'] for x in out + real_tasks}:
+                out.append(dict(t, set=label))
+    return out
+
+# 'real': the 12 questions every version was scored on, unchanged. 'real_new' (from v4): 28 more, so one question moves
+# the real-file score by about 2.5 points instead of 8. Earlier versions have no 'real_new' rows.
+real_tasks = []
+real_tasks = real_set(SEED + 2, 6, 'real', vary=False)
+real_tasks += real_set(SEED + 3, 14, 'real_new', vary=True)
+print(f"{sum(t['set'] == 'real' for t in real_tasks)} real-file tasks + {sum(t['set'] == 'real_new' for t in real_tasks)} new ones")
 for t in real_tasks[:3]:
     print(' ', t['question'], '→', t['gold'])
 
@@ -398,7 +444,7 @@ def summary(results):
     print(f'{"model":<8}{"set":<11}{"tasks":>6}{"correct %":>11}{"read the file %":>17}{"finished %":>12}'
           f'{"avg steps":>11}{"avg answer chars":>18}{"bad calls":>11}')
     for label, rows in results.items():
-        for s in ('synthetic', 'real'):
+        for s in ('synthetic', 'real', 'real_new'):
             rs = [r for r in rows if r['set'] == s]
             if rs:
                 avg = lambda k: sum(r[k] for r in rs) / len(rs)
@@ -526,7 +572,8 @@ except ImportError:
 # The tuned model on the same tasks, then side by side with the base model and the earlier runs found on Drive. Each
 # version had different tools and synthetic labs, so compare them on the real-file rows: those questions are the same.
 tuned = evaluate(eval_tasks + real_tasks, 'tuned')
-earlier = {v: f'{OUT}/{d}/eval_tuned.json' for v, d in [('v1', 'finetune'), ('v2', 'finetune_v2')] if v != VERSION}
+earlier = {v: f'{OUT}/{d}/eval_tuned.json' for v, d in [('v1', 'finetune'), ('v2', 'finetune_v2'), ('v3', 'finetune_v3')]
+           if v != VERSION}
 results = {'base': results['base'], **{v: json.load(open(p)) for v, p in earlier.items() if os.path.exists(p) and not SMOKE},
            VERSION: tuned}
 summary(results)
@@ -556,6 +603,9 @@ for r in tuned:
 #   70% synthetic and 0% real. The real-file rows are the number to watch.
 # - **Read the file %** (read or sorted the right table) separates two failures: never finding the table (a search
 #   problem) and finding it but answering wrongly (a reading problem).
+# - **v3 → v4.** Compare on the `real` rows (the same 12 questions for every version) and on `real_new` against the
+#   base model, which has the same tools and the same repeat guard. The guard helps the base model too, so v4 has to
+#   beat both to show the recovery traces worked. Look for calls into `recall/` followed by a call into `results/`.
 # - **v2 → v3.** Compare on the real-file rows, and against the base model too: the base model also gets the new tool,
 #   so v3 has to beat the tool alone to show the training helped. In the list of wrong answers, the calls line separates
 #   the failures: a call into `recall/` for a training question is the folder problem; the right call with a wrong

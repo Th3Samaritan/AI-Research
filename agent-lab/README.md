@@ -34,7 +34,14 @@ the training. It sent every "training results" question to `recall/`, and misrea
 
 **v3** targets those failures. 40% of synthetic labs have topics that share a word, with one table in a folder named
 after that word (like `results/` beside `recall/`). A `get_value(path, run, column)` tool replaces reading tables by
-eye. Every eval answer now saves its tool calls. Results go to `finetune_v3/`.
+eye. Every eval answer now saves its tool calls. It reached 100% synthetic and 58% real (untuned with the same tools:
+50%), and answered right every time it found the table. All five misses opened `recall/` for a "training results"
+question and repeated the failing call instead of trying `results/`.
+
+**v4** teaches the way back: some traces open the wrong table first (context only) and the trained step goes to the
+right folder. The agent loop now refuses a repeat of a call that just failed. Labs get root folders with no tables
+(like `ckpt/`), and the eval adds 28 real-file questions (`real_new`) to the original 12. Results go to
+`finetune_v4/`.
 
 ## Baseline
 

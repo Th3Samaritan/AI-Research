@@ -153,9 +153,13 @@ SYSTEM = ('You are a research assistant for a lab that trains small language mod
           'sort_table. Do not read numbers off a table yourself. '
           'Quote the numbers you use and name the file they came from.')
 
+REPEAT = ('Error: you already made this exact call and it failed. Repeating it will fail again: try a different '
+          'file, folder or column. The table you need may be in another folder.')
+
 def run_agent(task, generate, max_steps=8, verbose=True):
     messages = [dict(role='system', content=SYSTEM), dict(role='user', content=task)]
     n_calls = bad_calls = 0
+    failed = set()           # calls that returned an error: a repeat is refused instead of run (v3 looped on these)
     for step in range(1, max_steps + 1):
         reply, ctx = generate(messages)
         calls = parse_tool_calls(reply)
@@ -165,7 +169,15 @@ def run_agent(task, generate, max_steps=8, verbose=True):
             return dict(answer=reply.strip(), steps=step, calls=n_calls, bad_calls=bad_calls, context=ctx, messages=messages)
         messages.append(assistant_turn(reply, calls))
         for c in calls:
-            result = c['error'] if 'error' in c else run_tool(c['name'], c['arguments'])
+            key = json.dumps([c['name'], c['arguments']], sort_keys=True, default=str)
+            if 'error' in c:
+                result = c['error']
+            elif key in failed:
+                result = REPEAT
+            else:
+                result = run_tool(c['name'], c['arguments'])
+            if result.startswith('Error'):
+                failed.add(key)
             n_calls += 1
             bad_calls += result.startswith('Error')
             if verbose:
