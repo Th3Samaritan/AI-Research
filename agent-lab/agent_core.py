@@ -47,7 +47,39 @@ def read_file(path: str) -> str:
     text = open(safe_path(path), encoding='utf-8', errors='replace').read()
     return text if len(text) <= READ_LIMIT else text[:READ_LIMIT] + f'\n... [cut: {len(text):,} characters in total]'
 
-TOOLS = {f.__name__: f for f in (list_files, read_file)}
+def sort_table(path: str, column: str, descending: bool = True) -> str:
+    """
+    Sort a CSV table by one numeric column and list every run with its value, in order. Use it to find the highest or
+    lowest value instead of comparing numbers by eye.
+
+    Args:
+        path: Path to a .csv file relative to the lab folder, for example "results/summary.csv".
+        column: The column to sort by, written exactly as in the table's header.
+        descending: true lists the highest value first, false the lowest first.
+    """
+    import csv
+    if isinstance(descending, str):
+        descending = descending.strip().lower() not in ('false', '0', 'no')
+    with open(safe_path(path), encoding='utf-8', errors='replace', newline='') as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return f'Error: {path} has no rows'
+    header = list(rows[0])
+    if column not in header:
+        return f'Error: there is no column {column!r} in {path}. Columns: {", ".join(header)}'
+    key = next((h for h in ('run', 'name', 'model') if h in header), header[0])
+    def value(r):
+        try:
+            return float(r[column])
+        except (TypeError, ValueError):
+            return None
+    have = sorted((r for r in rows if value(r) is not None), key=value, reverse=descending)
+    blank = len(rows) - len(have)
+    return (f'{path} sorted by {column}, {"highest" if descending else "lowest"} first '
+            f'({len(have)} rows{f", {blank} blank" if blank else ""}):\n{key},{column}\n'
+            + '\n'.join(f'{r[key]},{r[column]}' for r in have))
+
+TOOLS = {f.__name__: f for f in (list_files, read_file, sort_table)}
 
 def run_tool(name, args):
     """Run one tool call. Errors go back to the model as text, so it can correct itself instead of crashing the loop."""
@@ -86,6 +118,7 @@ def assistant_turn(reply, calls):
 # The loop. This is the whole agent. `generate(messages)` returns (reply, prompt length in tokens).
 SYSTEM = ('You are a research assistant for a lab that trains small language models and benchmarks them. '
           'Answer from the files, not from memory: list folders to find files, read them, then answer. '
+          'For the highest or lowest value in a table, use sort_table. '
           'Quote the numbers you use and name the file they came from.')
 
 def run_agent(task, generate, max_steps=8, verbose=True):

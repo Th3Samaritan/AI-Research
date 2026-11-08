@@ -14,8 +14,22 @@
 # | QLoRA | base weights frozen in 4-bit; small trainable LoRA matrices (rank 16) added to every attention and MLP projection | about 1% of the weights train, so it fits on one T4 or L4 |
 # | Eval | the same tasks with the trained adapter, plus questions about your real lab files | the real files were never in training, so they test whether the habit transfers |
 #
+# **Version 2.** The first run (v1) doubled accuracy on synthetic tasks (35% → 70%) but fell from 17% to 0% on the real
+# files: every synthetic folder held exactly one table, so the model learned "list, read the only file, answer" and,
+# faced with a real folder of per-run JSON files, read the wrong one or none and put file sizes in its answers. It also
+# picked wrong maxima, comparing a dozen numbers by eye. v2 changes the data and the tools, not the training:
+# - **Decoys.** Each table folder also holds per-run JSON files full of numbers, plots and sometimes a second CSV, as in
+#   the real lab. The model has to pick the table from the listing.
+# - **Recovery.** Some traces open a JSON file first, find it lacks the column, then open the table. The wrong step is
+#   context only, never a training target: the model learns to recover, not to make the mistake.
+# - **A sort tool.** `sort_table(path, column)` returns the column in order, so a highest/lowest question becomes
+#   copying the first row. Agents hand arithmetic to tools; the model only has to choose the call.
+# - **Shorter training.** v1's loss flattened by step 40 of 220; v2 trains about 100 larger steps.
+# The real-file questions are the same as v1's, so those results compare directly. The synthetic eval tasks are new
+# (v1 drew them in an order that changed between runs, now fixed) and their labs contain decoys.
+#
 # **On Colab:** Runtime → Change runtime type → **L4** → Run all, about 1 hour in total. A T4 also works, in fp16, more
-# slowly. Results go to `MyDrive/agent-lab/finetune/`; finished steps are skipped when you run it again.
+# slowly. Results go to `MyDrive/agent-lab/finetune_v2/`; finished steps are skipped when you run it again.
 
 # %%
 # Config.
@@ -25,10 +39,11 @@ MODEL = os.environ.get('MODEL', 'Qwen/Qwen3-1.7B')
 LAB = os.environ.get('AGENT_ROOT', '/content/drive/MyDrive/gpt2-lab' if IN_COLAB else '.')     # real files, for the final eval
 OUT = os.environ.get('AGENT_OUT', '/content/drive/MyDrive/agent-lab' if IN_COLAB else 'out')
 WORK = '/content/synth' if IN_COLAB else os.path.abspath('synth')                            # synthetic labs, rebuilt each run
-N_TRAIN = 500            # training tasks; each gives one example per model turn (about 3.5)
+VERSION = 'v2'           # results go to OUT/finetune_<VERSION>
+N_TRAIN = 400            # training tasks; each gives one example per model turn (about 3.5)
 N_EVAL = 20              # held-out synthetic tasks; the real-file tasks come on top
 LORA_R, LORA_ALPHA = 16, 32
-LR, EPOCHS, ACCUM = 2e-4, 1, 8   # ACCUM examples per optimizer step
+LR, EPOCHS, ACCUM = 2e-4, 1, 16  # ACCUM examples per optimizer step
 MAX_LEN = 3072           # longer examples are skipped
 MAX_STEPS = 6            # agent replies allowed per eval task
 MAX_NEW_TOKENS = 384     # per reply in the eval: a right answer is one or two sentences
@@ -48,10 +63,10 @@ from peft import LoraConfig, PeftModel, get_peft_model
 dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 SMOKE = dev == 'cpu'     # no GPU: a tiny random model and a few tasks, to check the code end to end
 if SMOKE:
-    N_TRAIN, N_EVAL, MAX_NEW_TOKENS, ACCUM = 8, 2, 12, 2
+    N_TRAIN, N_EVAL, MAX_NEW_TOKENS, ACCUM = 3, 2, 12, 2
 BF16 = dev == 'cuda' and torch.cuda.is_bf16_supported()
 compute = torch.bfloat16 if BF16 or SMOKE else torch.float16
-FT = f'{OUT}/finetune' + ('_smoke' if SMOKE else '')
+FT = f'{OUT}/finetune_{VERSION}' + ('_smoke' if SMOKE else '')
 os.makedirs(FT, exist_ok=True)
 print(f'{dev} · {torch.cuda.get_device_name() if dev == "cuda" else "CPU smoke test"} · compute {compute}')
 
@@ -84,10 +99,30 @@ def run_names(rng, n):
     while len(names) < n:
         a, b, k = rng.choice(NAME_A), rng.choice(NAME_B), rng.randint(1, 64)
         names.add(rng.choice([f'{a}-{b}', f'{a}+{b}', f'{b}-{k}', f'{a}{k}', f'{a}-{b}-{k}']))
-    return sorted(names, key=lambda _: rng.random())
+    return sorted(sorted(names), key=lambda _: rng.random())   # sort first: a set's order changes between runs
 
 def fmt(v, d):
     return f'{v:.{d}f}' if d else str(int(round(v)))
+
+def write_decoys(drng, folder, runs, table_file):
+    """Files that sit next to a table, as in the real lab: per-run JSON logs full of numbers, a plot, sometimes a second
+    CSV of training curves. Returns the JSON names. Uses its own random generator, so the decoys do not change which
+    questions get asked."""
+    names = []
+    for r in drng.sample(runs, drng.randint(4, 14)):
+        name = drng.choice([f'{r}.json', f'{r}__standard.json', f'{r}__seed{drng.randint(1, 3)}.json'])
+        log = dict(name=r, budget=drng.choice(['quick', 'standard']), steps=drng.randint(500, 5000),
+                   final=dict(val_loss=round(drng.uniform(2.5, 4.5), 4), tok_per_s=drng.randint(40000, 250000)),
+                   curve=[round(drng.uniform(2.5, 9), 3) for _ in range(drng.randint(10, 40))])
+        with open(os.path.join(folder, name), 'w') as f:
+            json.dump(log, f)
+        names.append(name)
+    with open(os.path.join(folder, os.path.splitext(table_file)[0] + '.png'), 'wb') as f:
+        f.write(drng.randbytes(drng.randint(20000, 90000)))
+    if drng.random() < 0.3:
+        with open(os.path.join(folder, 'curves.csv'), 'w') as f:
+            f.write('step,loss,lr\n' + ''.join(f'{s},{drng.uniform(2.5, 9):.3f},{1e-3:.0e}\n' for s in range(0, 2000, 100)))
+    return sorted(set(names))
 
 def make_lab(rng, root):
     """Write one synthetic lab to `root` and return its tables (folder, file, topic, rows)."""
@@ -114,7 +149,8 @@ def make_lab(rng, root):
             w = csv.DictWriter(f, header)
             w.writeheader()
             w.writerows(rows)
-        tables.append(dict(root=root, folder=folder, file=file, topic=topic, rows=rows,
+        decoys = write_decoys(random.Random(f'{root}/{folder}'), os.path.join(root, folder), runs, file)
+        tables.append(dict(root=root, folder=folder, file=file, topic=topic, rows=rows, decoys=decoys,
                            numeric=[m[0] for m in metrics], decimals={m[0]: m[3] for m in metrics}))
     with open(os.path.join(root, 'README.md'), 'w') as f:
         f.write('# Lab\n\nTraining and evaluation runs. Tables are in the subfolders; run logs are in runs/.\n')
@@ -129,7 +165,8 @@ def make_lab(rng, root):
 # %% [markdown]
 # ## Tasks and their ideal traces
 # A task is a question, the exact strings a right answer must contain (`gold`), and the ideal trace: the replies a good
-# agent would write, in order. A reply is either one tool call or the final answer.
+# agent would write, in order. A reply is either one tool call or the final answer, and carries a flag: trained on, or
+# context only (the wrong first step of a recovery trace).
 
 # %%
 def num(s):
@@ -141,10 +178,10 @@ def decimals(table, col):
     vals = [r[col] for r in table['rows'] if r[col]]
     return max((len(v.split('.')[1]) if '.' in v else 0) for v in vals)
 
-def tool_call(name, **args):
+def tool_call(name, train=True, **args):
     """A reply that calls one tool, written exactly as Qwen3 writes it."""
     return ('<tool_call>\n' + json.dumps({'name': name, 'arguments': args}, ensure_ascii=False) + '\n</tool_call>',
-            [dict(name=name, arguments=args)])
+            [dict(name=name, arguments=args)], train)
 
 def make_task(rng, table, kinds):
     """One question about `table`, with gold strings and the ideal trace. Returns None if the table can't support it."""
@@ -191,6 +228,7 @@ def make_task(rng, table, kinds):
         gold = ['no run']
         answer = f'There is no run named {fake} in {path}. It lists: {", ".join(r["run"] for r in rows)}.'
     trace = []
+    trng = random.Random(q)      # trace choices get their own generator, so they don't change later questions
     if explicit and rng.random() < 0.25 and kind != 'missing':   # a wrong path in the question: recover by listing
         stem, ext = os.path.splitext(table['file'])
         wrong = f"{table['folder']}/{stem.rstrip('s') if stem.endswith('s') else stem + 's'}{ext}"
@@ -198,7 +236,13 @@ def make_task(rng, table, kinds):
         trace += [tool_call('read_file', path=wrong), tool_call('list_files', folder=table['folder'])]
     elif not explicit:
         trace += [tool_call('list_files', folder='.'), tool_call('list_files', folder=table['folder'])]
-    trace += [tool_call('read_file', path=path), (answer, None)]
+        if table.get('decoys') and trng.random() < 0.3:   # opens a run log first: context only, never a target
+            trace.append(tool_call('read_file', train=False, path=f"{table['folder']}/{trng.choice(table['decoys'])}"))
+    if kind == 'max':
+        trace.append(tool_call('sort_table', path=path, column=col, descending=word == 'highest'))
+    else:
+        trace.append(tool_call('read_file', path=path))
+    trace.append((answer, None, True))
     return dict(root=table['root'], path=path, kind=kind, question=q, gold=gold, trace=trace)
 
 def synthetic_tasks(n, seed, kinds, name):
@@ -216,8 +260,8 @@ train_tasks = synthetic_tasks(N_TRAIN, SEED, TRAIN_KINDS, 'train')
 eval_tasks = synthetic_tasks(N_EVAL, SEED + 1, EVAL_KINDS, 'eval')
 t = train_tasks[0]
 print(f'{len(train_tasks)} training tasks, {len(eval_tasks)} synthetic eval tasks. Example:\n{t["question"]}')
-for reply, _ in t['trace']:
-    print('  ' + reply.replace('\n', ' '))
+for reply, _, train in t['trace']:
+    print('  ' + reply.replace('\n', ' ') + ('' if train else '   (context only)'))
 
 # %%
 # Real-file tasks: the same question types about your lab's own tables, with gold answers read from the files.
@@ -282,7 +326,7 @@ def mentions(text, s):
 
 def files_read(messages):
     return [c['function']['arguments'].get('path', '').lstrip('./') for m in messages if m['role'] == 'assistant'
-            for c in m.get('tool_calls', []) if c['function']['name'] == 'read_file']
+            for c in m.get('tool_calls', []) if c['function']['name'] in ('read_file', 'sort_table')]
 
 def evaluate(tasks, label):
     path = f'{FT}/eval_{label}.json'
@@ -331,10 +375,11 @@ def turn_examples(task):
     set_root(task['root'])
     messages = [dict(role='system', content=SYSTEM), dict(role='user', content=task['question'])]
     out = []
-    for reply, calls in task['trace']:
-        p = tok(render(messages), add_special_tokens=False)['input_ids']
-        t = tok(reply + '<|im_end|>', add_special_tokens=False)['input_ids']
-        out.append(dict(ids=p + t, labels=[-100] * len(p) + t))
+    for reply, calls, train in task['trace']:
+        if train:            # a context-only step (the wrong first read of a recovery trace) is never a target
+            p = tok(render(messages), add_special_tokens=False)['input_ids']
+            t = tok(reply + '<|im_end|>', add_special_tokens=False)['input_ids']
+            out.append(dict(ids=p + t, labels=[-100] * len(p) + t))
         if calls:
             messages.append(assistant_turn(reply, calls))
             for c in calls:
@@ -431,8 +476,12 @@ except ImportError:
     print('loss by step:', [round(l, 3) for l in losses])
 
 # %%
-# The tuned model on the same tasks, then both side by side.
-results['tuned'] = evaluate(eval_tasks + real_tasks, 'tuned')
+# The tuned model on the same tasks, then side by side with the base model and, if it is on Drive, the v1 run. v1 had
+# no sort_table and its synthetic labs had no decoys, so compare it with v2 on the real-file rows.
+tuned = evaluate(eval_tasks + real_tasks, 'tuned')
+v1 = f'{OUT}/finetune/eval_tuned.json'
+results = {'base': results['base'], **({'v1': json.load(open(v1))} if os.path.exists(v1) and not SMOKE else {}),
+           VERSION: tuned}
 summary(results)
 
 # %%
@@ -445,7 +494,7 @@ print('\n══ answer ══\n' + str(demo['answer']))
 
 # %%
 # Where the tuned model still fails: its wrong answers next to the gold strings.
-for r in results['tuned']:
+for r in tuned:
     if not r['correct']:
         print(f"[{r['set']}/{r['kind']}] {r['question']}\n  gold: {r['gold']}\n  got:  {r['answer'][:300]}\n")
 
@@ -454,9 +503,12 @@ for r in results['tuned']:
 # - **Correct %** is the headline. The baseline is low mostly because its answers ramble or stop early, not because it
 #   misreads; *avg answer chars* shows that.
 # - **Synthetic vs real.** Synthetic eval labs are new random labs of the training kind. The real tasks are about your
-#   own tables, which training never saw. A large gap means the model learned the templates, not the habit.
-# - **Read the file %** separates two failures: never finding the table (a search problem) and finding it but answering
-#   wrongly (a reading problem).
+#   own tables, which training never saw. A large gap means the model learned the templates, not the habit: v1 scored
+#   70% synthetic and 0% real. The real-file rows are the number to watch.
+# - **Read the file %** (read or sorted the right table) separates two failures: never finding the table (a search
+#   problem) and finding it but answering wrongly (a reading problem).
+# - **v1 → v2.** If the real-file score rises, the decoys and the recovery traces fixed the search problem; if max/min
+#   tasks rise, the sort tool fixed the reading problem. The list of wrong answers above shows which.
 # - **The demo question** asks two things at once. Training had only one-part questions, so a tuned model may answer
 #   the first part only. That is the next thing to add to the training data.
 # - **What this costs.** A model trained on one narrow task can get worse at others; it may now look for a file even
