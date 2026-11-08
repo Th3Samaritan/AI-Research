@@ -2,8 +2,12 @@
 
     python build_notebooks.py
 
-writes  qwen3_recall.ipynb   long-context recall of the agent's model, at bf16 / 8-bit / 4-bit
-        mini_agent.ipynb     a model, two tools and a loop
+writes  qwen3_recall.ipynb    long-context recall of the agent's model, at bf16 / 8-bit / 4-bit
+        mini_agent.ipynb      a model, two tools and a loop
+        agent_finetune.ipynb  QLoRA fine-tuning on tool-use traces, scored before and after
+
+A cell containing `from agent_core import *` is replaced by the cells of agent_core.py, so both agent notebooks give
+the model exactly the same tools, schemas and loop.
 """
 import json, os, re
 
@@ -16,6 +20,16 @@ def parse(text):
         head, _, body = chunk.partition('\n')
         cells.append(('markdown' if head.strip() == '[markdown]' else 'code', body.strip('\n')))
     return cells
+
+def read(name):
+    return open(os.path.join(HERE, name), encoding='utf-8').read()
+
+def expand(cells):
+    core = parse(read('agent_core.py'))
+    out = []
+    for kind, body in cells:
+        out += core if kind == 'code' and body.startswith('from agent_core import *') else [(kind, body)]
+    return out
 
 def write_notebook(path, cells, gpu):
     nb_cells = []
@@ -33,7 +47,8 @@ def write_notebook(path, cells, gpu):
         kernelspec=dict(name='python3', display_name='Python 3'), language_info=dict(name='python')))
     json.dump(nb, open(path, 'w', encoding='utf-8'), indent=1, ensure_ascii=False)
 
-for name, gpu in [('qwen3_recall', 'L4'), ('mini_agent', 'T4')]:
-    cells = parse(open(os.path.join(HERE, f'{name}.py'), encoding='utf-8').read())
+for name, gpu in [('qwen3_recall', 'L4'), ('mini_agent', 'T4'), ('agent_finetune', 'L4')]:
+    cells = expand(parse(read(f'{name}.py')))
+    assert not any('from agent_core' in body for kind, body in cells if kind == 'code'), name
     write_notebook(os.path.join(HERE, f'{name}.ipynb'), cells, gpu)
     print(f'{name}.ipynb: {len(cells)} cells')
